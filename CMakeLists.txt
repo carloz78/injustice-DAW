@@ -30,3 +30,4 @@ else()
 endif()
 
 add_subdirectory(tools/engine_probe)
+add_subdirectory(src)

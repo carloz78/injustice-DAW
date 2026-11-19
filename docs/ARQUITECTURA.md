@@ -37,3 +37,33 @@ El sinte (FourOsc) y el sampler de Tracktion se usan solo como banco de pruebas,
 | StepClip + sampler: golpes en la cuadrícula de 16avos, sin golpes fuera de ella. | El Step Sequencer puede apoyarse en StepClip (clip de patrón en la Playlist). |
 | La información de los archivos de audio se carga en segundo plano; sin esperarla el sampler sale mudo. | La exportación a WAV debe esperar a que todos los archivos estén cargados. |
 | Con JUCE 8.0.6 + Tracktion v3.2.0 todo compila y funciona; Tracktion "master" exige JUCE 9 (en desarrollo). | Nos quedamos en v3.2.0 + JUCE 8.0.6 hasta que haya motivo para subir. |
+
+## Etapa 1A (estado)
+| Pieza | Estado |
+|---|---|
+| Ventana, barra superior, transporte (play/stop/loop), BPM (arrastrar o rueda), deshacer/rehacer | Hecho |
+| Playlist: pistas fijas 150 px, regla de compases, cabezal, zoom (Ctrl+rueda), scroll | Hecho |
+| Clips de audio: arrastrar archivo desde el explorador, mover, cortar (tijeras), borrar (Supr) | Hecho (sin probar con audio real en Windows) |
+| Ajustes de audio (selector de dispositivo) | Hecho |
+| Nuevo/Abrir/Guardar, Mixer, Piano Roll, Browser, grabar, plugins, exportar, ayuda | Pendiente (iconos atenuados) |
+| Tonalidad "F#m" | Solo visual, sin función todavía |
+
+## Etapa 1B, parte 1: Piano Roll (estado)
+| Pieza | Estado |
+|---|---|
+| Piano Roll: teclado, cuadrícula, notas, carril de velocity, cuantización 1/4-1/32, zoom y scroll | Hecho |
+| Lápiz (añadir y alargar), selector (mover/redimensionar), borrador, Supr, deshacer/rehacer | Hecho y probado con clics simulados (8 comprobaciones) |
+| Playlist: lápiz crea un clip MIDI de 4 compases; doble clic en el clip abre el Piano Roll | Hecho |
+| Sonido de las notas | Requiere un instrumento VST3 en la pista (siguiente paso); sin él el clip es mudo |
+
+## Etapa 1C (estado)
+| Pieza | Estado |
+|---|---|
+| Mixer flotante (arrastrable, maximizable): 10 canales = 10 pistas, Master, volumen/pan/solo/mute reales, medidores, botón +, panel de efectos | Hecho y probado con clics simulados |
+| Panel de efectos del Mixer: lista de plugins del canal; "Agregar efecto" | Pendiente (llega con la carga de VST3) |
+| Step Sequencer: 4 filas (Kick, Clap, Hat, Open Hat), +, 8/12/16/24/32 pasos, power por fila, menú de sample, arrastrar sample a la fila | Hecho; el patrón vive como clip en la Playlist y se probó con render real |
+| Browser: categorías, árbol real de carpetas de samples, vista previa de forma de onda, separador y ocultar | Hecho. Las categorías de presets y plugins aparecen atenuadas hasta su etapa |
+| Arrastrar un sample del Browser a la Playlist o a una fila | Implementado con arrastre del sistema; probado solo por separado, falta verificar en Windows |
+| Escuchar el sample en el Browser (pre-escucha) | Pendiente |
+
+Pruebas automáticas internas: `INJ_SELFTEST=1 INJ_SAMPLE_FILE=<wav> INJ_DEMO_MIDI=1` (22 comprobaciones).
