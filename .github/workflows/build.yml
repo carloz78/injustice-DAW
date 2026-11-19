@@ -6,10 +6,22 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configurar
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
       - name: Compilar
-        run: cmake --build build --config Release --target EngineProbe
+        run: cmake --build build --config Release --target EngineProbe InjusticeDAW
       - name: Prueba del motor (sin interfaz)
         run: ./build/tools/engine_probe/EngineProbe_artefacts/Release/EngineProbe.exe
+      - name: Instalar Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Crear instalador
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DAW-Setup
+          path: installer_out/INJUSTICE-DAW-Setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DAW-exe
+          path: build/src/InjusticeDAW_artefacts/Release/INJUSTICE DAW.exe
