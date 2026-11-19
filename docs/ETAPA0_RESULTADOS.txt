@@ -1,0 +1,37 @@
+--- 1) Clip MIDI -> instrumento -> WAV
+OK    se crea el instrumento de pruebas
+OK    render offline termina
+OK    el WAV tiene muestras
+      sr=44100  duración=4.000 s
+OK    hay audio en la nota 1 (0.00-0.25 s)
+OK    hay audio en la nota 2 (1.00-1.25 s)
+OK    silencio entre notas (0.55-0.95 s) tras el release
+OK    silencio tras la Ãºltima nota
+--- 2) StepClip (patrón de pasos) + sampler -> WAV
+      click.wav: 2205 muestras, sr=44100, pico=0.780
+OK    se crea el sampler de pruebas
+      addSound -> ''  sonidos=1  archivo=4514 bytes
+Rebuilding Wave Device List...
+Default Wave Out: 
+Default MIDI Out: 
+Default Wave In: 
+Default MIDI In: 
+MIDI Input devices scanned in: 0
+Updating MIDI I/O devices
+Found MIDI in: all_midi_in ("All MIDI Ins") (enabled)
+      archivo valido=1  largo=0.050 s  sr=44100  nota=36..36
+OK    se crea el StepClip
+OK    el StepClip trae canales
+OK    render offline termina
+OK    el WAV tiene muestras
+      pico global=0.3533  canales=8  nota canal0=36  paso0=1
+OK    golpe en t=0.00 s
+OK    golpe en t=0.50 s
+OK    golpe en t=1.00 s
+OK    golpe en t=1.50 s
+OK    sin golpe en t=0.125 s
+OK    sin golpe en t=0.250 s
+OK    sin golpe en t=0.625 s
+OK    sin golpe en t=1.250 s
+
+TODO OK
