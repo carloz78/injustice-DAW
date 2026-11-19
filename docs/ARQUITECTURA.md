@@ -45,7 +45,8 @@ El sinte (FourOsc) y el sampler de Tracktion se usan solo como banco de pruebas,
 | Playlist: pistas fijas 150 px, regla de compases, cabezal, zoom (Ctrl+rueda), scroll | Hecho |
 | Clips de audio: arrastrar archivo desde el explorador, mover, cortar (tijeras), borrar (Supr) | Hecho (sin probar con audio real en Windows) |
 | Ajustes de audio (selector de dispositivo) | Hecho |
-| Nuevo/Abrir/Guardar, Mixer, Piano Roll, Browser, grabar, plugins, exportar, ayuda | Pendiente (iconos atenuados) |
+| Nuevo/Abrir/Guardar, exportar, ayuda, plugins | Hecho en la ronda 2 (ver abajo) |
+| Grabar en vivo | Pendiente (el botón avisa) |
 | Tonalidad "F#m" | Solo visual, sin función todavía |
 
 ## Etapa 1B, parte 1: Piano Roll (estado)
@@ -60,10 +61,27 @@ El sinte (FourOsc) y el sampler de Tracktion se usan solo como banco de pruebas,
 | Pieza | Estado |
 |---|---|
 | Mixer flotante (arrastrable, maximizable): 10 canales = 10 pistas, Master, volumen/pan/solo/mute reales, medidores, botón +, panel de efectos | Hecho y probado con clics simulados |
-| Panel de efectos del Mixer: lista de plugins del canal; "Agregar efecto" | Pendiente (llega con la carga de VST3) |
+| Panel de efectos del Mixer: lista de plugins del canal; "Agregar efecto" abre la lista de plugins | Hecho (ronda 2); falta verificar con VST3 reales en Windows |
 | Step Sequencer: 4 filas (Kick, Clap, Hat, Open Hat), +, 8/12/16/24/32 pasos, power por fila, menú de sample, arrastrar sample a la fila | Hecho; el patrón vive como clip en la Playlist y se probó con render real |
 | Browser: categorías, árbol real de carpetas de samples, vista previa de forma de onda, separador y ocultar | Hecho. Las categorías de presets y plugins aparecen atenuadas hasta su etapa |
 | Arrastrar un sample del Browser a la Playlist o a una fila | Implementado con arrastre del sistema; probado solo por separado, falta verificar en Windows |
 | Escuchar el sample en el Browser (pre-escucha) | Pendiente |
 
 Pruebas automáticas internas: `INJ_SELFTEST=1 INJ_SAMPLE_FILE=<wav> INJ_DEMO_MIDI=1` (22 comprobaciones).
+
+## Ronda 2 (mejoras pedidas por el usuario)
+| Pieza | Estado |
+|---|---|
+| Paneles flotantes redimensionables desde bordes y esquinas (Mixer, Step Sequencer); el contenido se escala con proporción fija | Hecho (arrastre real de borde sin probar en Windows) |
+| Mixer rediseñado: perillas de pan, tapas de fader metálicas, medidores, tornillos, escala de dB lineal, Master, panel de efectos; scroll cuando hay más de 10 pistas | Hecho |
+| Proyecto: Nuevo / Abrir / Guardar / Guardar como (`.injdaw`), aviso de cambios sin guardar al salir, título con `*` | Hecho y probado (guardar -> reabrir conserva pistas y clips) |
+| Exportar a WAV 24 bits con ventana de progreso | Hecho y probado (render offline) |
+| Ayuda con atajos, avisos (toasts), tooltips en todos los botones | Hecho |
+| Atajos: Espacio, Inicio, Ctrl+N/O/S/Mayús+S/E/Z/Y/D, F1, F5-F10 | Hecho |
+| Metrónomo (icono de altavoz); botón Grabar avisa que llega después; herramienta Recortar | Hecho |
+| Playlist: menú de pista (renombrar, mute, solo, color, agregar, eliminar), botones M/S en cabecera, "Agregar pista", recortar clip por bordes, Ctrl+D, clic derecho, barras de desplazamiento | Hecho y probado con clics simulados |
+| Lista de plugins VST3: escaneo en un proceso aparte por plugin (si uno se cuelga, la app no), lista persistente con buscador, carpetas extra, agregar como instrumento o efecto, ventana del editor del plugin | Hecho; el escáner se probó solo con un archivo inexistente; **falta verificar con VST3 reales en Windows** |
+| Proyecto nuevo o abierto con 500 pistas (los guardados se completan a 500) (límite del motor subido de 400 a 1000 con EngineBehaviour; creación acotada para no colgarse) | Hecho y probado (arranque ~2 s en Linux) |
+| Etiquetas del Step Sequencer leídas del sampler (sobreviven a guardar/abrir) | Hecho |
+
+Pruebas automáticas internas (`INJ_SELFTEST=1 INJ_SAMPLE_FILE=<wav> INJ_DEMO_MIDI=1`): 42 comprobaciones.

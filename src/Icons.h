@@ -5,7 +5,7 @@
 namespace icons
 {
     enum Id { NewFile, OpenFile, Layout, Undo, Redo, Play, Stop, Rec, Loop, Select, Pencil, Scissors, Stretch,
-              Speaker, Magnet, Chevron, Playlist, Mixer, PianoRoll, Audio, Plugins, Export, Help, Eraser, Steps };
+              Speaker, Magnet, Chevron, Playlist, Mixer, PianoRoll, Audio, Plugins, Export, Help, Eraser, Steps, Power, Sliders, Plus, Dots, Save, Trash, Plug };
 
     inline void draw (juce::Graphics& g, Id id, juce::Rectangle<float> r, juce::Colour c)
     {
@@ -51,6 +51,13 @@ namespace icons
                          p.startNewSubPath (P (.1f,.6f)); p.lineTo (P (.1f,.92f)); p.lineTo (P (.9f,.92f)); p.lineTo (P (.9f,.6f)); g.strokePath (p, st); break;
             case Eraser: p.startNewSubPath (P (.1f,.62f)); p.lineTo (P (.55f,.12f)); p.lineTo (P (.92f,.42f)); p.lineTo (P (.5f,.9f)); p.lineTo (P (.3f,.9f)); p.closeSubPath(); g.strokePath (p, st); g.drawLine ({ P (.32f,.38f), P (.72f,.72f) }, lw); g.drawLine ({ P (.5f,.92f), P (.92f,.92f) }, lw); break;
             case Steps: for (int r = 0; r < 2; ++r) for (int c = 0; c < 3; ++c) g.fillRoundedRectangle (P (.04f + c * .34f, .2f + r * .38f).x, P (0, .2f + r * .38f).y, s * .26f, s * .26f, 2.f); break;
+            case Power: { Path a; a.addCentredArc (b.getCentreX(), b.getCentreY() + s * .04f, s * .36f, s * .36f, 0, 0.62f, 5.66f, true); g.strokePath (a, st); g.drawLine ({ P (.5f,.04f), P (.5f,.46f) }, lw); } break;
+            case Sliders: for (int k = 0; k < 3; ++k) { const float y = .2f + k * .3f; g.drawLine ({ P (.05f, y), P (.95f, y) }, lw * .8f); g.fillEllipse (P (k == 1 ? .62f : .28f, y).x - s * .09f, P (0, y).y - s * .09f, s * .18f, s * .18f); } break;
+            case Plus: g.drawLine ({ P (.1f,.5f), P (.9f,.5f) }, lw * 1.15f); g.drawLine ({ P (.5f,.1f), P (.5f,.9f) }, lw * 1.15f); break;
+            case Dots: for (int k = 0; k < 3; ++k) g.fillEllipse (P (.5f, .15f + k * .35f).x - s * .07f, P (0, .15f + k * .35f).y - s * .07f, s * .14f, s * .14f); break;
+            case Save: p.startNewSubPath (P (.1f,.1f)); p.lineTo (P (.78f,.1f)); p.lineTo (P (.92f,.24f)); p.lineTo (P (.92f,.92f)); p.lineTo (P (.1f,.92f)); p.closeSubPath(); g.strokePath (p, st); g.drawRect (P (.28f,.1f).x, P (.28f,.1f).y, s * .36f, s * .26f, lw * .8f); g.drawRect (P (.25f,.58f).x, P (.25f,.58f).y, s * .5f, s * .34f, lw * .8f); break;
+            case Trash: g.drawLine ({ P (.1f,.25f), P (.9f,.25f) }, lw); p.startNewSubPath (P (.22f,.25f)); p.lineTo (P (.28f,.92f)); p.lineTo (P (.72f,.92f)); p.lineTo (P (.78f,.25f)); g.strokePath (p, st); g.drawLine ({ P (.38f,.25f), P (.38f,.1f) }, lw); g.drawLine ({ P (.62f,.25f), P (.62f,.1f) }, lw); g.drawLine ({ P (.38f,.1f), P (.62f,.1f) }, lw); break;
+            case Plug: p.startNewSubPath (P (.3f,.05f)); p.lineTo (P (.3f,.3f)); p.startNewSubPath (P (.7f,.05f)); p.lineTo (P (.7f,.3f)); g.strokePath (p, st); { Path q; q.addRoundedRectangle (P (.15f,.3f).x, P (.15f,.3f).y, s * .7f, s * .35f, 3.f); g.strokePath (q, st); } g.drawLine ({ P (.5f,.65f), P (.5f,.95f) }, lw); break;
             case Help: g.drawEllipse (b.reduced (s * .06f), lw); g.setFont (juce::FontOptions (s * .7f, juce::Font::bold)); g.drawText ("?", b.toNearestInt(), juce::Justification::centred); break;
         }
     }

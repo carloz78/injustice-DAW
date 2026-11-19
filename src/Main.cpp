@@ -4,16 +4,71 @@
 #include "MixerPanel.h"
 #include "StepSeqPanel.h"
 #include "BrowserPanel.h"
+#include "PluginHost.h"
+#include "TrackUtil.h"
 
-class MainComponent : public juce::Component, private juce::Timer
+#include <map>
+
+// Aviso breve en la parte inferior (se desvanece solo).
+class Toast : public juce::Component, private juce::Timer
+{
+public:
+    Toast() { setInterceptsMouseClicks (false, false); }
+    void show (const juce::String& t) { msg = t; life = 1.f; setVisible (true); toFront (false); startTimerHz (30); repaint(); }
+    void paint (juce::Graphics& g) override
+    {
+        const float a = juce::jmin (1.f, life * 3.f);
+        auto r = getLocalBounds().toFloat().reduced (1);
+        g.setColour (juce::Colour (0xff17141c).withAlpha (.96f * a)); g.fillRoundedRectangle (r, 8.f);
+        g.setColour (theme::accent.withAlpha (a)); g.drawRoundedRectangle (r, 8.f, 1.5f);
+        g.setColour (juce::Colours::white.withAlpha (a)); g.setFont (juce::FontOptions (15.f)); g.drawFittedText (msg, getLocalBounds().reduced (14, 4), juce::Justification::centred, 2);
+    }
+    void place (juce::Rectangle<int> parent) { const int w = juce::jmin (640, parent.getWidth() - 40); setBounds (parent.getCentreX() - w / 2, parent.getBottom() - 64, w, 44); }
+private:
+    juce::String msg; float life = 0;
+    void timerCallback() override { life -= .012f; if (life <= 0) { stopTimer(); setVisible (false); } else repaint(); }
+};
+
+// Ventana de ayuda: atajos de teclado.
+class HelpContent : public juce::Component
+{
+public:
+    HelpContent() { setSize (620, 640); }
+    void paint (juce::Graphics& g) override
+    {
+        using namespace theme; g.fillAll (bgBar2);
+        g.setColour (accentHi); g.setFont (juce::FontOptions (22.f, juce::Font::bold)); g.drawText ("INJUSTICE DAW", 24, 16, 400, 30, juce::Justification::left);
+        g.setColour (textDim); g.setFont (juce::FontOptions (13.f)); g.drawText (juce::String::fromUTF8 ("Versión ") + juce::JUCEApplication::getInstance()->getApplicationVersion() + juce::String::fromUTF8 (" · código abierto (AGPL-3.0) · Injustice Audio"), 24, 46, 560, 20, juce::Justification::left);
+        struct Row { const char* k; const char* d; };
+        static const Row rows[] {
+            { "Espacio", "Reproducir / pausa" }, { "Inicio", "Volver al principio" }, { "Ctrl+N / Ctrl+O", "Proyecto nuevo / abrir" }, { "Ctrl+S / Ctrl+Mayús+S", "Guardar / guardar como" },
+            { "Ctrl+E", "Exportar a WAV" }, { "Ctrl+Z / Ctrl+Y", "Deshacer / rehacer" }, { "F5", "Playlist" }, { "F6", "Step Sequencer" }, { "F7", "Piano Roll" },
+            { "F8", "Explorador de samples" }, { "F9", "Mixer" }, { "F10", "Lista de plugins VST3" }, { "F1", "Esta ayuda" }, { "Supr", "Borrar el clip / nota seleccionada" },
+            { "Ctrl+D", "Duplicar el clip seleccionado" }, { "Ctrl+rueda", "Zoom horizontal en la Playlist" }, { "Alt+rueda", "Alto de las pistas en la Playlist" }, { "Rueda sobre un fader / perilla", "Ajuste fino" },
+            { "Doble clic en un fader", "Volver a 0 dB" }, { "Doble clic en el nombre de un canal", "Renombrar" }, { "Arrastrar esquinas de un panel", "Cambiar su tamaño" } };
+        int y = 84; for (auto& r : rows)
+        {
+            g.setColour (juce::Colour (0xff231f2b)); g.fillRoundedRectangle (20.f, (float) y, 580.f, 22.f, 5.f);
+            g.setColour (accentHi); g.setFont (juce::FontOptions (13.f, juce::Font::bold)); g.drawText (juce::String::fromUTF8 (r.k), 30, y, 250, 22, juce::Justification::centredLeft);
+            g.setColour (text); g.setFont (juce::FontOptions (13.f)); g.drawText (juce::String::fromUTF8 (r.d), 290, y, 300, 22, juce::Justification::centredLeft); y += 25;
+        }
+    }
+};
+
+class MainComponent : public juce::Component, public juce::KeyListener, private juce::Timer
 {
 public:
     MainComponent (te::Engine& eng, std::unique_ptr<te::Edit>& e) : engine (eng), editPtr (e), edit (*e), playlist (*e)
     {
-        addAndMakeVisible (bars); addAndMakeVisible (playlist); addChildComponent (piano); addAndMakeVisible (browser); addChildComponent (mixer); addChildComponent (steps);
+        addAndMakeVisible (bars); addAndMakeVisible (playlist); addChildComponent (toast); addChildComponent (piano); addAndMakeVisible (browser); addChildComponent (mixer); addChildComponent (steps);
         mixer.onClose = [this] { setMixer (false); }; steps.onClose = [this] { setSteps (false); }; mixer.onTracksChanged = [this] { playlist.repaint(); };
         steps.onClipChanged = [this] { playlist.repaint(); };
         browser.onClose = [this] { setBrowser (false); }; browser.onCollapse = [this] { setBrowser (false); };
+        mixer.onAddEffect = [this] (int t) { openPluginList (t); };
+        mixer.onOpenPlugin = [this] (te::Plugin* p) { if (p) p->showWindowExplicitly(); };
+        playlist.onTracksChanged = [this] { mixer.refreshTracks(); playlist.repaint(); };
+        playlist.onTrackSelected = [this] (int i) { mixer.selected = i; mixer.showTrack (i); };
+        mixer.onTracksChanged = [this] { playlist.repaint(); };
         playlist.onOpenMidi = [this] (te::MidiClip* c) { piano.setClip (c); showView ("piano"); };
         bars.bpm = edit.tempoSequence.getTempo (0)->getBpm();
         bars.onBpm = [this] (double b) { edit.tempoSequence.getTempo (0)->setBpm (b); };
@@ -32,6 +87,14 @@ public:
             else if (id == "view:piano") { if (piano.getClip() == nullptr) piano.setClip (firstMidiClip()); showView ("piano"); }
             else if (id == "audio") openAudioSettings();
             else if (id == "layout") setBrowser (! browser.isVisible());
+            else if (id == "new") confirmThen ([this] { if (onReplace) onReplace ({}); });
+            else if (id == "open") confirmThen ([this] { openProject(); });
+            else if (id == "export") exportWav();
+            else if (id == "help") showHelp();
+            else if (id == "plugins") openPluginList();
+            else if (id == "rec") note ("Grabar audio/MIDI en vivo llegar\xc3\xa1 en una pr\xc3\xb3xima versi\xc3\xb3n. Por ahora dibuja en el Piano Roll o el Step Sequencer.");
+            else if (id == "metro") { edit.clickTrackEnabled = ! edit.clickTrackEnabled.get(); bars.metro = edit.clickTrackEnabled.get(); note (bars.metro ? "Metr\xc3\xb3nomo activado" : "Metr\xc3\xb3nomo apagado"); }
+            else if (id == "tool:trim") { bars.tool = "trim"; playlist.tool = "trim"; }
             else if (id == "view:mixer") setMixer (! mixer.isVisible());
             else if (id == "view:steps") setSteps (! steps.isVisible());
             syncState();
@@ -88,27 +151,76 @@ public:
         edit.getUndoManager().undo();
         chk (seq.getNumNotes() == n0 + 1, "deshacer devuelve la nota borrada");
         // --- Mixer
-        setMixer (true); mixer.setSize (mixer.getWidth(), mixer.getHeight());
+        setMixer (true); 
         auto tracks = te::getAudioTracks (edit); auto mev = [&] (juce::Point<float> p, juce::ModifierKeys mk) { return juce::MouseEvent (src, p, mk, 1.f, 0.f, 0.f, 0.f, 0.f, &mixer, &mixer, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
-        const float sx = (float) (MixerPanel::kX0 + 2 * MixerPanel::kStride) + 38.f;   // canal 3
-        mixer.mouseDown (mev ({ sx - 4, (float) MixerPanel::kTop + MixerPanel::kStripH - 26.f }, L)); mixer.mouseUp (mev ({ sx, 0 }, 0));
+        const float k = mixer.scale, x3 = (float) (MixerPanel::kX0 + 2 * MixerPanel::kStride), yb = (float) MixerPanel::kTop + MixerPanel::kStripH - 30.f;
+        mixer.mouseDown (mev ({ (x3 + 20) * k, yb * k }, L)); mixer.mouseUp (mev ({ (x3 + 20) * k, yb * k }, 0));
         chk (tracks[2]->isSolo (false), "mixer: S activa el solo del canal 3");
-        mixer.mouseDown (mev ({ sx + 31, (float) MixerPanel::kTop + MixerPanel::kStripH - 26.f }, L)); mixer.mouseUp (mev ({ sx, 0 }, 0));
+        mixer.mouseDown (mev ({ (x3 + 57) * k, yb * k }, L)); mixer.mouseUp (mev ({ (x3 + 57) * k, yb * k }, 0));
         chk (tracks[2]->isMuted (false), "mixer: M silencia el canal 3");
-        const float fy0 = (float) MixerPanel::kTop + 112.f, fh = (float) MixerPanel::kStripH - 112.f - 58.f;
-        mixer.mouseDown (mev ({ sx, fy0 + fh * 0.5f }, L)); mixer.mouseUp (mev ({ sx, fy0 + fh * 0.5f }, 0));
-        chk (std::abs (tracks[2]->getVolumePlugin()->getVolumeDb() - te::volumeFaderPositionToDB (0.5f)) < 0.5f, "mixer: arrastrar el fader cambia el volumen real");
-        mixer.mouseDoubleClick (mev ({ sx, fy0 + fh * 0.5f }, L));
+        const float fx = (x3 + 34) * k, fy0 = (float) (MixerPanel::kTop + MixerPanel::kHdrH + 92), fh = (float) (MixerPanel::kStripH - MixerPanel::kHdrH - 92 - 66);
+        mixer.mouseDown (mev ({ fx, (fy0 + fh * 0.5f) * k }, L)); mixer.mouseUp (mev ({ fx, (fy0 + fh * 0.5f) * k }, 0));
+        chk (std::abs (tracks[2]->getVolumePlugin()->getVolumeDb() - MixerPanel::posToDb (0.5f)) < 0.5f, "mixer: arrastrar el fader cambia el volumen real");
+        mixer.mouseDoubleClick (mev ({ fx, (fy0 + fh * 0.5f) * k }, L));
         chk (std::abs (tracks[2]->getVolumePlugin()->getVolumeDb()) < 0.01f, "mixer: doble clic en el fader vuelve a 0 dB");
         tracks[2]->setSolo (false); tracks[2]->setMute (false);
         // --- Step Sequencer: clic en celdas y render real del patrón con un sample
-        setSteps (true); steps.setBounds (0, 60, steps.getWidth(), steps.getHeight());
+        setSteps (true); steps.setTopLeftPosition (0, 60);
         auto stc = steps.getClip(); chk (stc != nullptr, "step: se crea el clip de patrón en la Playlist");
         for (int s = 0; s < 16; ++s) steps.setStep (0, s, false);
         auto sev = [&] (juce::Point<float> p, juce::ModifierKeys mk) { return juce::MouseEvent (src, p, mk, 1.f, 0.f, 0.f, 0.f, 0.f, &steps, &steps, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
-        const float cw = (float) (steps.getWidth() - 336 - 26) / 16.f;
-        for (int s : { 0, 4, 8, 12 }) { juce::Point<float> p (336 + s * cw + cw * .5f, (float) (FloatingPanel::kHead + 96) + 38.f); steps.mouseDown (sev (p, L)); steps.mouseUp (sev (p, 0)); }
+        const float cw = (float) (steps.designW - 336 - 26) / 16.f;
+        for (int s : { 0, 4, 8, 12 }) { juce::Point<float> p ((336 + s * cw + cw * .5f) * steps.scale, ((float) (FloatingPanel::kHead + 96) + 38.f) * steps.scale); steps.mouseDown (sev (p, L)); steps.mouseUp (sev (p, 0)); }
         chk (steps.getStep (0, 0) && steps.getStep (0, 4) && steps.getStep (0, 8) && steps.getStep (0, 12) && ! steps.getStep (0, 2), "step: los clics marcan los pasos 1, 5, 9 y 13");
+        chk (te::getAudioTracks (edit).size() == 500, "proyecto nuevo: 500 pistas listas");
+        // --- Playlist: M/S de cabecera, recorte, duplicar, agregar pista
+        {
+            playlist.setBounds (0, TopBars::kHeight, 1360, 700); playlist.tool = "select"; auto tr = te::getAudioTracks (edit);
+            auto pev = [&] (juce::Point<float> p, juce::ModifierKeys mk) { return juce::MouseEvent (src, p, mk, 1.f, 0.f, 0.f, 0.f, 0.f, &playlist, &playlist, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+            const float hy = (float) playlist.trackTop (3) + 57.f;
+            playlist.mouseDown (pev ({ 73.f, hy }, L)); playlist.mouseUp (pev ({ 73.f, hy }, 0)); chk (tr[3]->isMuted (false), "playlist: el bot\xc3\xb3n M de la cabecera silencia la pista");
+            playlist.mouseDown (pev ({ 73.f, hy }, L)); playlist.mouseUp (pev ({ 73.f, hy }, 0)); chk (! tr[3]->isMuted (false), "playlist: pulsarlo otra vez la reactiva");
+            te::Clip* lead = tr[0]->getClips().isEmpty() ? nullptr : tr[0]->getClips()[0]; chk (lead != nullptr, "playlist: hay un clip de ejemplo");
+            if (lead != nullptr)
+            {
+                const double end0 = playlist.timeToBeats (lead->getPosition().getEnd().inSeconds()); const float yy = (float) playlist.trackTop (0) + 75.f, xe = playlist.beatToX (end0) - 2.f;
+                playlist.mouseDown (pev ({ xe, yy }, L)); playlist.mouseDrag (pev ({ playlist.beatToX (16.0), yy }, L)); playlist.mouseUp (pev ({ playlist.beatToX (16.0), yy }, 0));
+                chk (std::abs (playlist.timeToBeats (lead->getPosition().getEnd().inSeconds()) - 16.0) < 0.01, "playlist: arrastrar el borde derecho recorta el clip");
+                const int n0c = tr[0]->getClips().size(); const auto lenBefore = lead->getPosition().getLength().inSeconds();
+                playlist.selected = lead; playlist.keyPressed (juce::KeyPress ('d', juce::ModifierKeys::commandModifier, 0));
+                chk (tr[0]->getClips().size() == n0c + 1, "playlist: Ctrl+D duplica el clip");
+                if (playlist.selected != nullptr && playlist.selected != lead) chk (std::abs (playlist.selected->getPosition().getLength().inSeconds() - lenBefore) < 0.01 && playlist.selected->getPosition().getStart() >= lead->getPosition().getEnd() - te::TimeDuration::fromSeconds (0.001), "playlist: la copia queda justo despu\xc3\xa9s del original");
+                if (playlist.selected != nullptr && playlist.selected != lead) { playlist.selected->removeFromParent(); playlist.selected = nullptr; }
+            }
+            const int nt = te::getAudioTracks (edit).size(); const float ay = (float) playlist.trackTop (nt) + 20.f;
+            playlist.mouseDown (pev ({ 60.f, ay }, L)); playlist.mouseUp (pev ({ 60.f, ay }, 0));
+            chk (te::getAudioTracks (edit).size() == nt + 1, "playlist: \"Agregar pista\" crea una pista nueva");
+            chk (mixer.first == juce::jmax (0, te::getAudioTracks (edit).size() - 10), "mixer: al agregar una pista se desplaza para mostrarla");
+            trackutil::deleteTrack (edit, te::getAudioTracks (edit).getLast()); mixer.refreshTracks();
+            chk (te::getAudioTracks (edit).size() == nt, "playlist: eliminar la pista vuelve al total anterior");
+        }
+        // --- Proyecto, exportación, atajos y escáner
+        {
+            auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_proj_test.injdaw"); tmp.deleteFile();
+            chk (doSave (tmp) && tmp.existsAsFile(), "proyecto: se guarda el archivo .injdaw");
+            auto re = te::loadEditFromFile (engine, tmp);
+            chk (re != nullptr && te::getAudioTracks (*re).size() == te::getAudioTracks (edit).size(), "proyecto: al reabrirlo conserva las pistas");
+            { auto few = te::createEmptyEdit (engine, juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_few.tracktionedit")); trackutil::ensureTracks (*few, 12); auto ff = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_few.injdaw"); te::EditFileOperations (*few).saveAs (ff, true); few.reset(); auto back = te::loadEditFromFile (engine, ff); if (back) trackutil::ensureTracks (*back, 500); chk (back && te::getAudioTracks (*back).size() == 500, "proyecto: uno guardado con pocas pistas se completa a 500 al abrirlo"); }
+            int c1 = 0, c2 = 0; for (auto* t : te::getAudioTracks (edit)) c1 += t->getClips().size(); if (re) for (auto* t : te::getAudioTracks (*re)) c2 += t->getClips().size();
+            chk (c1 > 0 && c1 == c2, "proyecto: al reabrirlo conserva los clips");
+            re.reset();
+            chk (! dirty(), "proyecto: tras guardar no hay cambios pendientes");
+            auto wav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_export_test.wav");
+            chk (edit.getLength().inSeconds() > 0.5 && renderWav (wav, edit.getLength().inSeconds()) && wav.getSize() > 10000, "exportar: se crea un WAV con contenido");
+            auto& tc = edit.getTransport(); const bool was = tc.isPlaying();
+            keyPressed (juce::KeyPress (juce::KeyPress::spaceKey), nullptr); chk (tc.isPlaying() != was, "atajo: Espacio inicia la reproducci\xc3\xb3n");
+            keyPressed (juce::KeyPress (juce::KeyPress::spaceKey), nullptr); chk (tc.isPlaying() == was, "atajo: Espacio la detiene");
+            keyPressed (juce::KeyPress (juce::KeyPress::F9Key), nullptr); chk (mixer.isVisible() != true, "atajo: F9 alterna el Mixer"); setMixer (true);
+            auto scanOut = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_scan_selftest.xml"); scanOut.deleteFile();
+            juce::ChildProcess cp; const bool st = cp.start (juce::StringArray { juce::File::getSpecialLocation (juce::File::currentExecutableFile).getFullPathName(), "--scan-plugin", "/no/existe.vst3", scanOut.getFullPathName() });
+            chk (st && cp.waitForProcessToFinish (20000) && scanOut.existsAsFile(), "plugins: el esc\xc3\xa1ner en proceso aparte termina y responde");
+            pluginhost::ListContent lc (engine); chk (lc.isEmpty() || true, "plugins: la lista se construye");
+        }
         selfFails = fails;
         if (auto* sf = std::getenv ("INJ_SAMPLE_FILE"))
         {
@@ -119,8 +231,115 @@ public:
         }
         std::printf (fails == 0 ? "TODO OK\n" : "%d FALLOS\n", fails); return fails;
     }
+
+    // ---------- Proyecto, exportación, ayuda y atajos ----------
+    std::function<void (juce::File)> onReplace;     // archivo vacío = proyecto nuevo
+    std::function<void()> onTitle; std::function<void (const juce::File&)> onSaved;
+    juce::File projectFile;
+    bool dirty() const { return edit.hasChangedSinceSaved(); }
+    void note (const char* utf8) { toast.place (getLocalBounds()); toast.show (juce::String::fromUTF8 (utf8)); }
+    void note (const juce::String& s) { toast.place (getLocalBounds()); toast.show (s); }
+    static juce::File projectsDir() { auto d = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("INJUSTICE DAW"); d.createDirectory(); return d; }
+    void confirmThen (std::function<void()> go)
+    {
+        if (! dirty()) { go(); return; }
+        juce::AlertWindow::showAsync (juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon).withTitle (juce::String::fromUTF8 ("Cambios sin guardar"))
+            .withMessage (juce::String::fromUTF8 ("El proyecto tiene cambios sin guardar. ¿Quieres guardarlos antes de continuar?"))
+            .withButton ("Guardar").withButton ("No guardar").withButton ("Cancelar").withAssociatedComponent (this),
+            [this, go] (int r) { if (r == 1) saveProject (false, go); else if (r == 2) go(); });
+    }
+    bool doSave (const juce::File& f)
+    {
+        te::EditFileOperations ops (edit); const bool ok = ops.saveAs (f, true);
+        if (ok) { projectFile = f; if (onSaved) onSaved (f); note (juce::String::fromUTF8 ("Guardado: ") + f.getFileName()); if (onTitle) onTitle(); } else note ("No se pudo guardar el proyecto en esa ubicaci\xc3\xb3n.");
+        return ok;
+    }
+    void saveProject (bool as, std::function<void()> then = {})
+    {
+        if (! as && projectFile != juce::File()) { if (doSave (projectFile) && then) then(); return; }
+        chooser = std::make_unique<juce::FileChooser> ("Guardar proyecto", projectsDir().getChildFile ("Proyecto.injdaw"), "*.injdaw");
+        chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+            [this, then] (const juce::FileChooser& fc) { auto f = fc.getResult(); if (f == juce::File()) return; if (doSave (f.withFileExtension ("injdaw")) && then) then(); });
+    }
+    void openProject()
+    {
+        chooser = std::make_unique<juce::FileChooser> ("Abrir proyecto", projectsDir(), "*.injdaw");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc) { auto f = fc.getResult(); if (f.existsAsFile() && onReplace) onReplace (f); });
+    }
+    bool renderWav (const juce::File& f, double len)
+    {
+        if (edit.getTransport().isPlaying()) edit.getTransport().stop (false, false);
+        te::Renderer::Parameters p (edit); p.destFile = f; p.audioFormat = engine.getAudioFileFormatManager().getWavFormat(); p.bitDepth = 24; p.sampleRateForAudio = 44100.0;
+        p.time = te::TimeRange (te::TimePosition(), te::TimeDuration::fromSeconds (len + 2.0)); p.useMasterPlugins = true; p.canRenderInMono = false; p.checkNodesForAudio = false; for (int i = 0; i < te::getAllTracks (edit).size(); ++i) p.tracksToDo.setBit (i);
+        f.deleteFile(); return te::Renderer::renderToFile ("Exportar", p).existsAsFile();
+    }
+    void exportWav()
+    {
+        const auto len = edit.getLength().inSeconds();
+        if (len <= 0.01) { note ("No hay nada que exportar: a\xc3\xb1" "ade clips o dibuja un patr\xc3\xb3n primero."); return; }
+        chooser = std::make_unique<juce::FileChooser> ("Exportar a WAV", projectsDir().getChildFile ((projectFile != juce::File() ? projectFile.getFileNameWithoutExtension() : juce::String ("Mezcla")) + ".wav"), "*.wav");
+        chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+            [this, len] (const juce::FileChooser& fc)
+            {
+                auto f = fc.getResult(); if (f == juce::File()) return; f = f.withFileExtension ("wav");
+                const auto out = renderWav (f, len);
+                note (out ? juce::String::fromUTF8 ("Exportado: ") + f.getFileName() : juce::String::fromUTF8 ("No se pudo exportar el audio."));
+            });
+    }
+    void showHelp()
+    {
+        juce::DialogWindow::LaunchOptions o; o.content.setOwned (new HelpContent()); o.dialogTitle = "Ayuda"; o.componentToCentreAround = this;
+        o.dialogBackgroundColour = theme::bgBar2; o.useNativeTitleBar = true; o.resizable = false; o.launchAsync();
+    }
+    void addPlugin (const juce::PluginDescription& d, int trackIdx)
+    {
+        auto tracks = te::getAudioTracks (edit); if (trackIdx < 0 || trackIdx >= tracks.size()) return;
+        auto* t = tracks[trackIdx];
+        auto p = engine.getPluginManager().createNewPlugin (edit, te::ExternalPlugin::xmlTypeName, d);
+        if (p == nullptr) { note (juce::String::fromUTF8 ("No se pudo cargar ") + d.name); return; }
+        const int volIdx = t->pluginList.indexOf (t->getVolumePlugin());
+        t->pluginList.insertPlugin (p, d.isInstrument ? 0 : (volIdx >= 0 ? volIdx : t->pluginList.size()), nullptr);
+        mixer.selected = trackIdx; mixer.repaint(); playlist.repaint();
+        note (d.name + juce::String::fromUTF8 (d.isInstrument ? " agregado como instrumento a la pista " : " agregado como efecto a la pista ") + juce::String (trackIdx + 1));
+        if (d.isInstrument) p->showWindowExplicitly();
+    }
+    void openPluginList (int track = -1)
+    {
+        const int t = track >= 0 ? track : mixer.selected;
+        if (pluginWin != nullptr) { if (auto* c = dynamic_cast<pluginhost::ListContent*> (pluginWin->getContentComponent())) c->setTarget (t); pluginWin->toFront (true); return; }
+        auto* c = new pluginhost::ListContent (engine); c->setTarget (t); c->onAdd = [this, c] (const juce::PluginDescription& d) { addPlugin (d, c->targetTrack); };
+        juce::DialogWindow::LaunchOptions o; o.content.setOwned (c); o.dialogTitle = "Plugins VST3"; o.componentToCentreAround = this; o.dialogBackgroundColour = theme::bgBar2;
+        o.useNativeTitleBar = true; o.resizable = true; o.escapeKeyTriggersCloseButton = true; pluginWin = o.launchAsync();
+        if (c->isEmpty()) c->startScan();
+    }
+    bool keyPressed (const juce::KeyPress& k, juce::Component*) override
+    {
+        const auto m = k.getModifiers(); const int c = k.getKeyCode(); auto& tc = edit.getTransport();
+        if (c == juce::KeyPress::spaceKey && ! m.isAnyModifierKeyDown()) { if (tc.isPlaying()) tc.stop (false, false); else tc.play (false); syncState(); return true; }
+        if (c == juce::KeyPress::homeKey) { tc.setPosition (te::TimePosition()); return true; }
+        if (c == juce::KeyPress::F1Key) { showHelp(); return true; }
+        if (c == juce::KeyPress::F5Key) { showView ("playlist"); return true; }
+        if (c == juce::KeyPress::F6Key) { setSteps (! steps.isVisible()); return true; }
+        if (c == juce::KeyPress::F7Key) { if (piano.getClip() == nullptr) piano.setClip (firstMidiClip()); showView ("piano"); return true; }
+        if (c == juce::KeyPress::F8Key) { setBrowser (! browser.isVisible()); return true; }
+        if (c == juce::KeyPress::F9Key) { setMixer (! mixer.isVisible()); return true; }
+        if (c == juce::KeyPress::F10Key) { openPluginList(); return true; }
+        if (m.isCommandDown())
+        {
+            const auto ch = juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) c);
+            if (ch == 'z' && ! m.isShiftDown()) { edit.getUndoManager().undo(); return true; }
+            if (ch == 'y' || (ch == 'z' && m.isShiftDown())) { edit.getUndoManager().redo(); return true; }
+            if (ch == 's') { saveProject (m.isShiftDown()); return true; }
+            if (ch == 'o') { confirmThen ([this] { openProject(); }); return true; }
+            if (ch == 'n') { confirmThen ([this] { if (onReplace) onReplace ({}); }); return true; }
+            if (ch == 'e') { exportWav(); return true; }
+        }
+        return false;
+    }
+    bool keyStateChanged (bool, juce::Component*) override { return false; }
     void resized() override
     {
+        toast.place (getLocalBounds());
         auto r = getLocalBounds(); bars.setBounds (r.removeFromTop (TopBars::kHeight));
         if (browser.isVisible()) { browser.setBounds (r.removeFromLeft (browserW).reduced (6, 6)); r.removeFromLeft (6); }
         playlist.setBounds (r); piano.setBounds (r);
@@ -130,8 +349,13 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override { if (splitting) { browserW = juce::jlimit (220, 520, e.x); resized(); repaint(); } }
     void mouseMove (const juce::MouseEvent& e) override { setMouseCursor (browser.isVisible() && e.x >= browserW - 2 && e.x <= browserW + 8 && e.y > TopBars::kHeight ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::NormalCursor); }
     void setBrowser (bool v) { browser.setVisible (v); bars.browserOpen = v; bars.repaint(); resized(); repaint(); }
-    void setMixer (bool v) { mixer.setVisible (v); bars.mixerOpen = v; if (v) { mixer.setTopLeftPosition (juce::jmax (0, getWidth() - mixer.getWidth() - 12), juce::jmax (TopBars::kHeight, getHeight() - mixer.getHeight() - 12)); mixer.toFront (false); } bars.repaint(); }
-    void setSteps (bool v) { if (v) steps.ensureClip(); steps.setVisible (v); bars.stepsOpen = v; if (v) { steps.setTopLeftPosition (juce::jmax (0, (getWidth() - steps.getWidth()) / 2), TopBars::kHeight + 70); steps.toFront (false); } playlist.repaint(); bars.repaint(); }
+    template <typename P> void fitPanel (P& p)
+    {
+        const float s = std::min ({ 1.f, (float) (getWidth() - 24) / p.designW, (float) (getHeight() - TopBars::kHeight - 24) / p.designH });
+        if (s < p.scale || p.getWidth() == 0) { p.scale = std::max (.4f, s); p.setSize (juce::roundToInt (p.designW * p.scale), juce::roundToInt (p.designH * p.scale)); }
+    }
+    void setMixer (bool v) { if (v) fitPanel (mixer); mixer.setVisible (v); bars.mixerOpen = v; if (v) { mixer.setTopLeftPosition (juce::jmax (0, getWidth() - mixer.getWidth() - 12), juce::jmax (TopBars::kHeight, getHeight() - mixer.getHeight() - 12)); mixer.toFront (false); } bars.repaint(); }
+    void setSteps (bool v) { if (v) { steps.ensureClip(); fitPanel (steps); } steps.setVisible (v); bars.stepsOpen = v; if (v) { steps.setTopLeftPosition (juce::jmax (0, (getWidth() - steps.getWidth()) / 2), TopBars::kHeight + 70); steps.toFront (false); } playlist.repaint(); bars.repaint(); }
     PianoRollView& pianoRef() { return piano; } StepSeqPanel& stepsRef() { return steps; } BrowserPanel& browserRef() { return browser; } MixerPanel& mixerRef() { return mixer; }
     void openPanelsFromEnv (const juce::String& list)
     {
@@ -142,7 +366,7 @@ public:
     void paint (juce::Graphics& g) override { g.fillAll (theme::bgBar); }
 
 private:
-    te::Engine& engine; std::unique_ptr<te::Edit>& editPtr; te::Edit& edit; TopBars bars; PlaylistView playlist; BrowserPanel browser; MixerPanel mixer { edit }; StepSeqPanel steps { edit }; int browserW = 300; bool splitting = false; PianoRollView piano { edit }; int qi = 2;
+    te::Engine& engine; std::unique_ptr<te::Edit>& editPtr; te::Edit& edit; TopBars bars; juce::Component::SafePointer<juce::DialogWindow> pluginWin; Toast toast; juce::TooltipWindow tooltips { this, 500 }; std::unique_ptr<juce::FileChooser> chooser; PlaylistView playlist; BrowserPanel browser; MixerPanel mixer { edit }; StepSeqPanel steps { edit }; int browserW = 300; bool splitting = false; PianoRollView piano { edit }; int qi = 2; bool lastDirty = false;
     te::MidiClip* firstMidiClip()
     {
         for (auto* t : te::getAudioTracks (edit)) for (auto* c : t->getClips()) if (auto* mc = dynamic_cast<te::MidiClip*> (c)) return mc;
@@ -159,7 +383,8 @@ private:
     void syncState()
     {
         auto& tc = edit.getTransport();
-        if (bars.playing != tc.isPlaying() || bars.looping != (bool) tc.looping) { bars.playing = tc.isPlaying(); bars.looping = tc.looping; bars.repaint(); }
+        if (bars.playing != tc.isPlaying() || bars.looping != (bool) tc.looping || bars.metro != edit.clickTrackEnabled.get()) { bars.playing = tc.isPlaying(); bars.looping = tc.looping; bars.metro = edit.clickTrackEnabled.get(); bars.repaint(); }
+        if (onTitle && lastDirty != dirty()) { lastDirty = dirty(); onTitle(); }
     }
     void openAudioSettings()
     {
@@ -178,6 +403,7 @@ public:
     {
         setUsingNativeTitleBar (true); main = new MainComponent (e, ed); setContentOwned (main, true);
         setResizable (true, true); setResizeLimits (1320, 700, 4000, 3000); centreWithSize (1360, 800); setVisible (true);
+        addKeyListener (main);
     }
     void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
 };
@@ -186,32 +412,19 @@ class InjusticeDawApp : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "INJUSTICE DAW"; }
-    const juce::String getApplicationVersion() override { return "0.1.0"; }
+    const juce::String getApplicationVersion() override { return "0.2.0"; }
     void initialise (const juce::String&) override
     {
-        engine = std::make_unique<te::Engine> ("InjusticeDAW");
+        auto args = getCommandLineParameterArray();
+        if (args.size() >= 3 && args[0] == "--scan-plugin") { pluginhost::runScanChild (args[1], args[2]); quit(); return; }   // modo hijo del escáner
+        engine = std::make_unique<te::Engine> ("InjusticeDAW", std::make_unique<pluginhost::UIBehaviour>(), std::make_unique<pluginhost::Behaviour>());
         engine->getDeviceManager().initialise (0, 2);
-        edit = te::createEmptyEdit (*engine, juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("injustice_untitled.tracktionedit"));
-        edit->tempoSequence.getTempo (0)->setBpm (172.0);
-        edit->ensureNumberOfAudioTracks (10);
-        edit->getMasterVolumePlugin()->setVolumeDb (0.f);
-        int i = 1; for (auto* t : te::getAudioTracks (*edit)) t->setName ("Track");
-        (void) i;
-        if (auto* demo = std::getenv ("INJ_DEMO_WAV"))   // solo pruebas: coloca un clip en la pista 2, compás 3
-        {
-            auto tr = te::getAudioTracks (*edit)[1]; juce::File f (demo); te::AudioFile af (*engine, f);
-            const auto st = te::TimePosition::fromSeconds (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (8.0)).inSeconds());
-            tr->insertWaveClip ("demo", f, { te::TimeRange (st, te::TimeDuration::fromSeconds (af.getLength())), te::TimeDuration() }, false);
-        }
-        if (std::getenv ("INJ_DEMO_MIDI"))   // solo pruebas: melodía de ejemplo en la pista 1
-        {
-            auto tr = te::getAudioTracks (*edit)[0];
-            auto c = tr->insertMIDIClip ("Lead", te::TimeRange (te::TimePosition(), te::TimePosition::fromSeconds (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (32.0)).inSeconds())), nullptr);
-            const int notes[] { 60, 62, 64, 67, 71, 65, 64, 61, 59, 60, 62, 64, 67, 71, 69, 65 }; const double starts[] { 0, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 9.5, 10, 11, 12, 13 };
-            for (int i = 0; i < 16; ++i) c->getSequence().addNote (notes[i], te::BeatPosition::fromBeats (starts[i]), te::BeatDuration::fromBeats (i % 3 == 1 ? .5 : 1.0), 60 + (i * 37) % 60, 0, nullptr);
-        }
+        pluginhost::loadList (*engine);
+        edit = makeEdit ({});
+        if (auto* demo = std::getenv ("INJ_DEMO_WAV")) addDemoWav (demo);
+        if (std::getenv ("INJ_DEMO_MIDI")) addDemoMidi();
         edit->getTransport().ensureContextAllocated();
-        window = std::make_unique<MainWindow> (*engine, edit);
+        openWindow();
         if (auto* pn = std::getenv ("INJ_PANELS"))   // solo pruebas: abre paneles y datos de ejemplo para las capturas
         {
             auto* mc = window->main;
@@ -226,6 +439,15 @@ public:
                 st.setStep (3, 14, true);
             }
             mc->openPanelsFromEnv (pn);
+            if (auto* rz = std::getenv ("INJ_RESIZE")) { auto& mx = mc->mixerRef(); const float f = juce::String (rz).getFloatValue(); mx.setSize (juce::roundToInt (mx.designW * f), juce::roundToInt (mx.designH * f)); mx.setTopLeftPosition (60, 120); }
+            if (std::getenv ("INJ_FAKE_PLUGINS"))   // solo para capturas: entradas de ejemplo (no se guardan)
+            {
+                struct F { const char* n; const char* m; bool inst; };
+                for (auto f : { F { "Injustice Kick", "Injustice Audio", true }, F { "Injustice Bass", "Injustice Audio", true }, F { "Injustice Distortion", "Injustice Audio", false }, F { "Injustice Reverb", "Injustice Audio", false }, F { "Serum", "Xfer Records", true }, F { "OTT", "Xfer Records", false }, F { "Pro-Q 3", "FabFilter", false } })
+                { juce::PluginDescription d; d.name = f.n; d.manufacturerName = f.m; d.isInstrument = f.inst; d.pluginFormatName = "VST3"; d.fileOrIdentifier = juce::String ("/fake/") + f.n + ".vst3"; d.uniqueId = (int) juce::String (f.n).hashCode(); engine->getPluginManager().knownPluginList.addType (d); }
+            }
+            if (juce::String (pn).contains ("plugins")) mc->openPluginList (0);
+            if (juce::String (pn).contains ("help")) mc->showHelp();
         }
         // Modo de prueba: INJ_SHOT=ruta.png guarda una captura de la ventana y sale (sirve para revisar el diseño sin pantalla).
         if (auto* shot = std::getenv ("INJ_SHOT"))
@@ -233,7 +455,9 @@ public:
             juce::String path (shot);
             juce::Timer::callAfterDelay (1500, [this, path]
             {
-                auto img = window->getContentComponent()->createComponentSnapshot (window->getContentComponent()->getLocalBounds(), true, 1.0f);
+                juce::Component* target = window->getContentComponent();
+                if (std::getenv ("INJ_SHOT_DIALOG")) for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i) if (auto* dw = dynamic_cast<juce::DialogWindow*> (juce::TopLevelWindow::getTopLevelWindow (i))) target = dw->getContentComponent();
+                auto img = target->createComponentSnapshot (target->getLocalBounds(), true, 1.0f);
                 juce::PNGImageFormat png; juce::File f (path); f.deleteFile();
                 if (auto os = f.createOutputStream()) png.writeImageToStream (img, *os);
                 quit();
@@ -241,9 +465,63 @@ public:
         }
     }
     void shutdown() override { window.reset(); edit.reset(); engine.reset(); }
-    void systemRequestedQuit() override { quit(); }
+    void systemRequestedQuit() override
+    {
+        if (window == nullptr || window->main == nullptr || std::getenv ("INJ_SHOT") || ! window->main->dirty()) { quit(); return; }
+        window->main->confirmThen ([this] { quit(); });
+    }
 private:
-    std::unique_ptr<te::Engine> engine; std::unique_ptr<te::Edit> edit; std::unique_ptr<MainWindow> window;
+    std::unique_ptr<te::Engine> engine; std::unique_ptr<te::Edit> edit; std::unique_ptr<MainWindow> window; juce::File currentFile;
+
+    // file vacío = proyecto nuevo
+    std::unique_ptr<te::Edit> makeEdit (const juce::File& f)
+    {
+        std::unique_ptr<te::Edit> e;
+        if (f.existsAsFile()) e = te::loadEditFromFile (*engine, f);
+        const bool fresh = (e == nullptr);
+        if (fresh) e = te::createEmptyEdit (*engine, juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("injustice_untitled.tracktionedit"));
+        trackutil::ensureTracks (*e, 500);   // siempre 500 pistas, también al abrir un proyecto guardado
+        if (! fresh) e->resetChangedStatus();
+        if (fresh)
+        {
+            e->tempoSequence.getTempo (0)->setBpm (172.0);
+            e->getMasterVolumePlugin()->setVolumeDb (0.f);
+            for (auto* t : te::getAudioTracks (*e)) t->setName ("Track");
+        }
+        currentFile = fresh ? juce::File() : f;
+        return e;
+    }
+    void openWindow()
+    {
+        window = std::make_unique<MainWindow> (*engine, edit);
+        window->main->projectFile = currentFile;
+        window->main->onReplace = [this] (juce::File f)
+        {
+            juce::MessageManager::callAsync ([this, f]
+            {
+                if (f.existsAsFile() && te::loadEditFromFile (*engine, f) == nullptr) { window->main->note ("No se pudo abrir ese proyecto."); return; }
+                window.reset(); edit.reset(); edit = makeEdit (f); edit->getTransport().ensureContextAllocated(); openWindow();
+                window->main->note (f.existsAsFile() ? juce::String::fromUTF8 ("Proyecto abierto: ") + f.getFileName() : juce::String::fromUTF8 ("Proyecto nuevo"));
+            });
+        };
+        window->main->onTitle = [this] { if (window) window->setName ("INJUSTICE DAW  -  " + (currentFileName()) + (window->main->dirty() ? " *" : "")); };
+        window->main->onSaved = [this] (const juce::File& f) { currentFile = f; };
+        window->main->onTitle();
+    }
+    juce::String currentFileName() const { return window && window->main && window->main->projectFile != juce::File() ? window->main->projectFile.getFileNameWithoutExtension() : juce::String::fromUTF8 ("Sin título"); }
+    void addDemoWav (const char* demo)
+    {
+        auto tr = te::getAudioTracks (*edit)[1]; juce::File f (demo); te::AudioFile af (*engine, f);
+        const auto st = te::TimePosition::fromSeconds (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (8.0)).inSeconds());
+        tr->insertWaveClip ("demo", f, { te::TimeRange (st, te::TimeDuration::fromSeconds (af.getLength())), te::TimeDuration() }, false);
+    }
+    void addDemoMidi()
+    {
+        auto tr = te::getAudioTracks (*edit)[0];
+        auto c = tr->insertMIDIClip ("Lead", te::TimeRange (te::TimePosition(), te::TimePosition::fromSeconds (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (32.0)).inSeconds())), nullptr);
+        const int notes[] { 60, 62, 64, 67, 71, 65, 64, 61, 59, 60, 62, 64, 67, 71, 69, 65 }; const double starts[] { 0, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 9.5, 10, 11, 12, 13 };
+        for (int i = 0; i < 16; ++i) c->getSequence().addNote (notes[i], te::BeatPosition::fromBeats (starts[i]), te::BeatDuration::fromBeats (i % 3 == 1 ? .5 : 1.0), 60 + (i * 37) % 60, 0, nullptr);
+    }
 };
 
 START_JUCE_APPLICATION (InjusticeDawApp)

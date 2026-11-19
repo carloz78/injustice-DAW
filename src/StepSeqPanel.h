@@ -10,12 +10,14 @@ public:
     std::function<void()> onClipChanged;
     explicit StepSeqPanel (te::Edit& e) : edit (e)
     {
-        title = "Step Sequencer"; icon = icons::Mixer; setSize (1130, kHead + 96 + 4 * 76 + 26); startTimerHz (20);
+        title = "Step Sequencer"; icon = icons::Steps; setDesign (1130, kHead + 96 + 4 * 76 + 26); startTimerHz (20);
     }
 
     // Crea (si hace falta) el clip de patrón en la primera pista libre, con su sampler.
+    void validate() { if (clip != nullptr && clip->getTrack() == nullptr) { clip = nullptr; sampler = nullptr; samplerPtr = nullptr; repaint(); } }   // el clip pudo borrarse con Deshacer
     void ensureClip()
     {
+        validate();
         if (clip != nullptr) return;
         auto tracks = te::getAudioTracks (edit);
         for (auto* t : tracks) for (auto* c : t->getClips()) if (auto* sc = dynamic_cast<te::StepClip*> (c)) { clip = sc; sampler = findSampler (t); return; }
@@ -40,21 +42,21 @@ public:
         ensureClip(); if (! clip || ! sampler) return;
         int existing = soundForRow (row); if (existing >= 0) sampler->removeSound (existing);
         const auto err = sampler->addSound (f.getFullPathName(), f.getFileNameWithoutExtension(), 0.0, 0.0, 1.0f);
-        if (err.isEmpty()) { const int note = clip->getChannels()[row]->noteNumber; sampler->setSoundParams (sampler->getNumSounds() - 1, note, note, note); samples.set (row, f.getFileNameWithoutExtension()); }
+        if (err.isEmpty()) { const int note = clip->getChannels()[row]->noteNumber; sampler->setSoundParams (sampler->getNumSounds() - 1, note, note, note); }
         repaint();
     }
 
 protected:
     static constexpr int kRowH = 76, kBtn = 52, kNameX = 86, kNameW = 230, kStepX0 = 336;
     int stepCount() { return clip ? clip->getPattern (0).getNumNotes() : 16; }
-    float stepW() { return (float) (getWidth() - kStepX0 - 26) / (float) stepCount(); }
+    float stepW() { return (float) (designW - kStepX0 - 26) / (float) stepCount(); }
     juce::Rectangle<float> stepR (int row, int s) { const float w = stepW(); return { kStepX0 + s * w + 2, (float) (kHead + 96 + row * kRowH) + 8, w - 6, kRowH - 16.f }; }
     juce::Rectangle<float> powerR (int row) { return { 16.f, (float) (kHead + 96 + row * kRowH) + 10, 58, kRowH - 20.f }; }
     juce::Rectangle<float> nameR (int row) { return { (float) kNameX, (float) (kHead + 96 + row * kRowH) + 10, (float) kNameW, kRowH - 20.f }; }
     juce::Rectangle<float> playR() { return { 16.f, (float) kHead + 18, 98, 56 }; }
     juce::Rectangle<float> stopR() { return { 126.f, (float) kHead + 18, 58, 56 }; }
     juce::Rectangle<float> stepsR() { return { 208.f, (float) kHead + 18, 236, 56 }; }
-    juce::Rectangle<float> addR() { return { (float) getWidth() - 86.f, (float) kHead + 18, 62, 56 }; }
+    juce::Rectangle<float> addR() { return { (float) designW - 86.f, (float) kHead + 18, 62, 56 }; }
 
     void paintBody (juce::Graphics& g) override
     {
@@ -74,8 +76,8 @@ protected:
             { auto pr = powerR (r).withSizeKeepingCentre (26, 26); g.drawEllipse (pr.reduced (1), 2.4f); g.fillRect (pr.getCentreX() - 1.2f, pr.getY() - 4, 2.4f, 14.f); }
             g.setColour (juce::Colour (0xff211f27)); g.fillRoundedRectangle (nameR (r), 8.f);
             g.setColour (text); g.setFont (juce::FontOptions (22.f)); g.drawText (clip->getChannels()[r]->name.get(), nameR (r).toNearestInt().withTrimmedLeft (18).withTrimmedRight (46).withTrimmedBottom (14), juce::Justification::centredLeft);
-            g.setColour (samples.contains (r) ? accentHi : textDim.withAlpha (.7f)); g.setFont (juce::FontOptions (11.f));
-            g.drawText (samples.contains (r) ? samples[r] : "sin sample", nameR (r).toNearestInt().withTrimmedLeft (18).withTrimmedRight (46).withTop ((int) nameR (r).getBottom() - 19).withHeight (14), juce::Justification::centredLeft);
+            g.setColour (hasSample (r) ? accentHi : textDim.withAlpha (.7f)); g.setFont (juce::FontOptions (11.f));
+            g.drawText (hasSample (r) ? sampleName (r) : juce::String ("sin sample"), nameR (r).toNearestInt().withTrimmedLeft (18).withTrimmedRight (46).withTop ((int) nameR (r).getBottom() - 19).withHeight (14), juce::Justification::centredLeft);
             icons::draw (g, icons::Chevron, nameR (r).removeFromRight (46), text);
             for (int s = 0; s < stepCount(); ++s)
             {
@@ -91,7 +93,7 @@ protected:
         if (playR().contains (p)) { if (tc.isPlaying()) tc.stop (false, false); else { tc.setPosition (clip->getPosition().getStart()); tc.play (false); } repaint(); return; }
         if (stopR().contains (p)) { tc.stop (false, false); tc.setPosition (clip->getPosition().getStart()); repaint(); return; }
         if (stepsR().contains (p)) { static const int opts[] { 8, 12, 16, 24, 32 }; int i = 0; for (int k = 0; k < 5; ++k) if (opts[k] == stepCount()) i = k; setSteps (opts[(i + 1) % 5]); return; }
-        if (addR().contains (p)) { if (rows < 8) { ++rows; setSize (getWidth(), kHead + 96 + rows * kRowH + 26); } repaint(); return; }
+        if (addR().contains (p)) { if (rows < 8) { ++rows; setDesign (designW, kHead + 96 + rows * kRowH + 26); } repaint(); return; }
         for (int r = 0; r < rows; ++r)
         {
             if (powerR (r).contains (p)) { setOn (r, ! isOn (r)); return; }
@@ -108,18 +110,21 @@ protected:
     void bodyUp (const juce::MouseEvent&) override { painting = false; }
 
     bool isInterestedInFileDrag (const juce::StringArray& f) override { return f.size() > 0; }
-    void filesDropped (const juce::StringArray& f, int x, int y) override
+    void filesDropped (const juce::StringArray& f, int x0, int y0) override
     {
-        for (int r = 0; r < rows; ++r) if (nameR (r).expanded (0, 6).contains ((float) x, (float) y)) { assignSample (r, juce::File (f[0])); return; }
+        const float x = x0 / scale, y = y0 / scale;
+        for (int r = 0; r < rows; ++r) if (nameR (r).expanded (0, 6).contains (x, y)) { assignSample (r, juce::File (f[0])); return; }
     }
 
 private:
     te::Edit& edit; te::StepClip::Ptr clip; te::Plugin::Ptr samplerPtr; te::SamplerPlugin* sampler = nullptr; int rows = 4; bool painting = false, paint_ = true; juce::Point<int> lastCell;
-    juce::StringArray dummy; struct SampleNames { std::map<int, juce::String> m; bool contains (int r) const { return m.count (r) > 0; } juce::String operator[] (int r) const { return m.at (r); } void set (int r, const juce::String& s) { m[r] = s; } } samples;
+    juce::StringArray dummy;
     std::unique_ptr<juce::FileChooser> chooser;
 
-    void timerCallback() override { if (isVisible() && edit.getTransport().isPlaying()) repaint(); }
+    void timerCallback() override { validate(); if (isVisible() && edit.getTransport().isPlaying()) repaint(); }
     te::SamplerPlugin* findSampler (te::AudioTrack* t) { for (auto* p : t->pluginList.getPlugins()) if (auto* s = dynamic_cast<te::SamplerPlugin*> (p)) return s; return nullptr; }
+    bool hasSample (int r) { return soundForRow (r) >= 0; }
+    juce::String sampleName (int r) { const int i = soundForRow (r); return i >= 0 && sampler ? sampler->getSoundName (i) : juce::String(); }
     int soundForRow (int row) { if (! sampler || ! clip) return -1; const int note = clip->getChannels()[row]->noteNumber; for (int i = 0; i < sampler->getNumSounds(); ++i) if (sampler->getMinKey (i) == note || sampler->getMinKey (i) == 0) if (sampler->getMaxKey (i) == note || sampler->getMaxKey (i) == 0) return i; return -1; }
     bool isOn (int r) { return clip == nullptr || ! (bool) clip->state.getProperty ("injOff" + juce::String (r), false); }
     void setOn (int r, bool on)
@@ -137,11 +142,11 @@ private:
     }
     void rowMenu (int r)
     {
-        juce::PopupMenu m; m.addItem (1, "Cargar sample..."); m.addItem (2, "Quitar sample", samples.contains (r)); m.addItem (3, "Renombrar fila...");
-        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (nameR (r).toNearestInt())), [this, r] (int id)
+        juce::PopupMenu m; m.addItem (1, "Cargar sample..."); m.addItem (2, "Quitar sample", hasSample (r)); m.addItem (3, "Renombrar fila...");
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (toLocal (nameR (r)))), [this, r] (int id)
         {
             if (id == 1) { chooser = std::make_unique<juce::FileChooser> ("Elige un sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg"); chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this, r] (const juce::FileChooser& fc) { if (fc.getResult().existsAsFile()) assignSample (r, fc.getResult()); }); }
-            else if (id == 2) { const int i = soundForRow (r); if (i >= 0 && sampler) sampler->removeSound (i); samples.m.erase (r); repaint(); }
+            else if (id == 2) { const int i = soundForRow (r); if (i >= 0 && sampler) sampler->removeSound (i); repaint(); }
             else if (id == 3) { auto* aw = new juce::AlertWindow ("Renombrar fila", "", juce::MessageBoxIconType::NoIcon); aw->addTextEditor ("n", clip->getChannels()[r]->name.get()); aw->addButton ("Aceptar", 1); aw->addButton ("Cancelar", 0);
                 aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, r, aw] (int res) { if (res == 1) { clip->getChannels()[r]->name = aw->getTextEditorContents ("n"); repaint(); } delete aw; })); }
         });
