@@ -13,8 +13,20 @@ namespace instruments
         static const std::vector<Preset> p {
             { "Lead Hoover", "Leads" }, { "Lead Supersaw", "Leads" }, { "Stab Rave", "Leads" }, { "Pluck", "Leads" },
             { "Bajo Reese", "Bajos" }, { "Bajo Sub", "Bajos" }, { "Bajo Acid", "Bajos" },
-            { "Pad", "Pads" } };
+            { "Pad", "Pads" },
+            { "Lead Screech", "Leads" }, { "Lead Trance", "Leads" }, { "Lead Chip", "Leads" }, { "Lead Squelch", "Leads" },
+            { "Stab Hardcore", "Leads" }, { "Stab Menor", "Leads" },
+            { "Bajo Gabber", "Bajos" }, { "Bajo 808", "Bajos" }, { "Bajo Donk", "Bajos" }, { "Bajo Rumble", "Bajos" },
+            { "Pad Oscuro", "Pads" }, { "Pad Cuerdas", "Pads" },
+            { "Campana", "Leads" }, { "Barrido Ruido", "FX" } };
         return p;
+    }
+
+    // Índices ordenados por grupo (Leads, Bajos, Pads, FX) para mostrar en menús y en el navegador
+    inline std::vector<int> sortedIdx()
+    {
+        std::vector<int> v; for (const char* g : { "Leads", "Bajos", "Pads", "FX" }) for (size_t k = 0; k < list().size(); ++k) if (juce::String (list()[k].group) == g) v.push_back ((int) k);
+        return v;
     }
 
     inline void apply (te::FourOscPlugin& s, int idx)
@@ -66,9 +78,51 @@ namespace instruments
             case 6: // Bajo Acid
                 osc (0, 3, 1, 0, 0, 0, 0, 0); s.voiceModeValue = 0;
                 amp (0.002f, 0.25f, 60, 0.08f); filt (1, 40, 70, 0.5f, 50, 0.18f, 0); fx (0.2f, 0, 0, 0); break;
-            default: // Pad
+            case 7: // Pad
                 osc (0, 3, 3, 0, 0, 0, 0.2f, 70); osc (1, 4, 1, 12, 0, -6, 0, 0);
                 amp (0.6f, 0.8f, 80, 1.2f); filt (1, 95, 10, 0, 30, 0.5f, 100); fx (0, 0.4f, 0.45f, 0); break;
+            case 8: // Lead Screech (chillido gabber)
+                osc (0, 3, 5, 0, 0, 0, 0.2f, 40); osc (1, 2, 1, 12, 7, -6, 0, 0);
+                amp (0.002f, 0.2f, 90, 0.12f); filt (1, 118, 55, 0.1f, 60, 0.12f, 70); fx (0.7f, 0, 0.1f, 0); break;
+            case 9: // Lead Trance
+                osc (0, 3, 5, 0, 0, 0, 0.18f, 50); osc (1, 3, 3, 12, 0, -7, 0.15f, 40);
+                amp (0.004f, 0.35f, 70, 0.2f); filt (1, 105, 15, 0.25f, 50, 0.25f, 40); fx (0, 0.3f, 0.3f, 0.35f); break;
+            case 10: // Lead Chip (cuadrada)
+                osc (0, 2, 1, 0, 0, 0, 0, 0); osc (1, 2, 1, 12, 5, -9, 0, 0);
+                amp (0.001f, 0.15f, 70, 0.06f); s.filterTypeValue = 0; fx (0, 0, 0.1f, 0.25f); break;
+            case 11: // Lead Squelch (acido agudo)
+                osc (0, 3, 1, 0, 0, 0, 0, 0); s.voiceModeValue = 0;
+                amp (0.002f, 0.2f, 50, 0.06f); filt (1, 55, 85, 0.6f, 55, 0.14f, 0); fx (0.35f, 0, 0, 0.15f); break;
+            case 12: // Stab Hardcore (tres notas)
+                osc (0, 3, 3, 0, 0, 0, 0.2f, 40); osc (1, 3, 3, 3, 0, -2, 0.2f, 40); osc (2, 3, 3, 7, 0, -2, 0.2f, 40); osc (3, 3, 1, -12, 0, -6, 0, 0);
+                amp (0.001f, 0.14f, 20, 0.08f); filt (1, 100, 20, 0.3f, 40, 0.12f, 20); fx (0.5f, 0, 0.1f, 0); break;
+            case 13: // Stab Menor (acorde menor suave)
+                osc (0, 3, 3, 0, 0, 0, 0.12f, 40); osc (1, 3, 3, 3, 0, -1, 0.12f, 40); osc (2, 3, 3, 7, 0, -1, 0.12f, 40); osc (3, 3, 3, 12, 0, -5, 0.12f, 40);
+                amp (0.003f, 0.5f, 40, 0.4f); filt (1, 100, 12, 0.2f, 40, 0.4f, 30); fx (0, 0.3f, 0.35f, 0.2f); break;
+            case 14: // Bajo Gabber (seno saturado)
+                osc (0, 1, 1, 0, 0, 0, 0, 0); osc (1, 3, 1, -12, 0, -9, 0, 0);
+                amp (0.001f, 0.3f, 80, 0.08f); filt (1, 85, 10, 0.1f, 20, 0.2f, 60); fx (0.85f, 0, 0, 0); break;
+            case 15: // Bajo 808
+                osc (0, 1, 1, 0, 0, 0, 0, 0);
+                amp (0.001f, 0.9f, 15, 0.25f); s.filterTypeValue = 0; fx (0.3f, 0, 0, 0); break;
+            case 16: // Bajo Donk
+                osc (0, 2, 1, 0, 0, 0, 0, 0); osc (1, 1, 1, -12, 0, -3, 0, 0);
+                amp (0.001f, 0.12f, 0, 0.05f); filt (1, 70, 40, 0.4f, 40, 0.1f, 0); fx (0.25f, 0, 0, 0); break;
+            case 17: // Bajo Rumble
+                osc (0, 3, 3, -12, 0, 0, 0.3f, 20); osc (1, 1, 1, -12, 0, -4, 0, 0);
+                amp (0.002f, 0.4f, 85, 0.2f); filt (1, 55, 25, 0.1f, 10, 0.3f, 40); fx (0.6f, 0, 0.25f, 0); break;
+            case 18: // Pad Oscuro
+                osc (0, 3, 3, -12, 0, 0, 0.25f, 80); osc (1, 4, 1, 0, 0, -5, 0, 0);
+                amp (1.0f, 1.0f, 85, 1.8f); filt (1, 72, 10, 0.2f, 20, 1.0f, 60); fx (0, 0.5f, 0.6f, 0.15f); break;
+            case 19: // Pad Cuerdas
+                osc (0, 3, 7, 0, 0, 0, 0.3f, 100); osc (1, 3, 5, 12, 0, -8, 0.25f, 80);
+                amp (0.35f, 0.6f, 85, 0.9f); filt (1, 105, 8, 0, 40, 0.5f, 100); fx (0, 0.4f, 0.4f, 0); break;
+            case 20: // Campana
+                osc (0, 1, 1, 0, 0, 0, 0, 0); osc (1, 4, 1, 19, 0, -5, 0, 0); osc (2, 1, 1, 28, 0, -10, 0, 0);
+                amp (0.001f, 0.9f, 0, 0.6f); s.filterTypeValue = 0; fx (0, 0, 0.35f, 0.3f); break;
+            default: // Barrido Ruido
+                osc (0, 5, 1, 0, 0, 0, 0, 0);
+                amp (0.6f, 0.5f, 60, 0.6f); filt (1, 40, 40, 0.8f, 0, 1.2f, 20); fx (0, 0, 0.35f, 0); break;
         }
     }
 
@@ -88,25 +142,46 @@ namespace instruments
         return p;
     }
 
-    // Kit de batería: cada sonido del paquete en una nota (Do1 = bombo)
-    inline te::Plugin::Ptr addKit (te::Edit& e, te::AudioTrack& t, const juce::File& samplesRoot)
+    // Kits de batería: cada sonido del paquete en una nota (Do1 = bombo)
+    struct KitDef { const char* name; std::vector<std::pair<int, const char*>> map; };
+    inline const std::vector<KitDef>& kits()
     {
-        const auto pack = samplepack::ensure (samplesRoot);
-        struct S { int note; const char* file; };
-        static const S map[] { { 36, "Kicks/Kick Gabber 01.wav" }, { 35, "Kicks/Kick Punch.wav" }, { 37, "Percusiones/Perc Rim.wav" }, { 38, "Snares/Snare Hardcore.wav" },
-                               { 39, "Claps/Clap Normal.wav" }, { 40, "Snares/Snare Seco.wav" }, { 41, "Percusiones/Tom Grave.wav" }, { 42, "Hats/Hat Cerrado 01.wav" },
-                               { 43, "Percusiones/Tom Medio.wav" }, { 44, "Hats/Hat Cerrado 02.wav" }, { 46, "Hats/Hat Abierto.wav" }, { 49, "FX/FX Impacto.wav" }, { 56, "Percusiones/Perc Cowbell.wav" }, { 34, "Kicks/Kick Gabber 03 Duro.wav" } };
+        static const std::vector<KitDef> k {
+            { "Kit INJUSTICE", { { 36, "Kicks/Kick Gabber 01.wav" }, { 35, "Kicks/Kick Hardcore 01.wav" }, { 34, "Kicks/Kick Gabber 12.wav" }, { 37, "Percusiones/Rim 01.wav" },
+                                 { 38, "Snares/Snare Gabber 01.wav" }, { 40, "Snares/Snare Hardcore 01.wav" }, { 39, "Claps/Clap Gabber 01.wav" }, { 41, "Percusiones/Tom 909 03.wav" },
+                                 { 43, "Percusiones/Tom 909 07.wav" }, { 45, "Percusiones/Tom 909 09.wav" }, { 42, "Hats/Hat Hardcore Cerrado 01.wav" }, { 44, "Hats/Hat Pedal 01.wav" },
+                                 { 46, "Hats/Hat Hardcore Abierto 01.wav" }, { 49, "Percusiones/Crash 01.wav" }, { 51, "Percusiones/Ride 01.wav" }, { 56, "Percusiones/Cowbell 01.wav" } } },
+            { "Kit 909", { { 36, "Kicks/Kick 909 01.wav" }, { 35, "Kicks/Kick 909 09.wav" }, { 34, "Kicks/Kick Punch 01.wav" }, { 37, "Percusiones/Rim 02.wav" },
+                           { 38, "Snares/Snare 909 01.wav" }, { 40, "Snares/Snare 909 07.wav" }, { 39, "Claps/Clap 909 01.wav" }, { 41, "Percusiones/Tom 909 02.wav" },
+                           { 43, "Percusiones/Tom 909 05.wav" }, { 45, "Percusiones/Tom 909 08.wav" }, { 42, "Hats/Hat 909 Cerrado 01.wav" }, { 44, "Hats/Hat Pedal 02.wav" },
+                           { 46, "Hats/Hat 909 Abierto 01.wav" }, { 49, "Percusiones/Crash 02.wav" }, { 51, "Percusiones/Ride 02.wav" }, { 54, "Percusiones/Tambourine 01.wav" }, { 70, "Percusiones/Shaker 01.wav" } } },
+            { "Kit 808", { { 36, "Kicks/Kick 808 01.wav" }, { 35, "Kicks/Kick 808 06.wav" }, { 34, "Kicks/Kick Sub 01.wav" }, { 37, "Percusiones/Clave 01.wav" },
+                           { 38, "Snares/Snare 808 01.wav" }, { 40, "Snares/Snare 808 06.wav" }, { 39, "Claps/Clap 808 01.wav" }, { 41, "Percusiones/Tom 808 02.wav" },
+                           { 43, "Percusiones/Tom 808 04.wav" }, { 45, "Percusiones/Tom 808 07.wav" }, { 42, "Hats/Hat 808 Cerrado 01.wav" }, { 44, "Hats/Hat Pedal 03.wav" },
+                           { 46, "Hats/Hat 808 Abierto 01.wav" }, { 49, "Percusiones/Crash 03.wav" }, { 56, "Percusiones/Cowbell 03.wav" }, { 62, "Percusiones/Conga 02.wav" }, { 70, "Percusiones/Shaker 03.wav" } } },
+            { "Kit Hardcore", { { 36, "Kicks/Kick Hardcore 05.wav" }, { 35, "Kicks/Kick Gabber 20.wav" }, { 34, "Kicks/Kick Sub 03.wav" }, { 37, "Percusiones/Rim 04.wav" },
+                                { 38, "Snares/Snare Hardcore 03.wav" }, { 40, "Snares/Snare Gabber 05.wav" }, { 39, "Claps/Clap Gabber 05.wav" }, { 41, "Percusiones/Tom 808 01.wav" },
+                                { 43, "Percusiones/Tom 808 05.wav" }, { 45, "Percusiones/Tom 909 04.wav" }, { 42, "Hats/Hat Hardcore Cerrado 04.wav" }, { 44, "Hats/Hat Pedal 05.wav" },
+                                { 46, "Hats/Hat Hardcore Abierto 03.wav" }, { 49, "Percusiones/Crash 05.wav" }, { 56, "Percusiones/Cowbell 05.wav" }, { 51, "Percusiones/Ride 04.wav" } } } };
+        return k;
+    }
+
+    // Devuelve nullptr si el paquete todavía se está generando (así la interfaz no se congela).
+    inline te::Plugin::Ptr addKit (te::Edit& e, te::AudioTrack& t, const juce::File& packsRoot, int kitIdx = 0)
+    {
+        if (! samplepack::ready (packsRoot)) return nullptr;
+        const auto pack = samplepack::packDir (packsRoot); const auto& kd = kits()[(size_t) juce::jlimit (0, (int) kits().size() - 1, kitIdx)];
         removeInstruments (t);
         auto p = e.getPluginCache().createNewPlugin (te::SamplerPlugin::xmlTypeName, {}); if (p == nullptr) return nullptr;
         t.pluginList.insertPlugin (p, 0, nullptr);
         if (auto* sp = dynamic_cast<te::SamplerPlugin*> (p.get()))
-            for (auto& m : map)
+            for (auto& m : kd.map)
             {
-                auto f = pack.getChildFile (m.file); if (! f.existsAsFile()) continue;
+                auto f = pack.getChildFile (m.second); if (! f.existsAsFile()) continue;
                 if (sp->addSound (f.getFullPathName(), f.getFileNameWithoutExtension(), 0.0, 0.0, 1.0f).isEmpty())
-                { const int i = sp->getNumSounds() - 1; sp->setSoundParams (i, m.note, m.note, m.note); sp->setSoundOpenEnded (i, true); }
+                { const int i = sp->getNumSounds() - 1; sp->setSoundParams (i, m.first, m.first, m.first); sp->setSoundOpenEnded (i, true); }
             }
-        p->state.setProperty ("injPreset", "Kit INJUSTICE", nullptr);
+        p->state.setProperty ("injPreset", kd.name, nullptr);
         return p;
     }
 }

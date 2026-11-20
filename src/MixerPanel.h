@@ -314,7 +314,7 @@ private:
     void smButton (juce::Graphics& g, juce::Rectangle<float> r, const char* label, bool on, bool solo)
     {
         using namespace theme; g.setColour (on ? (solo ? juce::Colour (0xfff2ecf9) : accent) : juce::Colour (0xff464352)); g.fillRoundedRectangle (r, 5.f);
-        g.setColour (on ? (solo ? juce::Colour (0xff3b2c4b) : juce::Colours::white) : juce::Colour (0xffe4e4e9)); g.setFont (juce::FontOptions (16.f, juce::Font::bold)); g.drawText (label, r.toNearestInt(), juce::Justification::centred);
+        g.setColour (on ? (solo ? juce::Colour (0xff3b2c4b) : juce::Colours::white) : juce::Colour (0xffe4e4e9)); g.setFont (juce::FontOptions (14.f, juce::Font::bold)); g.drawText (label, r.toNearestInt(), juce::Justification::centred);
     }
     void drawStrip (juce::Graphics& g, juce::Rectangle<float> s, int index, te::AudioTrack* t, float lvL, float lvR, bool master)
     {
@@ -329,7 +329,7 @@ private:
         else
         {
             g.setFont (juce::FontOptions (19.f, juce::Font::bold)); g.drawText (juce::String (index + 1), hd.withTrimmedBottom (nm.isEmpty() ? 0.f : 24.f).toNearestInt(), juce::Justification::centred);
-            if (nm.isNotEmpty()) { g.setFont (juce::FontOptions (16.f)); g.drawText (nm, hd.withTop (hd.getY() + 32).toNearestInt().reduced (3, 0), juce::Justification::centredTop); }
+            if (nm.isNotEmpty()) { g.setFont (juce::FontOptions (14.f)); g.drawText (nm, hd.withTop (hd.getY() + 32).toNearestInt().reduced (3, 0), juce::Justification::centredTop); }
         }
         if (! master && index == selected && ! empty) { g.setColour (juce::Colour (0xffe4e4ee)); g.drawRoundedRectangle (s.reduced (.75f), 6.f, 1.5f); }
         te::VolumeAndPanPlugin* vp = master ? edit.getMasterVolumePlugin().get() : (t ? t->getVolumePlugin() : nullptr);
@@ -357,7 +357,7 @@ private:
         using namespace theme; auto r = fxR();
         g.setColour (juce::Colour (0xff383946)); g.fillRoundedRectangle (r, 8.f);
         auto* t = trackAt (selected); const juce::String nm = t ? (t->getName() == "Track" ? juce::String (selected + 1) : t->getName()) : juce::String();
-        g.setColour (text); g.setFont (juce::FontOptions (18.f)); g.drawText ("Mixer - " + nm, r.withHeight (50.f).withTrimmedLeft (14).toNearestInt(), juce::Justification::centredLeft);
+        g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText ("Mixer - " + nm, r.withHeight (50.f).withTrimmedLeft (14).toNearestInt(), juce::Justification::centredLeft);
         auto fx = fxOf (t);
         for (int n = 0; n < 10; ++n)
         {
@@ -366,7 +366,7 @@ private:
             auto dot = juce::Rectangle<float> (row.getX() + 10, row.getCentreY() - 10, 20, 20);
             if (used) { const bool on = fx[n]->isEnabled(); g.setColour (on ? juce::Colour (0xffc58cf0) : juce::Colour (0xff5a5a6c)); g.fillEllipse (dot); }
             else { g.setColour (juce::Colour (0xff6a6a7c)); g.drawEllipse (dot.reduced (1), 1.6f); }
-            g.setColour (used ? text : juce::Colour (0xff8b8b9d)); g.setFont (juce::FontOptions (16.f));
+            g.setColour (used ? text : juce::Colour (0xff8b8b9d)); g.setFont (juce::FontOptions (14.f));
             g.drawText (used ? fx[n]->getName() : "Slot " + juce::String (n + 1), row.withTrimmedLeft (42).withTrimmedRight (40).toNearestInt(), juce::Justification::centredLeft);
             if (used) icons::draw (g, icons::Dots, { row.getRight() - 34, row.getY(), 28, row.getHeight() }, juce::Colour (0xffd9d8e3));
             else { juce::Path p; auto c = juce::Point<float> (row.getRight() - 20, row.getCentreY()); p.startNewSubPath (c.x - 5, c.y - 2.5f); p.lineTo (c.x, c.y + 2.5f); p.lineTo (c.x + 5, c.y - 2.5f); g.setColour (juce::Colour (0xff8b8b9d)); g.strokePath (p, juce::PathStrokeType (1.6f)); }

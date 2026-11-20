@@ -5,6 +5,7 @@
 #include "MixerPanel.h"
 #include "StepSeqPanel.h"
 #include "InjLimiter.h"
+#include <thread>
 #include "Meters.h"
 #include "Instruments.h"
 #include "BrowserPanel.h"
@@ -26,7 +27,7 @@ public:
         auto r = getLocalBounds().toFloat().reduced (1);
         g.setColour (juce::Colour (0xff17141c).withAlpha (.96f * a)); g.fillRoundedRectangle (r, 8.f);
         g.setColour (theme::accent.withAlpha (a)); g.drawRoundedRectangle (r, 8.f, 1.5f);
-        g.setColour (juce::Colours::white.withAlpha (a)); g.setFont (juce::FontOptions (15.f)); g.drawFittedText (msg, getLocalBounds().reduced (14, 4), juce::Justification::centred, 2);
+        g.setColour (juce::Colours::white.withAlpha (a)); g.setFont (juce::FontOptions (14.f)); g.drawFittedText (msg, getLocalBounds().reduced (14, 4), juce::Justification::centred, 2);
     }
     void place (juce::Rectangle<int> parent) { const int w = juce::jmin (640, parent.getWidth() - 40); setBounds (parent.getCentreX() - w / 2, parent.getBottom() - 64, w, 44); }
 private:
@@ -148,8 +149,25 @@ public:
         mixer.onOpenPlugin = [this] (te::Plugin* p) { if (p) openEditorWhenReady (p); };
         playlist.onTracksChanged = [this] { mixer.refreshTracks(); playlist.repaint(); };
         playlist.onTrackSelected = [this] (int i) { mixer.selected = i; mixer.showTrack (i); };
-        playlist.samplesRoot = [this] { return browser.getRoot(); }; playlist.onInstrument = [this] (int ti, juce::String nm) { mixer.selected = ti; mixer.repaint(); note (nm + juce::String::fromUTF8 (" listo en la pista ") + juce::String (ti + 1) + juce::String::fromUTF8 (". Dibuja notas con el piano roll.")); };
-        if (! std::getenv ("INJ_SAMPLES")) { const auto before = samplepack::packDir (browser.getRoot()).getChildFile (".pack_v1").existsAsFile(); samplepack::ensure (browser.getRoot()); if (! before) browser.reload(); }
+        playlist.samplesRoot = [this] { return browser.getRoot(); }; playlist.onInstrument = [this] (int ti, juce::String nm) { if (ti < 0) { note (nm); return; } mixer.selected = ti; mixer.repaint(); note (nm + juce::String::fromUTF8 (" listo en la pista ") + juce::String (ti + 1) + juce::String::fromUTF8 (". Dibuja notas con el piano roll.")); };
+        browser.onInstrument = [this] (int idx)
+        {
+            auto tr = te::getAudioTracks (edit); if (tr.isEmpty()) return; const int ti = juce::jlimit (0, tr.size() - 1, mixer.selected); auto* t = tr[ti];
+            const int n = (int) instruments::list().size(); te::Plugin::Ptr p = idx >= n ? instruments::addKit (edit, *t, samplepack::packsDir(), idx - n) : instruments::addSynth (edit, *t, idx);
+            if (p == nullptr) { note (juce::String::fromUTF8 (idx >= n && ! samplepack::ready (samplepack::packsDir()) ? "Los sonidos se están creando; inténtalo en unos segundos." : "No se pudo agregar el instrumento.")); return; }
+            mixer.selected = ti; mixer.repaint(); playlist.repaint();
+            note ((idx >= n ? juce::String (instruments::kits()[(size_t) (idx - n)].name) : juce::String (instruments::list()[(size_t) idx].name)) + juce::String::fromUTF8 (" agregado a la pista ") + juce::String (ti + 1));
+        };
+        if (! std::getenv ("INJ_SAMPLES") && ! std::getenv ("INJ_SELFTEST"))
+        {   // el paquete de sonidos se crea en segundo plano para no congelar la ventana al abrir
+            juce::Component::SafePointer<MainComponent> self (this); const auto userRoot = browser.getRoot();
+            std::thread ([self, userRoot]
+            {
+                auto old = userRoot.getChildFile ("INJUSTICE Pack"); if (old.getChildFile (".pack_v1").existsAsFile()) old.deleteRecursively();   // paquete de la version anterior
+                samplepack::ensure (samplepack::packsDir());
+                juce::MessageManager::callAsync ([self] { if (self != nullptr) self->browser.reload(); });
+            }).detach();
+        }
         mixer.onTracksChanged = [this] { playlist.repaint(); };
         piano.onMessage = [this] (const juce::String& m) { note (m); };
         playlist.onOpenMidi = [this] (te::MidiClip* c) { piano.setClip (c); showView ("piano"); };
@@ -165,7 +183,7 @@ public:
             else if (id == "redo") { undoRedo (false); }
             else if (id == "snap") { playlist.snap = ! playlist.snap; piano.snap = playlist.snap; bars.snap = playlist.snap; }
             else if (id == "tool:auto" && bars.tool == "auto") { bars.tool = "select"; playlist.tool = "select"; piano.tool = "select"; playlist.hideAllAutomation(); }
-            else if (id.startsWith ("tool:")) { bars.tool = id.substring (5); playlist.tool = bars.tool; piano.tool = bars.tool; }
+            else if (id.startsWith ("tool:")) { const bool wasAuto = bars.tool == "auto"; bars.tool = id.substring (5); playlist.tool = bars.tool; piano.tool = bars.tool; if (wasAuto && bars.tool != "auto") playlist.hideAllAutomation(); if (bars.tool == "auto") playlist.showAutomationLanes (mixer.selected); }
             else if (id == "quant") { static const double qs[] { 1.0, 0.5, 0.25, 0.125 }; static const char* ql[] { "1/4", "1/8", "1/16", "1/32" }; qi = (qi + 1) % 4; piano.quantum = qs[qi]; bars.quantLabel = ql[qi]; bars.repaint(); }
             else if (id == "view:playlist") showView ("playlist");
             else if (id == "view:piano") { ensurePianoClip(); showView ("piano"); }
@@ -214,7 +232,7 @@ public:
         { juce::WavAudioFormat wf; std::unique_ptr<juce::FileOutputStream> os (sine.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 44100.0, 1, 16, {}, 0)); if (w) { os.release(); juce::AudioBuffer<float> b (1, 88200); for (int i = 0; i < 88200; ++i) b.setSample (0, i, 0.5f * std::sin (juce::MathConstants<float>::twoPi * 440.f * (float) i / 44100.f)); w->writeFromAudioSampleBuffer (b, 0, 88200); } }
         trackutil::addTrack (edit); int kti = -1;
         { auto kl = te::getAudioTracks (edit); auto* kt = kl.getLast(); kti = te::getAllTracks (edit).indexOf (kt); auto kc = kt->insertMIDIClip ("kit", te::TimeRange (te::TimePosition(), te::TimePosition::fromSeconds (2.0)), nullptr); kc->getSequence().addNote (36, te::BeatPosition::fromBeats (0.0), te::BeatDuration::fromBeats (1.0), 110, 0, nullptr);
-          auto pd = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_pack_test"); instruments::addKit (edit, *kt, pd); }
+          auto pd = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_pack_test"); samplepack::ensure (pd); instruments::addKit (edit, *kt, pd); }
         trackutil::addTrack (edit); auto tt = te::getAudioTracks (edit); auto* st = tt.getLast(); const int sti = te::getAllTracks (edit).indexOf (st);
         auto sc = st->insertWaveClip ("seno", sine, { te::TimeRange (te::TimePosition::fromSeconds (0.0), te::TimeDuration::fromSeconds (2.0)), te::TimeDuration() }, false);
         auto* wc = dynamic_cast<te::WaveAudioClip*> (sc.get()); if (wc == nullptr) { std::printf ("FALLO  el clip de prueba no es de audio\n"); std::fflush (stdout); std::_Exit (1); }
@@ -432,6 +450,26 @@ public:
             { const int h0 = playlist.hOf (1), ey = playlist.trackTop (1) + h0; playlist.mouseDown (pev ({ 60.f, (float) ey }, L)); playlist.mouseDrag (pev ({ 60.f, (float) ey - 50.f }, L)); playlist.mouseUp (pev ({ 60.f, (float) ey - 50.f }, 0));
               chk (playlist.hOf (1) == h0 - 50 && playlist.hOf (0) == h0, "playlist: arrastrar el borde de una cabecera achica solo esa pista");
               playlist.setAllHeights (116); chk (playlist.hOf (1) == 116, "playlist: poder volver a la altura normal"); }
+            {   // flechita de la cabecera: pliega y despliega
+                const int ci = 2, h0 = playlist.hOf (ci); auto cc = playlist.chevronCentre (ci); playlist.mouseDown (pev (cc, L)); playlist.mouseUp (pev (cc, 0));
+                chk (playlist.folded (ci) && playlist.hOf (ci) == 22, "playlist: la flechita de la pista la pliega");
+                playlist.mouseDown (pev (cc, L)); playlist.mouseUp (pev (cc, 0)); chk (! playlist.folded (ci) && playlist.hOf (ci) == h0, "playlist: la flechita la despliega a su altura de antes");
+            }
+            {   // tijeras: linea guia y destello
+                auto cl = tr[4]->insertMIDIClip ("cortar", te::TimeRange (te::TimePosition(), te::TimePosition::fromSeconds (4.0)), nullptr); (void) cl;
+                playlist.resetView(); playlist.snap = false; playlist.tool = "cut"; const float cx = playlist.beatToX (2.0), cy = (float) playlist.trackTop (4) + 20.f; playlist.mouseMove (pev ({ cx, cy }, 0));
+                chk (playlist.cutTrack == 4 && std::abs (playlist.cutBeat - 2.0) < 0.3, "tijeras: muestran la linea donde se va a cortar");
+                const int c0 = tr[4]->getClips().size(); playlist.mouseDown (pev ({ cx, cy }, L)); playlist.mouseUp (pev ({ cx, cy }, 0));
+                chk (tr[4]->getClips().size() == c0 + 1 && playlist.flashA > 0.f, "tijeras: cortan donde estaba la linea y hacen un destello");
+                playlist.snap = true; playlist.tool = "select";
+            }
+            {   // pincel: empezando en vacio pinta el clip seleccionado
+                auto src6 = tr[4]->getClips()[0]; playlist.selected = src6; playlist.tool = "brush";
+                const float bx = playlist.beatToX (40.0), by = (float) playlist.trackTop (5) + 20.f; playlist.mouseDown (pev ({ bx, by }, L)); playlist.mouseUp (pev ({ bx, by }, 0));
+                chk (tr[5]->getClips().size() == 1, "pincel: pinta una copia del clip seleccionado en un lugar vacio");
+                playlist.selected = nullptr; { const float bx2 = playlist.beatToX (50.0); playlist.mouseDown (pev ({ bx2, by }, L)); playlist.mouseUp (pev ({ bx2, by }, 0)); chk (tr[5]->getClips().size() == 2, "pincel: recuerda el ultimo clip aunque ya no este seleccionado y lo pega al lado"); chk (playlist.hasHScroll(), "playlist: la barra de abajo siempre esta"); }
+                playlist.tool = "select"; playlist.selected = nullptr; { auto cs = tr[5]->getClips(); for (int k = cs.size(); --k >= 0;) cs.getUnchecked (k)->removeFromParent(); auto c4 = tr[4]->getClips(); for (int k = c4.size(); --k >= 0;) c4.getUnchecked (k)->removeFromParent(); }
+            }
             { auto* ld = tr[0]->getClips().isEmpty() ? nullptr : tr[0]->getClips()[0]; chk (ld != nullptr, "snap: hay un clip para mover");
               if (ld) { playlist.snap = true; playlist.tool = "select"; const float yy = (float) playlist.trackTop (0) + 60.f, xs = playlist.beatToX (6.0);
                 playlist.mouseDown (pev ({ xs, yy }, L)); playlist.mouseDrag (pev ({ xs + 41.f, yy }, L)); playlist.mouseUp (pev ({ xs + 41.f, yy }, 0));
@@ -496,7 +534,7 @@ public:
             if (auto* sf2 = std::getenv ("INJ_SAMPLE_FILE"))
             {   // explorador: categorias automaticas y carpeta principal plegable
                 auto lib = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_cat_test"); lib.deleteRecursively(); lib.getChildFile ("Mis sonidos/Kicks").createDirectory(); lib.getChildFile ("Mis sonidos/Varios").createDirectory();
-                browser.setCategories (true); auto cnt = [&] (const char* n) { return std::max (0, browser.categoryCount (n)); };
+                browser.setTab (2); browser.setCategories (true); auto cnt = [&] (const char* n) { return std::max (0, browser.categoryCount (n)); };
                 std::map<juce::String, int> before; for (auto& n : BrowserPanel::categoryNames()) before[n] = cnt (n.toRawUTF8());
                 const char* files[] { "Mis sonidos/Kick_gabber_01.wav", "Mis sonidos/Kicks/pum.wav", "Mis sonidos/Snare_x.wav", "Mis sonidos/Varios/HiHat_closed.wav", "Mis sonidos/808 bass.wav", "Mis sonidos/Riser_long.wav", "Mis sonidos/Vox_shout.wav", "Mis sonidos/Clap_01.wav", "Mis sonidos/loop_170bpm.wav", "Mis sonidos/Varios/misterio.wav" };
                 for (auto* f : files) juce::File (sf2).copyFileTo (lib.getChildFile (f));
@@ -507,7 +545,7 @@ public:
                 chk (BrowserPanel::categoryOf (juce::File ("/x/Kicks/pum.wav")) == "Kicks" && BrowserPanel::categoryOf (juce::File ("/x/BD_03.wav")) == "Kicks" && BrowserPanel::categoryOf (juce::File ("/x/Shout.wav")) == "Voces", "explorador: reconoce el tipo por el nombre de la carpeta y abreviaturas");
                 const int nCat = browser.numShown(); browser.clickItem (0); chk (browser.numShown() < nCat, "explorador: tocar una categoría la pliega"); browser.clickItem (0); chk (browser.numShown() == nCat, "explorador: tocarla otra vez la despliega");
                 browser.setCategories (false);
-                const int n0 = browser.numShown(); browser.clickItem (0); chk (browser.numShown() < n0, "explorador: tocar Muestras pliega sus carpetas"); browser.clickItem (0); chk (browser.numShown() == n0, "explorador: tocar Muestras otra vez las despliega");
+                const int n0 = browser.numShown(), ur = browser.userRootIndex(); browser.clickItem (ur); chk (browser.numShown() < n0, "explorador: tocar Muestras pliega sus carpetas"); browser.clickItem (ur); chk (browser.numShown() == n0, "explorador: tocar Muestras otra vez las despliega");
                 browser.removeExtraRoot (lib); lib.deleteRecursively();
             }
             {   // imán de tamaño original y zoom
@@ -522,9 +560,10 @@ public:
                 auto mc = it->insertMIDIClip ("inst", te::TimeRange (te::TimePosition(), te::TimePosition::fromSeconds (2.0)), nullptr); mc->getSequence().addNote (33, te::BeatPosition::fromBeats (0.0), te::BeatDuration::fromBeats (3.0), 100, 0, nullptr);
                 auto rms = [this, iti] (const char* nm) -> double { auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (nm); if (! renderWav (f, 1.5, {}, iti)) return -1.0; juce::AudioFormatManager afm; afm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (afm.createReaderFor (f)); if (! r) return -1.0; juce::AudioBuffer<float> b (2, (int) r->lengthInSamples); r->read (&b, 0, (int) r->lengthInSamples, 0, true, true); return (double) b.getRMSLevel (0, 0, b.getNumSamples()); };
                 double prev = -2.0; int ok = 0; for (size_t k = 0; k < instruments::list().size(); ++k) { instruments::addSynth (edit, *it, (int) k); const double v = rms (("inj_inst" + juce::String ((int) k) + ".wav").toRawUTF8()); if (v > 0.002) ++ok; prev = v; }
-                chk (ok == (int) instruments::list().size(), ("instrumentos: los 8 sonidos incluidos suenan (" + juce::String (ok) + ")").toRawUTF8()); (void) prev;
-                auto pdir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_pack_test"); pdir.deleteRecursively(); auto pk = samplepack::ensure (pdir); int nw = 0; for (auto& f : pk.findChildFiles (juce::File::findFiles, true, "*.wav")) { ++nw; (void) f; }
-                chk (nw >= 25, ("paquete de sonidos: se generan " + juce::String (nw) + " archivos").toRawUTF8());
+                chk (ok == (int) instruments::list().size(), ("instrumentos: los sonidos incluidos suenan (" + juce::String (ok) + ")").toRawUTF8()); (void) prev;
+                auto pdir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_pack_test"); auto pk = samplepack::ensure (pdir); int nw = 0; for (auto& f : pk.findChildFiles (juce::File::findFiles, true, "*.wav")) { ++nw; (void) f; }
+                chk (nw >= 500, ("paquete de sonidos: se generan " + juce::String (nw) + " archivos").toRawUTF8());
+                { int miss = 0; for (auto& kd : instruments::kits()) for (auto& e2 : kd.map) if (! pk.getChildFile (e2.second).existsAsFile()) ++miss; chk (miss == 0, ("kits: todos los sonidos existen en el paquete (faltan " + juce::String (miss) + ")").toRawUTF8()); }
             }
             {   // marcadores
                 const size_t n0 = playlist.markers().size(); playlist.addMarker (8.0, "Drop"); playlist.addMarker (16.0);
@@ -583,7 +622,7 @@ public:
             playlist.mouseUp (pev ({ playlist.beatToX (16.0), 20.f }, 0));
             chk (std::abs (playlist.timeToBeats (tc.getPosition().inSeconds()) - 16.0) < 0.3, "cabezal: arrastrar en la regla lo mueve aunque haya un clip seleccionado");
             tc.setPosition (te::TimePosition());
-            playlist.selected = nullptr; playlist.tool = "brush"; playlist.setAllHeights (60); playlist.resetView(); const int bt = 5; const int nb0 = tr[bt]->getClips().size(); const float by = (float) playlist.trackTop (bt) + 40.f;
+            playlist.selected = nullptr; playlist.forgetTouched(); playlist.tool = "brush"; playlist.setAllHeights (60); playlist.resetView(); const int bt = 5; const int nb0 = tr[bt]->getClips().size(); const float by = (float) playlist.trackTop (bt) + 40.f;
             playlist.mouseDown (pev ({ playlist.beatToX (40.5), by }, L)); for (double b = 41.5; b <= 48.6; b += 1.0) playlist.mouseDrag (pev ({ playlist.beatToX (b), by }, L)); playlist.mouseUp (pev ({ playlist.beatToX (48.5), by }, 0));
             chk (tr[bt]->getClips().size() == nb0 + 3, "pincel: arrastrar sobre un hueco pinta un clip por compas");
             if (tr[bt]->getClips().size() >= 1)
@@ -1007,16 +1046,17 @@ public:
         if (args.size() >= 3 && args[0] == "--scan-plugin") { pluginhost::runScanChild (args[1], args[2]); quit(); return; }   // modo hijo del escáner
         juce::LookAndFeel::setDefaultLookAndFeel (&look);
         engine = std::make_unique<te::Engine> ("InjusticeDAW", std::make_unique<pluginhost::UIBehaviour>(), std::make_unique<pluginhost::Behaviour>());
-        installMetronomeSounds();
+        const auto t0 = juce::Time::getMillisecondCounter(); auto tick = [t0] (const char* w) { if (std::getenv ("INJ_TIMING")) { std::printf ("t=%4d ms  %s\n", (int) (juce::Time::getMillisecondCounter() - t0), w); std::fflush (stdout); } };
+        tick ("motor creado"); installMetronomeSounds(); tick ("metronomo");
         engine->getPluginManager().createBuiltInType<InjLimiter>(); engine->getPluginManager().createBuiltInType<InjTap>();
         engine->getDeviceManager().initialise (0, 2);
-        pluginhost::loadList (*engine);
-        edit = makeEdit ({});
+        tick ("audio"); pluginhost::loadList (*engine); tick ("lista de plugins");
+        edit = makeEdit ({}); tick ("proyecto");
         if (auto* demo = std::getenv ("INJ_DEMO_WAV")) addDemoWav (demo);
         if (std::getenv ("INJ_DEMO_MIDI")) addDemoMidi();
         if (auto* df = std::getenv ("INJ_DEMO_FULL")) addDemoFull (df);
-        edit->getTransport().ensureContextAllocated();
-        openWindow();
+        edit->getTransport().ensureContextAllocated(); tick ("contexto de audio");
+        openWindow(); tick ("ventana");
         if (! std::getenv ("INJ_SHOT") && ! std::getenv ("INJ_SELFTEST")) tryRecover();
         if (std::getenv ("INJ_LOADTEST"))   // solo medicion: 100 pistas con muchos clips; imprime tiempos de dibujo y de render
         {

@@ -188,7 +188,7 @@ namespace pluginhost
             g.fillAll (theme::bgBar2); g.setColour (theme::text); g.setFont (juce::FontOptions (13.f)); g.drawText (status, 16, getHeight() - 36, getWidth() - 360, 28, juce::Justification::centredLeft);
             if (shown.isEmpty())
             {
-                g.setColour (theme::textDim); g.setFont (juce::FontOptions (15.f));
+                g.setColour (theme::textDim); g.setFont (juce::FontOptions (14.f));
                 g.drawFittedText (juce::String::fromUTF8 ("Aún no hay plugins en la lista.\nPulsa «Buscar plugins» para analizar tus carpetas VST3,\no «Añadir carpeta…» si tus plugins están en otra ubicación."), table.getBounds().reduced (40), juce::Justification::centred, 4);
             }
         }

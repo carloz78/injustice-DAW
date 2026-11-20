@@ -137,7 +137,7 @@ protected:
         // panel inferior: sonido de la fila elegida
         auto box = juce::Rectangle<float> (12.f, (float) panelY() - 2, (float) designW - 24.f, (float) kPanel + 4); g.setColour (juce::Colour (0xff1d1c24)); g.fillRoundedRectangle (box, 10.f);
         selRow = juce::jlimit (0, rows - 1, selRow); const bool has = hasSample (selRow); const int si = soundForRow (selRow);
-        g.setColour (text); g.setFont (juce::FontOptions (15.f, juce::Font::bold)); g.drawText (clip->getChannels()[selRow]->name.get(), 20, panelY() + 4, 290, 20, juce::Justification::centredLeft);
+        g.setColour (text); g.setFont (juce::FontOptions (14.f, juce::Font::bold)); g.drawText (clip->getChannels()[selRow]->name.get(), 20, panelY() + 4, 290, 20, juce::Justification::centredLeft);
         auto slider = [&] (juce::Rectangle<float> r, float frac, const juce::String& label, bool centred)
         {
             g.setColour (has ? text : textDim); g.setFont (juce::FontOptions (13.f)); g.drawText (label, (int) r.getX(), (int) r.getY() - 22, 290, 18, juce::Justification::centredLeft);

@@ -33,7 +33,7 @@ public:
 
         drawLogo (g);
         // menús
-        g.setFont (juce::FontOptions (15.f));
+        g.setFont (juce::FontOptions (14.f));
         for (auto& m : menus)
         {
             const bool hot = openMenu == m.name || (hoverId == "menu:" + m.name);
@@ -59,7 +59,7 @@ public:
         {
             const bool hot = hoverId == "quant" || pressedId == "quant";
             g.setColour (hot ? panelHi : boxFill); g.fillRoundedRectangle (quantR, 8.f); g.setColour (boxLine); g.drawRoundedRectangle (quantR.reduced (.5f), 8.f, 1.f);
-            g.setColour (text); g.setFont (juce::FontOptions (15.f)); g.drawText (quantLabel, quantR.withTrimmedRight (20).toNearestInt(), juce::Justification::centred);
+            g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText (quantLabel, quantR.withTrimmedRight (20).toNearestInt(), juce::Justification::centred);
             icons::draw (g, icons::Chevron, { quantR.getRight() - 28.f, quantR.getY(), 26.f, quantR.getHeight() }, textDim);
         }
     }
@@ -167,7 +167,7 @@ private:
         if (! b.enabled) col = col.withAlpha (.3f);
         if (b.label.isEmpty()) { icons::draw (g, b.icon, r, col); return; }
         icons::draw (g, b.icon, { r.getX() + 6.f, r.getY(), 30.f, r.getHeight() }, col);
-        g.setColour (col); g.setFont (juce::FontOptions (15.f)); g.drawText (b.label, r.withTrimmedLeft (36.f).toNearestInt(), juce::Justification::centredLeft);
+        g.setColour (col); g.setFont (juce::FontOptions (14.f)); g.drawText (b.label, r.withTrimmedLeft (36.f).toNearestInt(), juce::Justification::centredLeft);
     }
 
     void drawLogo (juce::Graphics& g)
@@ -179,7 +179,7 @@ private:
         juce::Font f1 (juce::FontOptions (19.f, juce::Font::bold)); juce::GlyphArrangement ga; ga.addLineOfText (f1, "INJUSTICE", 0, 0);
         const int w1 = (int) std::ceil (ga.getBoundingBox (0, -1, true).getWidth());
         g.setColour (text); g.setFont (f1); g.drawText ("INJUSTICE", 60, 10, w1 + 4, 36, juce::Justification::centredLeft);
-        g.setColour (accentHi); g.setFont (juce::FontOptions (15.f)); g.drawText ("DAW", 60 + w1 + 8, 10, 44, 36, juce::Justification::centredLeft);
+        g.setColour (accentHi); g.setFont (juce::FontOptions (14.f)); g.drawText ("DAW", 60 + w1 + 8, 10, 44, 36, juce::Justification::centredLeft);
     }
 
     void drawMeters (juce::Graphics& g)
@@ -188,7 +188,7 @@ private:
         auto one = [&] (juce::Rectangle<float> r, const char* name, juce::String val, juce::String extra, float f)
         {
             g.setColour (textDim); g.setFont (juce::FontOptions (13.f, juce::Font::bold)); g.drawText (name, (int) r.getX(), (int) r.getY() + 6, 36, 16, juce::Justification::centredLeft);
-            g.setColour (text); g.setFont (juce::FontOptions (15.f, juce::Font::bold)); g.drawText (val, (int) r.getX() + 36, (int) r.getY() + 5, 52, 18, juce::Justification::centredLeft);
+            g.setColour (text); g.setFont (juce::FontOptions (14.f, juce::Font::bold)); g.drawText (val, (int) r.getX() + 36, (int) r.getY() + 5, 52, 18, juce::Justification::centredLeft);
             if (extra.isNotEmpty()) { g.setColour (textDim); g.setFont (juce::FontOptions (12.f)); g.drawText (extra, (int) r.getX() + 76, (int) r.getY() + 6, 60, 16, juce::Justification::centredLeft); }
             auto bar = juce::Rectangle<float> (r.getX(), r.getY() + 28.f, r.getWidth(), 5.f);
             g.setColour (panelHi); g.fillRoundedRectangle (bar, 2.5f);

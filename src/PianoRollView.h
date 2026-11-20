@@ -35,7 +35,7 @@ public:
         const int W = getWidth(), H = getHeight(), gb = gridBottom();
         g.fillAll (juce::Colour (0xff20202d));
         drawToolbar (g, W);
-        if (! clip) { g.setColour (textDim); g.setFont (juce::FontOptions (16.f)); g.drawText (juce::String::fromUTF8 ("Dibuja un clip MIDI en la Playlist (herramienta lápiz) y haz doble clic en él."), getLocalBounds().withTrimmedTop (kBarH), juce::Justification::centred); return; }
+        if (! clip) { g.setColour (textDim); g.setFont (juce::FontOptions (14.f)); g.drawText (juce::String::fromUTF8 ("Dibuja un clip MIDI en la Playlist (herramienta lápiz) y haz doble clic en él."), getLocalBounds().withTrimmedTop (kBarH), juce::Justification::centred); return; }
 
         g.saveState(); g.reduceClipRegion (kKeyW, kTop, W - kKeyW, gb - kTop);
         for (int p = 0; p <= 127; ++p)
@@ -267,13 +267,13 @@ private:
         auto tb = juce::Rectangle<float> (8.f, 8.f, 330.f, 36.f); g.setColour (boxFill); g.fillRoundedRectangle (tb, 8.f); g.setColour (boxLine); g.drawRoundedRectangle (tb.reduced (.5f), 8.f, 1.f);
         icons::draw (g, icons::PianoRoll, { 12.f, 8.f, 36.f, 36.f }, accentHi);
         const juce::String who = clip ? clip->getName() : juce::String ("sin clip");
-        g.setColour (text); g.setFont (juce::FontOptions (16.f)); g.drawText (juce::String::fromUTF8 ("Piano Roll  \xe2\x80\x93  ") + who, juce::Rectangle<float> (54, 8, 276, 36).toNearestInt(), juce::Justification::centredLeft);
+        g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText (juce::String::fromUTF8 ("Piano Roll  \xe2\x80\x93  ") + who, juce::Rectangle<float> (54, 8, 276, 36).toNearestInt(), juce::Justification::centredLeft);
         for (auto& b : btns())
         {
             const bool active = b.id == tool, hot = b.r.contains (hover);
             g.setColour (active ? accent : (hot ? panelHi : boxFill)); g.fillRoundedRectangle (b.r, 8.f); g.setColour (active ? accent : boxLine); g.drawRoundedRectangle (b.r.reduced (.5f), 8.f, 1.f);
-            if (b.id == "quant") { g.setColour (text); g.setFont (juce::FontOptions (15.f)); g.drawText (quantLabel(), b.r.withTrimmedRight (22).toNearestInt(), juce::Justification::centred); icons::draw (g, icons::Chevron, { b.r.getRight() - 28.f, b.r.getY(), 26.f, b.r.getHeight() }, textDim); }
-            else if (b.id == "scale") { g.setColour (scaleRoot() >= 0 ? accentHi : text); g.setFont (juce::FontOptions (15.f)); g.drawText (scaleLabel(), b.r.withTrimmedRight (22).toNearestInt(), juce::Justification::centred); icons::draw (g, icons::Chevron, { b.r.getRight() - 28.f, b.r.getY(), 26.f, b.r.getHeight() }, textDim); }
+            if (b.id == "quant") { g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText (quantLabel(), b.r.withTrimmedRight (22).toNearestInt(), juce::Justification::centred); icons::draw (g, icons::Chevron, { b.r.getRight() - 28.f, b.r.getY(), 26.f, b.r.getHeight() }, textDim); }
+            else if (b.id == "scale") { g.setColour (scaleRoot() >= 0 ? accentHi : text); g.setFont (juce::FontOptions (14.f)); g.drawText (scaleLabel(), b.r.withTrimmedRight (22).toNearestInt(), juce::Justification::centred); icons::draw (g, icons::Chevron, { b.r.getRight() - 28.f, b.r.getY(), 26.f, b.r.getHeight() }, textDim); }
             else icons::draw (g, b.icon, b.r, active ? juce::Colours::white : iconIdle);
         }
     }
