@@ -5,7 +5,7 @@
 namespace icons
 {
     enum Id { NewFile, OpenFile, Layout, Undo, Redo, Play, Stop, Rec, Loop, Select, Pencil, Scissors, Stretch,
-              Speaker, Magnet, Chevron, Playlist, Mixer, PianoRoll, Audio, Plugins, Export, Help, Eraser, Steps, Power, Sliders, Plus, Dots, Save, Trash, Plug };
+              Speaker, Metro, Magnet, Chevron, Playlist, Mixer, PianoRoll, Audio, Plugins, Export, Help, Eraser, Steps, Power, Sliders, Plus, Dots, Save, Trash, Plug };
 
     inline void draw (juce::Graphics& g, Id id, juce::Rectangle<float> r, juce::Colour c)
     {
@@ -37,6 +37,8 @@ namespace icons
             case Scissors: g.drawEllipse (P (.1f,.62f).x, P (.1f,.62f).y, s * .26f, s * .26f, lw); g.drawEllipse (P (.1f,.1f).x, P (.1f,.1f).y, s * .26f, s * .26f, lw);
                            g.drawLine ({ P (.3f,.3f), P (.92f,.8f) }, lw); g.drawLine ({ P (.3f,.7f), P (.92f,.2f) }, lw); break;
             case Stretch: g.drawLine ({ P (.1f,.5f), P (.9f,.5f) }, lw); { Path a; a.addTriangle (P (.02f,.5f), P (.3f,.28f), P (.3f,.72f)); a.addTriangle (P (.98f,.5f), P (.7f,.28f), P (.7f,.72f)); g.fillPath (a); } break;
+            case Metro: p.startNewSubPath (P (.3f,.92f)); p.lineTo (P (.7f,.92f)); p.lineTo (P (.6f,.12f)); p.lineTo (P (.4f,.12f)); p.closeSubPath(); g.strokePath (p, st);
+                        g.drawLine ({ P (.5f,.72f), P (.68f,.3f) }, lw); g.fillEllipse (P (.62f,.28f).x - s * .05f, P (.62f,.28f).y - s * .05f, s * .12f, s * .12f); break;
             case Speaker: p.startNewSubPath (P (.05f,.38f)); p.lineTo (P (.3f,.38f)); p.lineTo (P (.58f,.12f)); p.lineTo (P (.58f,.88f)); p.lineTo (P (.3f,.62f)); p.lineTo (P (.05f,.62f)); p.closeSubPath(); g.fillPath (p);
                           { Path a; a.addCentredArc (P (.58f,.5f).x, P (.58f,.5f).y, s * .3f, s * .3f, 0, 0.6f, 2.5f, true); a.addCentredArc (P (.58f,.5f).x, P (.58f,.5f).y, s * .5f, s * .5f, 0, 0.6f, 2.5f, true); g.strokePath (a, st); } break;
             case Magnet: p.startNewSubPath (P (.2f,.9f)); p.lineTo (P (.2f,.45f)); p.addCentredArc (P (.5f,.45f).x, P (.5f,.45f).y, s * .3f, s * .35f, 0, -1.5708f, 1.5708f, false);

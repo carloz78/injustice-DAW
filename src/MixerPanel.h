@@ -149,8 +149,10 @@ private:
     {
         if (! isVisible()) return;
         const float fall = 26.f / 30.f;
-        for (auto& c : clients) { if (! c.meter) continue; c.l = std::max (c.client.getAndClearAudioLevel (0).dB, c.l - fall); c.r = std::max (c.client.getAndClearAudioLevel (1).dB, c.r - fall); }
-        pollMaster(); repaint();
+        bool changed = false;
+        for (auto& c : clients) { if (! c.meter) continue; const float ol = c.l, orr = c.r; c.l = std::max (c.client.getAndClearAudioLevel (0).dB, c.l - fall); c.r = std::max (c.client.getAndClearAudioLevel (1).dB, c.r - fall); c.l = juce::jmax (c.l, -100.f); c.r = juce::jmax (c.r, -100.f); if (c.l != ol || c.r != orr) changed = true; }
+        const float ml0 = masterClient.l, mr0 = masterClient.r; pollMaster(); masterClient.l = juce::jmax (masterClient.l, -100.f); masterClient.r = juce::jmax (masterClient.r, -100.f); if (ml0 != masterClient.l || mr0 != masterClient.r) changed = true;
+        if (changed) repaint();   // sin sonido no hay nada que redibujar
     }
 
     //---- dibujo realista (sin brillos decorativos; recorrido del fader sin iluminar)

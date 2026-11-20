@@ -85,3 +85,17 @@ Pruebas automáticas internas: `INJ_SELFTEST=1 INJ_SAMPLE_FILE=<wav> INJ_DEMO_MI
 | Etiquetas del Step Sequencer leídas del sampler (sobreviven a guardar/abrir) | Hecho |
 
 Pruebas automáticas internas (`INJ_SELFTEST=1 INJ_SAMPLE_FILE=<wav> INJ_DEMO_MIDI=1`): 42 comprobaciones.
+
+## Ronda 3 - rediseño pastel (diseños nuevos del usuario)
+Decisiones acordadas: todo el DAW en pastel rosa/morado; barra de título nativa de Windows con la barra propia debajo; Mixer de 10 canales con "+"; sin panel de EQ en la v1; S/M fuera de la Playlist (doble clic = silenciar, clic derecho = solo, F2/menú = renombrar); Piano Roll con importar/exportar MIDI y humanizar; Browser con categorías propias (no las de Ableton); nombres reales de plugins (no los de FL); Step Sequencer con varios patrones.
+
+| Paso | Contenido | Estado |
+|---|---|---|
+| 1 | Paleta pastel (Theme.h, muestreada de los diseños), barra superior única (logo, menús File/Edit/View/Options/Tools/Help, transporte, BPM, 4/4, posición, metrónomo, CPU/RAM reales), botones con hover/pulsado/activo, Grabar rojo al armarlo, aspecto oscuro de menús y diálogos, rendimiento (redibujo solo ante cambios) | Hecho (v0.3.0) |
+| 2 | Playlist nueva (cabeceras sin S/M, pistas más altas, doble clic = silenciar) | Hecho (v0.3.1): sin S/M, doble clic = silenciar, Alt+clic = solo, clips en color pastel sólido, estilo Ableton |
+| 3 | Mixer nuevo (10 canales + "+") | Pendiente |
+| 4 | Piano Roll nuevo | Pendiente |
+| 5 | Step Sequencer (patrones) y Browser | Pendiente |
+
+Rendimiento: antes cada vista redibujaba todo a 30 Hz. Ahora la Playlist compara una firma de su contenido y, si solo se mueve el cabezal, redibuja únicamente esa franja; el Piano Roll y el Mixer redibujan solo si cambia la posición o los medidores. En reposo el proceso usa ~2 % de un núcleo (Linux, sin audio).
+Grabar: el botón se arma (rojo) pero la grabación en vivo aún no está implementada.

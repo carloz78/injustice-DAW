@@ -11,7 +11,7 @@ public:
     juce::String tool = "select"; double quantum = 0.25; bool snap = true;   // 0.25 beats = 1/16
     std::function<void()> onClipChanged;
 
-    explicit PianoRollView (te::Edit& e) : edit (e) { setWantsKeyboardFocus (true); startTimerHz (30); scrollY = (127 - 76) * kNoteH; }
+    explicit PianoRollView (te::Edit& e) : edit (e) { setWantsKeyboardFocus (true); setOpaque (true); startTimerHz (30); scrollY = (127 - 76) * kNoteH; }
 
     void setClip (te::MidiClip* c) { clip = c; sel = nullptr; scrollX = 0; if (clip) { auto n = clip->getSequence().getNotes(); if (n.size()) scrollY = (127 - n[0]->getNoteNumber() - 5) * (double) kNoteH; } repaint(); }
     te::MidiClip* getClip() const { return clip.get(); }
@@ -133,7 +133,13 @@ private:
     double ppb = 50.0, scrollX = 0, scrollY = 0, anchor = 0, grab = 0, lastLen = 0.25; int lastVel = 100, litKey = -1;
 
     static bool isBlack (int p) { switch (p % 12) { case 1: case 3: case 6: case 8: case 10: return true; default: return false; } }
-    void timerCallback() override { if (isVisible()) repaint(); }
+    void timerCallback() override
+    {
+        if (! isVisible()) return;
+        const double pos = edit.getTransport().getPosition().inSeconds();
+        if (pos != lastPos) { lastPos = pos; repaint(); }   // el cabezal solo se mueve con la reproducci\xc3\xb3n o al hacer seek
+    }
+    double lastPos = -1.0;
     void seek (int x) { auto b = std::max (0.0, xb ((float) x)) + clipStartBeat(); edit.getTransport().setPosition (te::TimePosition::fromSeconds (beatsToTime (q (b)))); }
     void removeNote (te::MidiNote* n) { edit.getUndoManager().beginNewTransaction ("Borrar nota"); if (sel == n) sel = nullptr; clip->getSequence().removeNote (*n, &edit.getUndoManager()); if (onClipChanged) onClipChanged(); repaint(); }
 
