@@ -245,10 +245,9 @@ private:
         add ("view:playlist", icons::Playlist, x, y2, 108, 34, "Playlist"); x += 114; add ("view:mixer", icons::Mixer, x, y2, 90, 34, "Mixer"); x += 96;
         add ("view:piano", icons::PianoRoll, x, y2, 116, 34, "Piano Roll"); x += 122; add ("view:steps", icons::Steps, x, y2, 154, 34, "Step Sequencer"); x += 164;
         divX = x; x += 14;
-        if (pianoMode) { for (auto [id, ic] : { std::pair<const char*, icons::Id> { "tool:select", icons::Select }, { "tool:pencil", icons::Pencil }, { "tool:erase", icons::Eraser } }) { add (id, ic, x, y2, 40, 34); x += 44; } }
-        else for (auto [id, ic] : { std::pair<const char*, icons::Id> { "tool:select", icons::Select }, { "tool:pencil", icons::Pencil }, { "tool:cut", icons::Scissors }, { "tool:trim", icons::Stretch } }) { add (id, ic, x, y2, 40, 34); x += 44; }
+        if (! pianoMode) for (auto [id, ic] : { std::pair<const char*, icons::Id> { "tool:select", icons::Select }, { "tool:pencil", icons::Pencil }, { "tool:cut", icons::Scissors }, { "tool:trim", icons::Stretch } }) { add (id, ic, x, y2, 40, 34); x += 44; }
         add ("snap", icons::Magnet, x, y2, 40, 34); x += 50;
-        quantR = { x, y2 - 17.f, 86.f, 34.f };
+        quantR = {};
         float rx = w - 12.f - 3 * 44.f; add ("undo", icons::Undo, rx, y2, 40, 34); add ("redo", icons::Redo, rx + 44, y2, 40, 34); add ("plugins", icons::Plugins, rx + 88, y2, 40, 34);
     }
 };

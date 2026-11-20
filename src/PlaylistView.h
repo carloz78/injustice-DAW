@@ -40,7 +40,9 @@ public:
     float beatToX (double b) const { return (float) (kHeaderW + 14 + b * pxPerBeat - scrollX); }
     double xToBeat (float x) const { return (x - kHeaderW - 14 + scrollX) / pxPerBeat; }
     int trackTop (int i) const { ensureLayout(); const int n = (int) tops.size() - 1; return kRulerH + (i <= n ? tops[(size_t) std::max (0, i)] : tops[(size_t) n] + (i - n) * (trackH + kGap)) - (int) scrollY; }
-    double snapBeat (double b) const { return snap ? std::round (b) : b; }
+    // Cuadrícula adaptable: el paso es el más fino que se ve separado (>= 12 px); con el zoom por defecto es el compás
+    double snapStep() const { for (double st : { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0 }) if (st * pxPerBeat >= 12.0) return st; return 32.0; }
+    double snapBeat (double b) const { if (! snap) return b; const double st = snapStep(); return std::round (b / st) * st; }
     int numTracks() const { return te::getAudioTracks (edit).size(); }
     int trackAt (float y) const { for (int i = 0; i < numTracks(); ++i) if (y >= trackTop (i) && y < trackTop (i) + hOf (i)) return i; return -1; }
 

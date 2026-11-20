@@ -1,3 +1,4 @@
+#include <array>
 #include "TopBars.h"
 #include "PlaylistView.h"
 #include "PianoRollView.h"
@@ -70,6 +71,7 @@ public:
         playlist.onTracksChanged = [this] { mixer.refreshTracks(); playlist.repaint(); };
         playlist.onTrackSelected = [this] (int i) { mixer.selected = i; mixer.showTrack (i); };
         mixer.onTracksChanged = [this] { playlist.repaint(); };
+        piano.onMessage = [this] (const juce::String& m) { note (m); };
         playlist.onOpenMidi = [this] (te::MidiClip* c) { piano.setClip (c); showView ("piano"); };
         bars.bpm = edit.tempoSequence.getTempo (0)->getBpm();
         bars.onBpm = [this] (double b) { edit.tempoSequence.getTempo (0)->setBpm (b); };
@@ -158,15 +160,24 @@ public:
         chk (seq.getNumNotes() == n0, "borrador: elimina la nota");
         edit.getUndoManager().undo();
         chk (seq.getNumNotes() == n0 + 1, "deshacer devuelve la nota borrada");
+        {   // herramientas nuevas del Piano Roll: cortar, humanizar, exportar/importar MIDI
+            auto* first = seq.getNotes()[0]; const double s0 = first->getStartBeat().inBeats(), l0 = first->getLengthBeats().inBeats(); const int cnt = seq.getNumNotes();
+            piano.splitNote (first, s0 + l0 * 0.5); chk (seq.getNumNotes() == cnt + 1, "piano roll: cortar divide una nota en dos");
+            edit.getUndoManager().undo (); chk (seq.getNumNotes() == cnt, "piano roll: deshacer el corte");
+            const int hn = piano.humanize (); chk (hn == cnt && seq.getNumNotes() == cnt, "piano roll: humanizar conserva las notas"); edit.getUndoManager().undo ();
+            auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_test_export.mid"); chk (piano.exportMidiTo (tmp) && tmp.existsAsFile(), "piano roll: exporta un archivo MIDI");
+            const int before = seq.getNumNotes(); const int added = piano.importMidiFrom (tmp); chk (added == before && seq.getNumNotes() == before * 2, "piano roll: importa el mismo MIDI y duplica las notas");
+            edit.getUndoManager().undo (); chk (seq.getNumNotes() == before, "piano roll: deshacer la importacion"); tmp.deleteFile();
+        }
         // --- Mixer
         setMixer (true); 
         auto tracks = te::getAudioTracks (edit); auto mev = [&] (juce::Point<float> p, juce::ModifierKeys mk) { return juce::MouseEvent (src, p, mk, 1.f, 0.f, 0.f, 0.f, 0.f, &mixer, &mixer, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
-        const float k = mixer.scale, x3 = (float) (MixerPanel::kX0 + 2 * MixerPanel::kStride), yb = (float) MixerPanel::kTop + MixerPanel::kStripH - 30.f;
-        mixer.mouseDown (mev ({ (x3 + 20) * k, yb * k }, L)); mixer.mouseUp (mev ({ (x3 + 20) * k, yb * k }, 0));
+        const float k = mixer.scale; auto sB = mixer.smR (2, 0).getCentre(), mB = mixer.smR (2, 1).getCentre();
+        mixer.mouseDown (mev ({ sB.x * k, sB.y * k }, L)); mixer.mouseUp (mev ({ sB.x * k, sB.y * k }, 0));
         chk (tracks[2]->isSolo (false), "mixer: S activa el solo del canal 3");
-        mixer.mouseDown (mev ({ (x3 + 57) * k, yb * k }, L)); mixer.mouseUp (mev ({ (x3 + 57) * k, yb * k }, 0));
+        mixer.mouseDown (mev ({ mB.x * k, mB.y * k }, L)); mixer.mouseUp (mev ({ mB.x * k, mB.y * k }, 0));
         chk (tracks[2]->isMuted (false), "mixer: M silencia el canal 3");
-        const float fx = (x3 + 34) * k, fy0 = (float) (MixerPanel::kTop + MixerPanel::kHdrH + 92), fh = (float) (MixerPanel::kStripH - MixerPanel::kHdrH - 92 - 66);
+        const auto fa = mixer.faderArea (2); const float fx = fa.getCentreX() * k, fy0 = fa.getY(), fh = fa.getHeight();
         mixer.mouseDown (mev ({ fx, (fy0 + fh * 0.5f) * k }, L)); mixer.mouseUp (mev ({ fx, (fy0 + fh * 0.5f) * k }, 0));
         chk (std::abs (tracks[2]->getVolumePlugin()->getVolumeDb() - MixerPanel::posToDb (0.5f)) < 0.5f, "mixer: arrastrar el fader cambia el volumen real");
         mixer.mouseDoubleClick (mev ({ fx, (fy0 + fh * 0.5f) * k }, L));
@@ -193,6 +204,16 @@ public:
             { const int h0 = playlist.hOf (1), ey = playlist.trackTop (1) + h0; playlist.mouseDown (pev ({ 60.f, (float) ey }, L)); playlist.mouseDrag (pev ({ 60.f, (float) ey - 50.f }, L)); playlist.mouseUp (pev ({ 60.f, (float) ey - 50.f }, 0));
               chk (playlist.hOf (1) == h0 - 50 && playlist.hOf (0) == h0, "playlist: arrastrar el borde de una cabecera achica solo esa pista");
               playlist.setAllHeights (116); chk (playlist.hOf (1) == 116, "playlist: poder volver a la altura normal"); }
+            { auto* ld = tr[0]->getClips().isEmpty() ? nullptr : tr[0]->getClips()[0]; chk (ld != nullptr, "snap: hay un clip para mover");
+              if (ld) { playlist.snap = true; playlist.tool = "select"; const float yy = (float) playlist.trackTop (0) + 60.f, xs = playlist.beatToX (6.0);
+                playlist.mouseDown (pev ({ xs, yy }, L)); playlist.mouseDrag (pev ({ xs + 41.f, yy }, L)); playlist.mouseUp (pev ({ xs + 41.f, yy }, 0));
+                const double sb = playlist.timeToBeats (ld->getPosition().getStart().inSeconds()); chk (sb > 0.0 && std::fmod (sb, 4.0) < 1e-6, "snap: con el iman activo el clip cae justo en un compas");
+                const float xs2 = playlist.beatToX (6.0 + sb);
+                playlist.mouseDown (pev ({ xs2, yy }, L)); playlist.mouseDrag (pev ({ xs2 - 100.f, yy }, L)); playlist.mouseUp (pev ({ xs2 - 100.f, yy }, 0));
+                chk (playlist.timeToBeats (ld->getPosition().getStart().inSeconds()) < 1e-6, "snap: lo devuelve al inicio");
+                playlist.snap = false; playlist.mouseDown (pev ({ xs, yy }, L)); playlist.mouseDrag (pev ({ xs + 10.f, yy }, L)); playlist.mouseUp (pev ({ xs + 10.f, yy }, 0));
+                const double fb = playlist.timeToBeats (ld->getPosition().getStart().inSeconds()); chk (fb > 0.0 && std::fmod (fb, 1.0) > 1e-3, "snap: sin iman el clip queda libre");
+                playlist.mouseDown (pev ({ playlist.beatToX (6.0 + fb), yy }, L)); playlist.mouseDrag (pev ({ playlist.beatToX (6.0 + fb) - 400.f, yy }, L)); playlist.mouseUp (pev ({ 0.f, yy }, 0)); playlist.snap = true; } }
             te::Clip* lead = tr[0]->getClips().isEmpty() ? nullptr : tr[0]->getClips()[0]; chk (lead != nullptr, "playlist: hay un clip de ejemplo");
             if (lead != nullptr)
             {
@@ -438,24 +459,27 @@ class InjusticeDawApp : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "INJUSTICE DAW"; }
-    const juce::String getApplicationVersion() override { return "0.3.1"; }
+    const juce::String getApplicationVersion() override { return "0.4.0"; }
     void initialise (const juce::String&) override
     {
         auto args = getCommandLineParameterArray();
         if (args.size() >= 3 && args[0] == "--scan-plugin") { pluginhost::runScanChild (args[1], args[2]); quit(); return; }   // modo hijo del escáner
         juce::LookAndFeel::setDefaultLookAndFeel (&look);
         engine = std::make_unique<te::Engine> ("InjusticeDAW", std::make_unique<pluginhost::UIBehaviour>(), std::make_unique<pluginhost::Behaviour>());
+        installMetronomeSounds();
         engine->getDeviceManager().initialise (0, 2);
         pluginhost::loadList (*engine);
         edit = makeEdit ({});
         if (auto* demo = std::getenv ("INJ_DEMO_WAV")) addDemoWav (demo);
         if (std::getenv ("INJ_DEMO_MIDI")) addDemoMidi();
+        if (auto* df = std::getenv ("INJ_DEMO_FULL")) addDemoFull (df);
         edit->getTransport().ensureContextAllocated();
         openWindow();
         if (auto* pn = std::getenv ("INJ_PANELS"))   // solo pruebas: abre paneles y datos de ejemplo para las capturas
         {
             auto* mc = window->main;
             if (auto* sd = std::getenv ("INJ_SAMPLES")) { mc->browserRef().setRoot (juce::File (sd)); mc->browserRef().expandAll (2); }
+            if (auto* bs = std::getenv ("INJ_BSEARCH")) mc->browserRef().setSearch (bs);
             if (auto* sel = std::getenv ("INJ_SELECT")) mc->browserRef().selectFile (juce::File (sel));
             if (juce::String (pn).contains ("steps") && std::getenv ("INJ_DEMO_STEPS"))
             {
@@ -502,6 +526,23 @@ private:
     std::unique_ptr<te::Engine> engine; std::unique_ptr<te::Edit> edit; std::unique_ptr<MainWindow> window; juce::File currentFile;
 
     // file vacío = proyecto nuevo
+    // Metrónomo propio: clic corto tipo "madera digital" (acento más agudo en el primer tiempo del compás)
+    void installMetronomeSounds()
+    {
+        auto make = [] (const juce::File& f, double freq, float gain)
+        {
+            const double sr = 44100.0; const int n = (int) (sr * 0.09); juce::AudioBuffer<float> b (1, n); auto* d = b.getWritePointer (0);
+            for (int i = 0; i < n; ++i)
+            {
+                const double t = i / sr, env = std::exp (-t * 55.0) * std::min (1.0, t / 0.0012);
+                d[i] = (float) (env * (0.75 * std::sin (juce::MathConstants<double>::twoPi * freq * t) + 0.25 * std::sin (juce::MathConstants<double>::twoPi * freq * 2.76 * t) * std::exp (-t * 40.0))) * gain;
+            }
+            f.deleteFile(); juce::WavAudioFormat wav; if (auto os = f.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), sr, 1, 16, {}, 0)); w) { os.release(); w->writeFromAudioSampleBuffer (b, 0, n); }
+        };
+        auto big = pluginhost::dataDir().getChildFile ("click_acento.wav"), little = pluginhost::dataDir().getChildFile ("click_tiempo.wav");
+        make (big, 1760.0, 0.85f); make (little, 1175.0, 0.6f);
+        engine->getPropertyStorage().setProperty (te::SettingID::clickTrackSampleBig, big.getFullPathName()); engine->getPropertyStorage().setProperty (te::SettingID::clickTrackSampleSmall, little.getFullPathName());
+    }
     std::unique_ptr<te::Edit> makeEdit (const juce::File& f)
     {
         std::unique_ptr<te::Edit> e;
@@ -542,6 +583,24 @@ private:
         auto tr = te::getAudioTracks (*edit)[1]; juce::File f (demo); te::AudioFile af (*engine, f);
         const auto st = te::TimePosition::fromSeconds (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (8.0)).inSeconds());
         tr->insertWaveClip ("demo", f, { te::TimeRange (st, te::TimeDuration::fromSeconds (af.getLength())), te::TimeDuration() }, false);
+    }
+    // Arreglo de ejemplo para capturas: varios clips MIDI y de audio repartidos por las pistas
+    void addDemoFull (const char* wav)
+    {
+        auto tracks = te::getAudioTracks (*edit); auto T = [&] (double b) { return te::TimePosition::fromSeconds (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (b)).inSeconds()); };
+        auto midi = [&] (int ti, const char* name, double b0, double b1, const std::vector<std::array<double, 4>>& notes)
+        { auto c = tracks[ti]->insertMIDIClip (name, te::TimeRange (T (b0), T (b1)), nullptr); for (auto& n : notes) c->getSequence().addNote ((int) n[0], te::BeatPosition::fromBeats (n[1]), te::BeatDuration::fromBeats (n[2]), (int) n[3], 0, nullptr); };
+        std::vector<std::array<double, 4>> drums, bass, keys, lead;
+        for (int b = 0; b < 16; ++b) { drums.push_back ({ 36, b * 1.0, .25, 110 }); drums.push_back ({ 42, b * 1.0 + .5, .25, 80 }); if (b % 2) drums.push_back ({ 38, b * 1.0, .25, 100 }); drums.push_back ({ 46, b * 0.5 + .25, .125, 70 }); }
+        const int bn[] { 36, 36, 39, 41, 36, 36, 43, 41 }; for (int i = 0; i < 8; ++i) bass.push_back ({ (double) bn[i], i * 2.0, 1.5, 100 });
+        for (int c = 0; c < 4; ++c) for (int k : { 60, 64, 67, 72 }) keys.push_back ({ (double) k + (c % 2 ? 2 : 0), c * 4.0, 3.5, 90 });
+        const int ln[] { 72, 74, 76, 79, 76, 74, 72, 69, 71, 72, 74, 76, 79, 83, 81, 79 }; for (int i = 0; i < 16; ++i) lead.push_back ({ (double) ln[i], i * 1.0, i % 3 == 1 ? .5 : 1.0, 100 });
+        { const char* nmz[] { "Kick", "Clap", "Hat", "Perc", "Lead", "Chords", "Bass", "Vocal", "FX", "Riser" }; for (int i = 0; i < 10; ++i) tracks[i]->setName (nmz[i]); }
+        midi (0, "Drums", 0, 16, drums); midi (0, "Drums", 24, 40, drums); midi (1, "Bass", 0, 16, bass); midi (1, "Bass", 24, 40, bass);
+        midi (2, "Keys", 0, 16, keys); midi (2, "Keys", 32, 48, keys); midi (4, "Lead", 8, 24, lead); midi (6, "Lead", 16, 32, lead);
+        juce::File f (wav); te::AudioFile af (*engine, f); const double len = af.getLength();
+        auto audio = [&] (int ti, double b0, double b1) { tracks[ti]->insertWaveClip ("Vocal", f, { te::TimeRange (T (b0), T (b1)), te::TimeDuration() }, false); (void) len; };
+        audio (3, 0, 8); audio (3, 12, 20); audio (3, 28, 36); audio (5, 4, 12); audio (5, 20, 28); audio (7, 0, 6); audio (7, 16, 22); audio (7, 36, 44);
     }
     void addDemoMidi()
     {

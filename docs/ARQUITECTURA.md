@@ -93,8 +93,8 @@ Decisiones acordadas: todo el DAW en pastel rosa/morado; barra de título nativa
 |---|---|---|
 | 1 | Paleta pastel (Theme.h, muestreada de los diseños), barra superior única (logo, menús File/Edit/View/Options/Tools/Help, transporte, BPM, 4/4, posición, metrónomo, CPU/RAM reales), botones con hover/pulsado/activo, Grabar rojo al armarlo, aspecto oscuro de menús y diálogos, rendimiento (redibujo solo ante cambios) | Hecho (v0.3.0) |
 | 2 | Playlist nueva (cabeceras sin S/M, pistas más altas, doble clic = silenciar) | Hecho (v0.3.1): sin S/M, doble clic = silenciar, Alt+clic = solo, clips en color pastel sólido, estilo Ableton |
-| 3 | Mixer nuevo (10 canales + "+") | Pendiente |
-| 4 | Piano Roll nuevo | Pendiente |
+| 3 | Mixer nuevo (10 canales + "+") | Hecho (v0.3.2): canales sin color, Master morado, 10 ranuras de efectos, LED, circulo de armado y menu del canal. Ademas: iman con cuadricula adaptable al zoom |
+| 4 | Piano Roll nuevo | Hecho (v0.4.0): barra propia con herramientas, cuantizacion, importar/exportar MIDI, humanizar y cortar notas |
 | 5 | Step Sequencer (patrones) y Browser | Pendiente |
 
 Rendimiento: antes cada vista redibujaba todo a 30 Hz. Ahora la Playlist compara una firma de su contenido y, si solo se mueve el cabezal, redibuja únicamente esa franja; el Piano Roll y el Mixer redibujan solo si cambia la posición o los medidores. En reposo el proceso usa ~2 % de un núcleo (Linux, sin audio).

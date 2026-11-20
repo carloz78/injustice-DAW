@@ -26,6 +26,8 @@ namespace pluginhost
         return a;
     }
     inline juce::StringArray customFolders() { juce::StringArray a; a.addLines (foldersFile().loadFileAsString()); a.removeEmptyStrings(); return a; }
+    inline juce::File filesFile() { return dataDir().getChildFile ("plugin_files.txt"); }
+    inline juce::StringArray customFiles() { juce::StringArray a; a.addLines (filesFile().loadFileAsString()); a.removeEmptyStrings(); return a; }
     inline void saveCustomFolders (const juce::StringArray& a) { foldersFile().replaceWithText (a.joinIntoString ("\n")); }
 
     inline void loadList (te::Engine& e)
@@ -111,7 +113,7 @@ namespace pluginhost
         {
             auto& list = engine.getPluginManager().knownPluginList; juce::VST3PluginFormat fmt;
             juce::FileSearchPath sp; for (auto& f : defaultFolders()) sp.add (juce::File (f.replace ("~", juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName()))); for (auto& f : customFolders()) sp.add (juce::File (f));
-            const auto files = fmt.searchPathsForPlugins (sp, true, false);
+            auto files = fmt.searchPathsForPlugins (sp, true, false); for (auto& cf : customFiles()) if (juce::File (cf).exists()) files.addIfNotAlreadyThere (cf);
             const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile).getFullPathName();
             int added = 0, failed = 0;
             for (int i = 0; i < files.size() && ! threadShouldExit(); ++i)
@@ -157,6 +159,7 @@ namespace pluginhost
             addAndMakeVisible (search); search.setTextToShowWhenEmpty (juce::String::fromUTF8 ("Buscar por nombre o fabricante…"), juce::Colours::grey); search.onTextChange = [this] { refresh(); };
             addAndMakeVisible (scanBtn); scanBtn.setButtonText ("Buscar plugins"); scanBtn.onClick = [this] { startScan(); };
             addAndMakeVisible (folderBtn); folderBtn.setButtonText (juce::String::fromUTF8 ("Añadir carpeta…")); folderBtn.onClick = [this] { addFolder(); };
+            addAndMakeVisible (fileBtn); fileBtn.setButtonText (juce::String::fromUTF8 ("Añadir plugin…")); fileBtn.onClick = [this] { addFile(); };
             addAndMakeVisible (addBtn); addBtn.onClick = [this] { addSelected(); };
             addAndMakeVisible (table); table.setModel (this); table.setRowHeight (30); table.setColour (juce::ListBox::backgroundColourId, theme::bgBar);
             auto& h = table.getHeader(); h.addColumn ("Nombre", 1, 300); h.addColumn ("Fabricante", 2, 200); h.addColumn ("Tipo", 3, 110); h.addColumn ("Formato", 4, 90); h.setStretchToFitActive (true);
@@ -192,11 +195,11 @@ namespace pluginhost
         void resized() override
         {
             auto r = getLocalBounds().reduced (12); auto top = r.removeFromTop (34);
-            scanBtn.setBounds (top.removeFromRight (130)); top.removeFromRight (8); folderBtn.setBounds (top.removeFromRight (140)); top.removeFromRight (8); search.setBounds (top);
+            scanBtn.setBounds (top.removeFromRight (130)); top.removeFromRight (8); folderBtn.setBounds (top.removeFromRight (140)); top.removeFromRight (8); fileBtn.setBounds (top.removeFromRight (130)); top.removeFromRight (8); search.setBounds (top);
             auto bot = r.removeFromBottom (36); addBtn.setBounds (bot.removeFromRight (330)); r.removeFromTop (8); table.setBounds (r.withTrimmedBottom (4));
         }
     private:
-        te::Engine& engine; juce::TextEditor search; juce::TextButton scanBtn, folderBtn, addBtn; juce::TableListBox table; juce::String status;
+        te::Engine& engine; juce::TextEditor search; juce::TextButton scanBtn, folderBtn, fileBtn, addBtn; juce::TableListBox table; juce::String status;
         std::unique_ptr<Scanner> scanner; juce::Array<juce::PluginDescription> shown; std::unique_ptr<juce::FileChooser> chooser;
         struct Relay : juce::ChangeListener { ListContent* owner = nullptr; void changeListenerCallback (juce::ChangeBroadcaster*) override { if (owner) owner->refresh(); } } relay;
 
@@ -214,6 +217,12 @@ namespace pluginhost
             addBtn.setEnabled (ok); addBtn.setButtonText (juce::String::fromUTF8 ("Agregar a la pista ") + juce::String (targetTrack + 1) + (ok ? (shown[r].isInstrument ? juce::String::fromUTF8 (" como instrumento") : juce::String::fromUTF8 (" como efecto")) : juce::String()));
         }
         void addSelected() { const int r = table.getSelectedRow(); if (r >= 0 && r < shown.size() && onAdd) onAdd (shown[r]); }
+        void addFile()
+        {
+            chooser = std::make_unique<juce::FileChooser> (juce::String::fromUTF8 ("Elige tu plugin (.vst3)"), juce::File(), "*.vst3");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectDirectories, [this] (const juce::FileChooser& fc)
+            { auto f = fc.getResult(); if (f.exists() && f.hasFileExtension ("vst3")) { auto a = customFiles(); a.addIfNotAlreadyThere (f.getFullPathName()); filesFile().replaceWithText (a.joinIntoString ("\n")); startScan(); } });
+        }
         void addFolder()
         {
             chooser = std::make_unique<juce::FileChooser> ("Carpeta con plugins VST3", juce::File(), "");
@@ -221,7 +230,7 @@ namespace pluginhost
             { auto d = fc.getResult(); if (d.isDirectory()) { auto a = customFolders(); a.addIfNotAlreadyThere (d.getFullPathName()); saveCustomFolders (a); startScan(); } });
         }
         int getNumRows() override { return shown.size(); }
-        void paintRowBackground (juce::Graphics& g, int row, int, int, bool sel) override { g.fillAll (sel ? theme::accent.withAlpha (.55f) : (row % 2 ? juce::Colour (0xff141218) : theme::bgBar)); }
+        void paintRowBackground (juce::Graphics& g, int row, int, int, bool sel) override { g.fillAll (sel ? theme::accent : (row % 2 ? juce::Colour (0xff141218) : theme::bgBar)); }
         void paintCell (juce::Graphics& g, int row, int col, int w, int h, bool) override
         {
             if (row >= shown.size()) return; auto& d = shown.getReference (row); g.setColour (juce::Colours::white); g.setFont (juce::FontOptions (14.f));

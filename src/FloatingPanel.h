@@ -29,10 +29,9 @@ public:
         using namespace theme;
         g.addTransform (juce::AffineTransform::scale (scale));
         auto r = juce::Rectangle<float> (0, 0, (float) designW, (float) designH).reduced (1);
-        g.setColour (juce::Colours::black.withAlpha (.35f)); g.fillRoundedRectangle (r.translated (0, 3), 14.f);
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff1c1b21), 0, 0, juce::Colour (0xff141318), 0, (float) designH, false)); g.fillRoundedRectangle (r, 12.f);
-        g.setColour (juce::Colour (0xff302e37)); g.drawRoundedRectangle (r, 12.f, 1.5f);
-        g.setColour (juce::Colour (0xff25232a)); g.fillRect (1, kHead, designW - 2, 1);
+        g.setColour (juce::Colour (0xff17181f)); g.fillRoundedRectangle (r.translated (0, 3), 12.f);
+        g.setColour (juce::Colour (0xff252731)); g.fillRoundedRectangle (r, 10.f);
+        g.setColour (barLine); g.drawRoundedRectangle (r, 10.f, 1.2f);
         icons::draw (g, icon, { 14.f, 4.f, 40.f, 40.f }, text);
         g.setColour (text); g.setFont (juce::FontOptions (19.f, juce::Font::bold)); g.drawText (title, 62, 0, 400, kHead, juce::Justification::centredLeft);
         const auto mx = maxR(), cx = closeR(); g.setColour (text);
