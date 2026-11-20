@@ -46,6 +46,14 @@ namespace trackutil
         e.deleteTrack (t); return true;
     }
 
+    // Copia un clip a otra pista (o a la misma) empezando en `start`.
+    inline te::Clip* copyClipTo (te::Edit& e, te::Clip& c, te::ClipTrack& dest, te::TimePosition start)
+    {
+        auto xml = c.state.createXml(); if (xml == nullptr) return nullptr;
+        te::EditItemID::remapIDs (*xml, e); auto vt = juce::ValueTree::fromXml (*xml);
+        auto* nc = dest.insertClipWithState (vt); if (nc == nullptr) return nullptr;
+        nc->setStart (start, false, true); return nc;
+    }
     inline te::Clip* duplicateClip (te::Edit& e, te::Clip& c)
     {
         auto* track = dynamic_cast<te::ClipTrack*> (c.getTrack()); if (track == nullptr) return nullptr;

@@ -1,4 +1,4 @@
-juce_add_gui_app(InjusticeDAW PRODUCT_NAME "INJUSTICE DAW" COMPANY_NAME "Injustice Audio" VERSION 0.1.0)
+juce_add_gui_app(InjusticeDAW PRODUCT_NAME "INJUSTICE DAW" COMPANY_NAME "Injustice Audio" VERSION 0.1.0 ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/../assets/icon.png" ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/../assets/icon.png")
 target_sources(InjusticeDAW PRIVATE Main.cpp SysInfo.cpp)
 target_compile_definitions(InjusticeDAW PRIVATE
     JUCE_PLUGINHOST_VST3=1 JUCE_MODAL_LOOPS_PERMITTED=1 JUCE_STRICT_REFCOUNTEDPOINTER=1

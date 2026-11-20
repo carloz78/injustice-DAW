@@ -102,7 +102,7 @@ public:
             { "layout", "Mostrar/ocultar el explorador (F8)" }, { "undo", "Deshacer (Ctrl+Z)" }, { "redo", "Rehacer (Ctrl+Y)" },
             { "play", "Reproducir / pausa (Espacio)" }, { "stop", "Detener y volver al inicio" }, { "rec", "Armar grabaci\xc3\xb3n (pr\xc3\xb3ximamente)" },
             { "loop", "Repetir en bucle" }, { "audio", "Ajustes de audio" }, { "plugins", "Lista de plugins VST3 (F10)" },
-            { "tool:select", "Seleccionar" }, { "tool:pencil", "L\xc3\xa1piz: dibujar" }, { "tool:cut", "Cortar clips" }, { "tool:trim", "Recortar el borde de un clip" },
+            { "tool:select", "Seleccionar" }, { "tool:pencil", "L\xc3\xa1piz: dibujar" }, { "tool:brush", "Pincel: pinta clips arrastrando (sobre un clip lo copia)" }, { "tool:cut", "Cortar clips" }, { "tool:trim", "Recortar el borde de un clip" },
             { "tool:erase", "Borrador" }, { "metro", "Metr\xc3\xb3nomo" }, { "snap", "Ajustar a la cuadr\xc3\xad" "cula" },
             { "view:playlist", "Playlist (F5)" }, { "view:mixer", "Mixer (F9)" }, { "view:piano", "Piano Roll (F7)" }, { "view:steps", "Step Sequencer (F6)" } };
         auto it = t.find (id); return it == t.end() ? juce::String() : juce::String::fromUTF8 (it->second);
@@ -169,9 +169,10 @@ private:
 
     void drawLogo (juce::Graphics& g)
     {
-        using namespace theme; const float x0 = 18.f, y0 = 13.f, c = 8.5f, gap = 2.f;
-        static const juce::uint32 cols[9] { 0xffc73ce3, 0xffeb4ac3, 0xfff571b2, 0xffb07add, 0xffd1a2f5, 0xffeb4ac3, 0xffa96ee0, 0xffc73ce3, 0xfff08ac8 };
-        for (int i = 0; i < 9; ++i) { g.setColour (juce::Colour (cols[i])); g.fillRoundedRectangle (x0 + (i % 3) * (c + gap), y0 + (i / 3) * (c + gap), c, c, 2.f); }
+        using namespace theme; const float x0 = 16.f, y0 = 14.f, c = 8.f, gap = 2.f;
+        static const juce::uint32 cols[9] { 0xff40403f, 0xff828282, 0xffbbbbba, 0xff676767, 0xfffefefe, 0xffa19fa0, 0xff1c1c1b, 0xff383939, 0xff7d7d7d };   // logo nuevo: 3x3 en grises, centro blanco
+        g.setColour (juce::Colours::black); g.fillRoundedRectangle (x0 - 5.f, y0 - 5.f, 3 * c + 2 * gap + 10.f, 3 * c + 2 * gap + 10.f, 6.f);
+        for (int i = 0; i < 9; ++i) { g.setColour (juce::Colour (cols[i])); g.fillRoundedRectangle (x0 + (i % 3) * (c + gap), y0 + (i / 3) * (c + gap), c, c, 2.6f); }
         juce::Font f1 (juce::FontOptions (19.f, juce::Font::bold)); juce::GlyphArrangement ga; ga.addLineOfText (f1, "INJUSTICE", 0, 0);
         const int w1 = (int) std::ceil (ga.getBoundingBox (0, -1, true).getWidth());
         g.setColour (text); g.setFont (f1); g.drawText ("INJUSTICE", 60, 10, w1 + 4, 36, juce::Justification::centredLeft);
@@ -205,7 +206,7 @@ private:
         else if (name == "Edit") { I ("undo", "Deshacer\tCtrl+Z"); I ("redo", "Rehacer\tCtrl+Y"); S(); I ("dup", "Duplicar clip\tCtrl+D"); I ("del", "Eliminar clip\tSupr"); }
         else if (name == "View") { I ("view:playlist", "Playlist\tF5", view == "playlist" && ! pianoMode); I ("view:mixer", "Mixer\tF9", mixerOpen); I ("view:piano", "Piano Roll\tF7", pianoMode); I ("view:steps", "Step Sequencer\tF6", stepsOpen); S(); I ("layout", "Explorador de samples\tF8", browserOpen); }
         else if (name == "Options") { I ("audio", "Ajustes de audio…"); S(); I ("metro", "Metrónomo", metro); I ("loop", "Repetir en bucle", looping); I ("snap", "Ajustar a la cuadrícula", snap); }
-        else if (name == "Tools") { I ("plugins", "Lista de plugins VST3…\tF10"); S(); I ("tool:select", "Herramienta: seleccionar", tool == "select"); I ("tool:pencil", "Herramienta: lápiz", tool == "pencil"); I ("tool:cut", "Herramienta: cortar", tool == "cut"); I ("tool:trim", "Herramienta: recortar", tool == "trim"); }
+        else if (name == "Tools") { I ("plugins", "Lista de plugins VST3…\tF10"); S(); I ("tool:select", "Herramienta: seleccionar", tool == "select"); I ("tool:pencil", "Herramienta: lápiz", tool == "pencil"); I ("tool:brush", "Herramienta: pincel", tool == "brush"); I ("tool:cut", "Herramienta: cortar", tool == "cut"); I ("tool:trim", "Herramienta: recortar", tool == "trim"); }
         else if (name == "Help") { I ("help", "Ayuda y atajos\tF1"); I ("about", "Acerca de INJUSTICE DAW"); }
         juce::PopupMenu m; int n = 1;
         for (auto& it : items) { if (it.id.isEmpty()) m.addSeparator(); else m.addItem (n, it.label, it.en, it.tick); ++n; }
@@ -245,7 +246,7 @@ private:
         add ("view:playlist", icons::Playlist, x, y2, 108, 34, "Playlist"); x += 114; add ("view:mixer", icons::Mixer, x, y2, 90, 34, "Mixer"); x += 96;
         add ("view:piano", icons::PianoRoll, x, y2, 116, 34, "Piano Roll"); x += 122; add ("view:steps", icons::Steps, x, y2, 154, 34, "Step Sequencer"); x += 164;
         divX = x; x += 14;
-        if (! pianoMode) for (auto [id, ic] : { std::pair<const char*, icons::Id> { "tool:select", icons::Select }, { "tool:pencil", icons::Pencil }, { "tool:cut", icons::Scissors }, { "tool:trim", icons::Stretch } }) { add (id, ic, x, y2, 40, 34); x += 44; }
+        if (! pianoMode) for (auto [id, ic] : { std::pair<const char*, icons::Id> { "tool:select", icons::Select }, { "tool:pencil", icons::Pencil }, { "tool:brush", icons::Brush }, { "tool:cut", icons::Scissors }, { "tool:trim", icons::Stretch } }) { add (id, ic, x, y2, 40, 34); x += 44; }
         add ("snap", icons::Magnet, x, y2, 40, 34); x += 50;
         quantR = {};
         float rx = w - 12.f - 3 * 44.f; add ("undo", icons::Undo, rx, y2, 40, 34); add ("redo", icons::Redo, rx + 44, y2, 40, 34); add ("plugins", icons::Plugins, rx + 88, y2, 40, 34);

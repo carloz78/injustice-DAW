@@ -14,13 +14,34 @@ public:
     }
 
     // Crea (si hace falta) el clip de patrón en la primera pista libre, con su sampler.
+    // Los samples del secuenciador suenan completos (no se cortan al terminar el paso).
+    void openAll() { if (sampler) for (int i = 0; i < sampler->getNumSounds(); ++i) if (! sampler->isSoundOpenEnded (i)) sampler->setSoundOpenEnded (i, true); }
+    bool inPatternMode() const { return patternMode; }
+    // Reproduce solo el patrón en bucle: silencia las demás pistas mientras dura y lo restaura al parar.
+    void startPattern()
+    {
+        ensureClip(); if (! clip) return; auto& tc = edit.getTransport();
+        endPattern(); if (tc.isPlaying()) tc.stop (false, false);
+        auto* host = dynamic_cast<te::AudioTrack*> (clip->getTrack()); if (host == nullptr) return;
+        oldLoop = (bool) tc.looping; oldRange = tc.getLoopRange(); oldSolo.clear();
+        for (auto* t : te::getAudioTracks (edit)) { oldSolo.push_back ({ t, t->isSolo (false) }); t->setSolo (t == host); }
+        const auto s = clip->getPosition().getStart();
+        tc.setLoopRange (te::TimeRange (s, edit.tempoSequence.toTime (edit.tempoSequence.toBeats (s) + te::BeatDuration::fromBeats (stepCount() * 0.25))));
+        tc.looping = true; patternMode = true; tc.setPosition (s); tc.play (false);
+    }
+    void endPattern()
+    {
+        if (! patternMode) return; patternMode = false; auto& tc = edit.getTransport();
+        for (auto& [t, so] : oldSolo) for (auto* a : te::getAudioTracks (edit)) if (a == t) a->setSolo (so);
+        oldSolo.clear(); tc.looping = oldLoop; tc.setLoopRange (oldRange);
+    }
     void validate() { if (clip != nullptr && clip->getTrack() == nullptr) { clip = nullptr; sampler = nullptr; samplerPtr = nullptr; repaint(); } }   // el clip pudo borrarse con Deshacer
     void ensureClip()
     {
         validate();
         if (clip != nullptr) return;
         auto tracks = te::getAudioTracks (edit);
-        for (auto* t : tracks) for (auto* c : t->getClips()) if (auto* sc = dynamic_cast<te::StepClip*> (c)) { clip = sc; sampler = findSampler (t); return; }
+        for (auto* t : tracks) for (auto* c : t->getClips()) if (auto* sc = dynamic_cast<te::StepClip*> (c)) { clip = sc; sampler = findSampler (t); openAll(); return; }
         te::AudioTrack* host = nullptr; for (auto* t : tracks) if (t->getClips().isEmpty()) { host = t; break; }
         if (host == nullptr) { if (tracks.isEmpty()) return; host = tracks.getLast(); }
         auto len = edit.tempoSequence.toTime (te::BeatPosition::fromBeats (16.0));
@@ -42,7 +63,7 @@ public:
         ensureClip(); if (! clip || ! sampler) return;
         int existing = soundForRow (row); if (existing >= 0) sampler->removeSound (existing);
         const auto err = sampler->addSound (f.getFullPathName(), f.getFileNameWithoutExtension(), 0.0, 0.0, 1.0f);
-        if (err.isEmpty()) { const int note = clip->getChannels()[row]->noteNumber; sampler->setSoundParams (sampler->getNumSounds() - 1, note, note, note); }
+        if (err.isEmpty()) { const int note = clip->getChannels()[row]->noteNumber; const int idx = sampler->getNumSounds() - 1; sampler->setSoundParams (idx, note, note, note); sampler->setSoundOpenEnded (idx, true); }   // abierto: el sample suena completo aunque el paso sea corto
         repaint();
     }
 
@@ -63,7 +84,7 @@ protected:
         using namespace theme; ensureClip();
         auto& tc = edit.getTransport(); const bool playing = tc.isPlaying();
         auto btn = [&] (juce::Rectangle<float> r, bool on) { g.setColour (on ? accent : juce::Colour (0xff211f27)); g.fillRoundedRectangle (r, 8.f); };
-        btn (playR(), playing); icons::draw (g, icons::Play, playR(), juce::Colours::white);
+        btn (playR(), playing && patternMode); icons::draw (g, icons::Play, playR(), juce::Colours::white);
         btn (stopR(), false); icons::draw (g, icons::Stop, stopR(), juce::Colours::white);
         btn (stepsR(), false); g.setColour (text); g.setFont (juce::FontOptions (22.f)); g.drawText (juce::String (stepCount()) + " Steps   v", stepsR().toNearestInt().reduced (16, 0), juce::Justification::centredLeft);
         btn (addR(), false); g.setColour (rows < 8 ? text : textDim); g.drawLine (addR().getCentreX() - 11, addR().getCentreY(), addR().getCentreX() + 11, addR().getCentreY(), 2.4f); g.drawLine (addR().getCentreX(), addR().getCentreY() - 11, addR().getCentreX(), addR().getCentreY() + 11, 2.4f);
@@ -90,8 +111,8 @@ protected:
     void bodyDown (const juce::MouseEvent& e) override
     {
         ensureClip(); if (! clip) return; auto p = e.position; auto& tc = edit.getTransport();
-        if (playR().contains (p)) { if (tc.isPlaying()) tc.stop (false, false); else { tc.setPosition (clip->getPosition().getStart()); tc.play (false); } repaint(); return; }
-        if (stopR().contains (p)) { tc.stop (false, false); tc.setPosition (clip->getPosition().getStart()); repaint(); return; }
+        if (playR().contains (p)) { if (tc.isPlaying() && patternMode) { tc.stop (false, false); endPattern(); } else startPattern(); repaint(); return; }
+        if (stopR().contains (p)) { tc.stop (false, false); endPattern(); tc.setPosition (clip->getPosition().getStart()); repaint(); return; }
         if (stepsR().contains (p)) { static const int opts[] { 8, 12, 16, 24, 32 }; int i = 0; for (int k = 0; k < 5; ++k) if (opts[k] == stepCount()) i = k; setSteps (opts[(i + 1) % 5]); return; }
         if (addR().contains (p)) { if (rows < 8) { ++rows; setDesign (designW, kHead + 96 + rows * kRowH + 26); } repaint(); return; }
         for (int r = 0; r < rows; ++r)
@@ -117,11 +138,11 @@ protected:
     }
 
 private:
-    te::Edit& edit; te::StepClip::Ptr clip; te::Plugin::Ptr samplerPtr; te::SamplerPlugin* sampler = nullptr; int rows = 4; bool painting = false, paint_ = true; juce::Point<int> lastCell;
+    te::Edit& edit; te::StepClip::Ptr clip; te::Plugin::Ptr samplerPtr; te::SamplerPlugin* sampler = nullptr; bool patternMode = false, oldLoop = false; te::TimeRange oldRange; std::vector<std::pair<te::AudioTrack*, bool>> oldSolo; int rows = 4; bool painting = false, paint_ = true; juce::Point<int> lastCell;
     juce::StringArray dummy;
     std::unique_ptr<juce::FileChooser> chooser;
 
-    void timerCallback() override { validate(); if (isVisible() && edit.getTransport().isPlaying()) repaint(); }
+    void timerCallback() override { validate(); if (patternMode && ! edit.getTransport().isPlaying()) endPattern(); if (isVisible() && edit.getTransport().isPlaying()) repaint(); }
     te::SamplerPlugin* findSampler (te::AudioTrack* t) { for (auto* p : t->pluginList.getPlugins()) if (auto* s = dynamic_cast<te::SamplerPlugin*> (p)) return s; return nullptr; }
     bool hasSample (int r) { return soundForRow (r) >= 0; }
     juce::String sampleName (int r) { const int i = soundForRow (r); return i >= 0 && sampler ? sampler->getSoundName (i) : juce::String(); }

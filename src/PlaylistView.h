@@ -99,7 +99,8 @@ public:
         if (e.mods.isPopupMenu()) { contextMenu (e); return; }
         if (hScrollR().expanded (0, 4).contains (e.position)) { sbDrag = 1; sbGrab = e.x - hThumb().getX(); if (! hThumb().contains (e.position)) sbGrab = hThumb().getWidth() * .5f; dragScroll (e); return; }
         if (vScrollR().expanded (4, 0).contains (e.position)) { sbDrag = 2; sbGrab = e.y - vThumb().getY(); if (! vThumb().contains (e.position)) sbGrab = vThumb().getHeight() * .5f; dragScroll (e); return; }
-        if (e.y < kRulerH && e.x >= kHeaderW) { seekTo (e.x); return; }
+        scrubbing = false; brushSrc = nullptr; brushTrack = -1;
+        if (e.y < kRulerH && e.x >= kHeaderW) { scrubbing = true; seekTo (e.x); return; }
         dragClip = nullptr; dragMode = 0;
         if (const int ed = edgeAt (e.getPosition()); ed >= 0) { resizing = ed; resizeStartY = e.position.y; resizeStartH = hOf (ed); return; }
         if (e.x < kHeaderW + 6) { headerClick (e); return; }
@@ -109,6 +110,7 @@ public:
         te::Clip* hit = nullptr;
         for (auto* c : tr->getClips()) if (c->getPosition().time.contains (te::TimePosition::fromSeconds (t))) hit = c;
         if (tool == "cut" && hit != nullptr) { tr->splitAt (te::TimePosition::fromSeconds (beatsToTime (snapBeat (xToBeat ((float) e.x))))); repaint(); return; }
+        if (tool == "brush") { brushSrc = hit; brushTrack = ti; selected = hit; brushPaint (ti, xToBeat ((float) e.x)); repaint(); return; }
         if (tool == "pencil" && hit == nullptr)
         {
             const double sb = std::max (0.0, std::floor (xToBeat ((float) e.x) / 4.0) * 4.0);
@@ -136,7 +138,8 @@ public:
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
-        if (e.mouseWasDraggedSinceMouseDown() && e.y < kRulerH && e.x >= kHeaderW && dragClip == nullptr && selected == nullptr) { seekTo (e.x); return; }
+        if (scrubbing) { seekTo (e.x); return; }   // arrastrar el cabezal en la regla (aunque haya un clip seleccionado)
+        if (brushTrack >= 0) { if (const int ti = trackAt ((float) e.y); ti >= 0 && e.x >= kHeaderW + 6) brushPaint (ti, xToBeat ((float) e.x)); return; }
         if (resizing >= 0) { setTrackHeight (resizing, resizeStartH + (int) (e.position.y - resizeStartY)); repaint(); return; }
         if (sbDrag) { dragScroll (e); return; }
         if (dragClip == nullptr || (tool != "select" && tool != "trim")) return;
@@ -147,7 +150,21 @@ public:
         const double nb = std::max (0.0, snapBeat (xToBeat ((float) e.x) - dragOffsetBeats));
         dragClip->setStart (te::TimePosition::fromSeconds (beatsToTime (nb)), false, true); repaint();
     }
-    void mouseUp (const juce::MouseEvent&) override { sbDrag = 0; dragMode = 0; resizing = -1; }
+    void resetView() { scrollX = 0; scrollY = 0; repaint(); }
+    void mouseUp (const juce::MouseEvent&) override { sbDrag = 0; dragMode = 0; resizing = -1; scrubbing = false; brushTrack = -1; brushSrc = nullptr; }
+    // Pincel: sobre un hueco pinta clips MIDI de 1 compás; sobre un clip, lo copia a lo largo del arrastre (sin pisar otros clips).
+    void brushPaint (int ti, double beat)
+    {
+        auto tracks = te::getAudioTracks (edit); if (ti < 0 || ti >= tracks.size()) return; auto* tr = tracks[ti];
+        if (brushSrc != nullptr && brushSrc->getTrack() == nullptr) brushSrc = nullptr;
+        double s0 = 0.0, len = 4.0;
+        if (brushSrc != nullptr) { s0 = timeToBeats (brushSrc->getPosition().getStart().inSeconds()); len = timeToBeats (brushSrc->getPosition().getEnd().inSeconds()) - s0; if (len <= 0.0) return; }
+        const double pos = s0 + std::floor ((beat - s0) / len) * len; if (pos < -1e-6) return;
+        const auto a = te::TimePosition::fromSeconds (beatsToTime (pos)), b = te::TimePosition::fromSeconds (beatsToTime (pos + len));
+        for (auto* c : tr->getClips()) if (c->getPosition().getStart() < b - te::TimeDuration::fromSeconds (1e-4) && c->getPosition().getEnd() > a + te::TimeDuration::fromSeconds (1e-4)) return;
+        te::Clip* nc = brushSrc != nullptr ? trackutil::copyClipTo (edit, *brushSrc, *tr, a) : tr->insertMIDIClip ("MIDI", te::TimeRange (a, b), nullptr).get();
+        if (nc != nullptr) { selected = nc; if (onTracksChanged) onTracksChanged(); repaint(); }
+    }
     void mouseMove (const juce::MouseEvent& e) override
     {
         auto cur = juce::MouseCursor::NormalCursor;
@@ -205,6 +222,7 @@ public:
 
 private:
     int dragMode = 0, sbDrag = 0; float sbGrab = 0;   // dragMode: 0 mover, 1 recortar inicio, 2 recortar final
+    bool scrubbing = false; te::Clip* brushSrc = nullptr; int brushTrack = -1;
     te::Edit& edit; double pxPerBeat = 3.6, scrollX = 0, scrollY = 0, dragOffsetBeats = 0; te::Clip* dragClip = nullptr;
     juce::AudioFormatManager fm; juce::AudioThumbnailCache thumbCache; std::map<juce::String, std::unique_ptr<juce::AudioThumbnail>> thumbs;
 

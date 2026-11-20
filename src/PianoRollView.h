@@ -74,6 +74,7 @@ public:
         auto* hit = noteAt (e.position); mode = Mode::none;
         if (tool == "erase") { if (hit) removeNote (hit); mode = Mode::erase; return; }
         if (tool == "cut") { if (hit) splitNote (hit, q (xb ((float) e.x))); return; }
+        if (tool == "brush") { edit.getUndoManager().beginNewTransaction (juce::String::fromUTF8 ("Pintar notas")); mode = Mode::paint; if (! hit) paintNote (e.position); return; }
         if (hit == nullptr && tool == "pencil")
         {
             const double start = std::max (0.0, q (xb ((float) e.x)));
@@ -97,6 +98,7 @@ public:
         if (e.mouseWasDraggedSinceMouseDown() && e.y >= gridBottom() && mode == Mode::none) { velocityAt (e); return; }
         auto* um = &edit.getUndoManager();
         if (mode == Mode::erase) { if (auto* h = noteAt (e.position)) removeNote (h); return; }
+        if (mode == Mode::paint) { paintNote (e.position); return; }
         if (sel == nullptr) return;
         if (mode == Mode::move)
         {
@@ -111,6 +113,14 @@ public:
             sel->setStartAndLength (sel->getStartBeat(), te::BeatDuration::fromBeats (len), um); lastLen = len;
         }
         repaint();
+    }
+    void paintNote (juce::Point<float> pos)
+    {
+        if (pos.x < kKeyW || pos.y < kTop || pos.y >= gridBottom()) return;
+        const double len = snap ? quantum : 0.25, start = std::floor (xb (pos.x) / len) * len; const int pitch = juce::jlimit (0, 127, yp (pos.y));
+        if (start < 0 || start >= clipLenBeats()) return;
+        for (auto* n : clip->getSequence().getNotes()) if (n->getNoteNumber() == pitch && n->getStartBeat().inBeats() < start + len - 1e-6 && n->getEndBeat().inBeats() > start + 1e-6) return;
+        sel = clip->getSequence().addNote (pitch, te::BeatPosition::fromBeats (start), te::BeatDuration::fromBeats (len), lastVel, 0, &edit.getUndoManager()); repaint();
     }
     void mouseUp (const juce::MouseEvent&) override { if (mode != Mode::none && onClipChanged) onClipChanged(); mode = Mode::none; litKey = -1; repaint(); }
 
@@ -128,7 +138,7 @@ public:
     }
 
 private:
-    enum class Mode { none, move, resize, erase };
+    enum class Mode { none, move, resize, erase, paint };
     te::Edit& edit; te::MidiClip::Ptr clip; te::MidiNote* sel = nullptr; Mode mode = Mode::none;
     double ppb = 50.0, scrollX = 0, scrollY = 0, anchor = 0, grab = 0, lastLen = 0.25; int lastVel = 100, litKey = -1;
 
@@ -230,7 +240,7 @@ private:
     {
         std::vector<Btn> v; float x = 350.f; const float y = 8.f;
         auto add = [&] (const char* id, const char* tip, icons::Id ic) { v.push_back ({ id, juce::String::fromUTF8 (tip), ic, { x, y, 40, 36 } }); x += 44; };
-        add ("select", "Seleccionar y mover notas", icons::Select); add ("pencil", "Lápiz: dibuja notas", icons::Pencil); add ("erase", "Borrador", icons::Eraser); add ("cut", "Cortar una nota en dos", icons::Scissors);
+        add ("select", "Seleccionar y mover notas", icons::Select); add ("pencil", "Lápiz: dibuja notas", icons::Pencil); add ("brush", "Pincel: arrastra para pintar varias notas", icons::Brush); add ("erase", "Borrador", icons::Eraser); add ("cut", "Cortar una nota en dos", icons::Scissors);
         x += 10; v.push_back ({ "quant", juce::String::fromUTF8 ("Cuantización"), icons::Chevron, { x, y, 92, 36 }, }); x += 108;
         add ("import", "Importar archivo MIDI a este clip", icons::OpenFile); add ("export", "Exportar este clip como archivo MIDI", icons::Export); add ("humanize", "Humanizar: mueve un poco el tiempo y la fuerza de las notas", icons::Sliders);
         return v;
@@ -257,7 +267,7 @@ private:
     {
         for (auto& b : btns()) if (b.r.contains (e.position))
         {
-            if (b.id == "select" || b.id == "pencil" || b.id == "erase" || b.id == "cut") { tool = b.id; repaint(); }
+            if (b.id == "select" || b.id == "pencil" || b.id == "brush" || b.id == "erase" || b.id == "cut") { tool = b.id; repaint(); }
             else if (b.id == "quant") quantMenu (b.r);
             else if (b.id == "import") importMidi(); else if (b.id == "export") exportMidi(); else if (b.id == "humanize") humanize();
             return;

@@ -5,7 +5,7 @@
 namespace icons
 {
     enum Id { NewFile, OpenFile, Layout, Undo, Redo, Play, Stop, Rec, Loop, Select, Pencil, Scissors, Stretch,
-              Speaker, Metro, Magnet, Chevron, Playlist, Mixer, PianoRoll, Audio, Plugins, Export, Help, Eraser, Steps, Power, Sliders, Plus, Dots, Save, Trash, Plug };
+              Speaker, Metro, Magnet, Chevron, Playlist, Mixer, PianoRoll, Audio, Plugins, Export, Help, Eraser, Steps, Power, Sliders, Plus, Dots, Save, Trash, Plug, Brush };
 
     inline void draw (juce::Graphics& g, Id id, juce::Rectangle<float> r, juce::Colour c)
     {
@@ -60,6 +60,8 @@ namespace icons
             case Save: p.startNewSubPath (P (.1f,.1f)); p.lineTo (P (.78f,.1f)); p.lineTo (P (.92f,.24f)); p.lineTo (P (.92f,.92f)); p.lineTo (P (.1f,.92f)); p.closeSubPath(); g.strokePath (p, st); g.drawRect (P (.28f,.1f).x, P (.28f,.1f).y, s * .36f, s * .26f, lw * .8f); g.drawRect (P (.25f,.58f).x, P (.25f,.58f).y, s * .5f, s * .34f, lw * .8f); break;
             case Trash: g.drawLine ({ P (.1f,.25f), P (.9f,.25f) }, lw); p.startNewSubPath (P (.22f,.25f)); p.lineTo (P (.28f,.92f)); p.lineTo (P (.72f,.92f)); p.lineTo (P (.78f,.25f)); g.strokePath (p, st); g.drawLine ({ P (.38f,.25f), P (.38f,.1f) }, lw); g.drawLine ({ P (.62f,.25f), P (.62f,.1f) }, lw); g.drawLine ({ P (.38f,.1f), P (.62f,.1f) }, lw); break;
             case Plug: p.startNewSubPath (P (.3f,.05f)); p.lineTo (P (.3f,.3f)); p.startNewSubPath (P (.7f,.05f)); p.lineTo (P (.7f,.3f)); g.strokePath (p, st); { Path q; q.addRoundedRectangle (P (.15f,.3f).x, P (.15f,.3f).y, s * .7f, s * .35f, 3.f); g.strokePath (q, st); } g.drawLine ({ P (.5f,.65f), P (.5f,.95f) }, lw); break;
+            case Brush: g.drawLine ({ P (.86f,.1f), P (.44f,.56f) }, lw * 1.7f);
+                        p.startNewSubPath (P (.4f,.5f)); p.cubicTo (P (.18f,.46f), P (.2f,.74f), P (.08f,.92f)); p.cubicTo (P (.34f,.94f), P (.58f,.88f), P (.6f,.66f)); p.closeSubPath(); g.fillPath (p); break;
             case Help: g.drawEllipse (b.reduced (s * .06f), lw); g.setFont (juce::FontOptions (s * .7f, juce::Font::bold)); g.drawText ("?", b.toNearestInt(), juce::Justification::centred); break;
         }
     }

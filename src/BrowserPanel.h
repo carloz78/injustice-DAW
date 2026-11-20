@@ -4,11 +4,11 @@
 #include <set>
 
 // Browser lateral: categorías y árbol real de carpetas de samples con vista previa de forma de onda.
-// Vocabulario propio (no copia el de otros DAW). Las categorías aún sin función se muestran atenuadas.
-class BrowserPanel : public juce::Component
+// Vocabulario propio (no copia el de otros DAW). 
+class BrowserPanel : public juce::Component, public juce::FileDragAndDropTarget
 {
 public:
-    std::function<void()> onClose, onCollapse;
+    std::function<void()> onClose, onCollapse; std::function<void (const juce::String&)> onMessage;
     juce::File root;
 
     BrowserPanel() : thumbCache (8)
@@ -21,19 +21,20 @@ public:
             root = defaultRoot();
             for (auto* sub : { "Kicks", "Snares", "Claps", "Hats", "Percs", "FX", "Loops", "Vocales" }) root.getChildFile (sub).createDirectory();
         }
+        curDir = root;
         addAndMakeVisible (search); search.setTextToShowWhenEmpty (juce::String::fromUTF8 ("Buscar samples…"), textDimC()); search.onTextChange = [this] { scroll = 0; rebuild(); };
         rebuild();
     }
     static juce::File defaultRoot() { return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("INJUSTICE DAW").getChildFile ("Samples"); }
     static juce::Colour textDimC() { return juce::Colour (0xff9c9bad); }
     void resized() override { search.setBounds (10, kHead + 2, getWidth() - 20, 30); }
-    void setRoot (const juce::File& f) { root = f; expanded.clear(); selected = juce::File(); scroll = 0; rootFile.getParentDirectory().createDirectory(); rootFile.replaceWithText (f.getFullPathName()); rebuild(); }
+    void setRoot (const juce::File& f) { root = f; curDir = f; expanded.clear(); selected = juce::File(); scroll = 0; rootFile.getParentDirectory().createDirectory(); rootFile.replaceWithText (f.getFullPathName()); rebuild(); }
     void expandAll (int maxDepth) { std::function<void (const juce::File&, int)> rec = [&] (const juce::File& d, int dep) { if (dep > maxDepth) return; for (auto& s : d.findChildFiles (juce::File::findDirectories, false)) { expanded.insert (s.getFullPathName()); rec (s, dep + 1); } }; expanded.insert (root.getFullPathName()); rec (root, 0); rebuild(); }
     void setSearch (const juce::String& t) { search.setText (t, true); }
     int numShown() const { return (int) items.size(); }
     void selectFile (const juce::File& f) { selected = f; thumb.reset(); repaint(); }
 
-    static constexpr int kTools = 72, kHead = 56, kCatRow = 34, kRow = 30, kPrev = 118;
+    static constexpr int kTools = 130, kHead = 56, kCatRow = 34, kRow = 30, kPrev = 118;
     static bool isAudio (const juce::File& f) { return f.hasFileExtension ("wav;aif;aiff;flac;mp3;ogg"); }
 
     void paint (juce::Graphics& g) override
@@ -46,24 +47,27 @@ public:
         g.setColour (juce::Colour (0xff222027)); g.fillRoundedRectangle (collapseR(), 6.f); g.fillRoundedRectangle (closeR(), 6.f);
         g.setColour (text); drawChevrons (g, collapseR()); drawX (g, closeR());
 
-        for (int b = 0; b < 2; ++b) { auto r = toolR (b); g.setColour (r.contains (hover) ? panelHi : juce::Colour (0xff222027)); g.fillRoundedRectangle (r, 6.f); g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText (b == 0 ? juce::String::fromUTF8 ("Elegir carpeta…") : juce::String ("Abrir carpeta"), r.toNearestInt(), juce::Justification::centred); }
+        for (int b = 0; b < 4; ++b)
+        {
+            auto r = toolR (b); g.setColour (b == 0 ? accent : (r.contains (hover) ? panelHi : juce::Colour (0xff222027))); g.fillRoundedRectangle (r, 6.f); g.setColour (b == 0 ? juce::Colours::white : text); g.setFont (juce::FontOptions (14.f));
+            g.drawText (b == 0 ? juce::String::fromUTF8 ("Importar samples") : b == 1 ? juce::String::fromUTF8 ("Nueva carpeta") : b == 2 ? juce::String::fromUTF8 ("Elegir carpeta…") : juce::String::fromUTF8 ("Abrir carpeta"), r.toNearestInt().reduced (6, 0), juce::Justification::centred, true);
+        }
+        { const juce::String dest = curDir == root ? juce::String::fromUTF8 ("Muestras (carpeta principal)") : curDir.getFileName(); g.setColour (textDim); g.setFont (juce::FontOptions (13.f));
+          g.drawText (juce::String::fromUTF8 ("Se guardan en: ") + dest, 12, kHead + 106, getWidth() - 24, 18, juce::Justification::centredLeft, true); }
         g.saveState(); g.reduceClipRegion (6, kHead + kTools, getWidth() - 12, getHeight() - kHead - kTools - kPrev);
         float y = (float) kHead + kTools + 6 - (float) scroll;
-        if (! searching()) for (auto cat : { "Proyecto actual", "Archivos recientes", "Plugins instalados", "Presets de plugin", "Presets de canal", "Presets de mezcla" })
-        { g.setColour (textDim.withAlpha (.55f)); g.setFont (juce::FontOptions (16.f)); g.drawText (cat, 40, (int) y, getWidth() - 50, kCatRow, juce::Justification::centredLeft);
-          g.fillEllipse (18.f, y + kCatRow * .5f - 4, 8.f, 8.f); y += kCatRow; }
-        if (! searching()) y += 4;
         for (size_t i = 0; i < items.size(); ++i, y += kRow)
         {
             auto& it = items[i]; if (y + kRow < kHead + kTools || y > getHeight()) continue;
             const bool sel = it.file == selected;
+            if (it.isDir && it.file == curDir && ! searching()) { g.setColour (juce::Colour (0xff2c2640)); g.fillRoundedRectangle (juce::Rectangle<float> (8, y, (float) getWidth() - 16, (float) kRow), 5.f); g.setColour (accentHi); g.drawRoundedRectangle (juce::Rectangle<float> (8.5f, y + .5f, (float) getWidth() - 17, (float) kRow - 1), 5.f, 1.2f); }
             if (sel) { g.setColour (juce::Colour (0xff3b2a5e)); g.fillRoundedRectangle (juce::Rectangle<float> (8, y, (float) getWidth() - 16, (float) kRow), 5.f); }
             const float x = 14.f + it.depth * 18.f; g.setColour (text); g.setFont (juce::FontOptions (16.f));
             if (it.isDir) { icons::draw (g, expanded.count (it.file.getFullPathName()) ? icons::Chevron : icons::Chevron, { x, y, 24.f, (float) kRow }, textDim); icons::draw (g, icons::OpenFile, { x + 22, y, 26.f, (float) kRow }, accent.brighter (.2f)); }
             else icons::draw (g, icons::Audio, { x + 22, y, 26.f, (float) kRow }, accentHi);
             g.setColour (it.isDir ? text : text.withAlpha (.92f)); g.drawText (it.isRoot ? "Muestras" : (searching() ? it.file.getParentDirectory().getFileName() + "  /  " + it.file.getFileName() : it.file.getFileName()), (int) x + 54, (int) y, getWidth() - (int) x - 62, kRow, juce::Justification::centredLeft);
         }
-        if (items.size() <= 1 && ! searching()) { g.setColour (textDim); g.setFont (juce::FontOptions (14.f)); g.drawText (juce::String::fromUTF8 ("Aquí no hay audio todavía. Copia tus samples a la carpeta de abajo o elige otra con «Elegir carpeta»."), 16, (int) y, getWidth() - 32, 40, juce::Justification::centredLeft); }
+        if (items.size() <= 1 && ! searching()) { g.setColour (textDim); g.setFont (juce::FontOptions (14.f)); g.drawFittedText (juce::String::fromUTF8 ("Aquí no hay audio todavía. Usa «Importar samples» o arrastra tus archivos aquí para guardarlos en tu biblioteca."), 16, (int) y, getWidth() - 32, 64, juce::Justification::topLeft, 4); }
         g.restoreState();
         drawPreview (g);
     }
@@ -73,38 +77,56 @@ public:
         dragFile = juce::File(); dragged = false;
         if (closeR().contains (e.position)) { if (onClose) onClose(); return; }
         if (collapseR().contains (e.position)) { if (onCollapse) onCollapse(); return; }
-        if (toolR (0).contains (e.position)) { chooseRoot(); return; }
-        if (toolR (1).contains (e.position)) { root.createDirectory(); root.revealToUser(); return; }
+        if (toolR (0).contains (e.position)) { importDialog (curDir); return; }
+        if (toolR (1).contains (e.position)) { newFolder (curDir); return; }
+        if (toolR (2).contains (e.position)) { chooseRoot(); return; }
+        if (toolR (3).contains (e.position)) { root.createDirectory(); root.revealToUser(); return; }
         const int idx = itemAt (e.y); if (idx < 0) return; auto& it = items[(size_t) idx];
-        if (e.mods.isPopupMenu() && it.isRoot) { chooseRoot(); return; }
-        if (it.isDir) { auto k = it.file.getFullPathName(); if (expanded.count (k)) expanded.erase (k); else expanded.insert (k); rebuild(); }
+        if (e.mods.isPopupMenu()) { itemMenu (it.file, it.isDir, it.isRoot); return; }
+        if (it.isDir) { curDir = it.file; auto k = it.file.getFullPathName(); if (expanded.count (k)) expanded.erase (k); else expanded.insert (k); rebuild(); }
         else { selectFile (it.file); dragFile = it.file; }
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (dragFile.existsAsFile() && ! dragged && e.getDistanceFromDragStart() > 8) { dragged = true; juce::DragAndDropContainer::performExternalDragDropOfFiles ({ dragFile.getFullPathName() }, false); }
     }
-    void mouseDoubleClick (const juce::MouseEvent& e) override { const int idx = itemAt (e.y); if (idx >= 0 && items[(size_t) idx].isRoot) chooseRoot(); }
-    void mouseMove (const juce::MouseEvent& e) override { hover = e.position; repaint (0, kHead + 36, getWidth(), 36); }
+    void mouseDoubleClick (const juce::MouseEvent&) override {}
+    bool isInterestedInFileDrag (const juce::StringArray& f) override { return f.size() > 0; }
+    void filesDropped (const juce::StringArray& f, int, int) override { juce::Array<juce::File> a; for (auto& s : f) a.add (juce::File (s)); importFiles (a, curDir); }
+    // Copia samples (o carpetas enteras) a la biblioteca; no pisa archivos con el mismo nombre.
+    int importFiles (const juce::Array<juce::File>& files, juce::File dest)
+    {
+        if (dest == juce::File() || (dest.exists() && ! dest.isDirectory())) dest = root; dest.createDirectory(); int n = 0;
+        std::function<void (const juce::File&, const juce::File&)> copyDir = [&] (const juce::File& from, const juce::File& to)
+        {
+            to.createDirectory();
+            for (auto& c : from.findChildFiles (juce::File::findFilesAndDirectories, false)) { if (c.getFileName().startsWith (".")) continue; if (c.isDirectory()) copyDir (c, to.getChildFile (c.getFileName())); else if (isAudio (c)) n += copyUnique (c, to) ? 1 : 0; }
+        };
+        for (auto& f : files) { if (f.isDirectory()) copyDir (f, dest.getChildFile (f.getFileName())); else if (isAudio (f)) n += copyUnique (f, dest) ? 1 : 0; }
+        expanded.insert (dest.getFullPathName()); rebuild();
+        if (onMessage) onMessage (n > 0 ? juce::String (n) + juce::String::fromUTF8 (n == 1 ? " sample guardado en «" : " samples guardados en «") + (dest == root ? juce::String::fromUTF8 ("Muestras") : dest.getFileName()) + juce::String::fromUTF8 ("»") : juce::String::fromUTF8 ("No hay audio que importar (WAV, AIFF, FLAC, MP3, OGG)"));
+        return n;
+    }
+    void mouseMove (const juce::MouseEvent& e) override { hover = e.position; repaint (0, kHead + 36, getWidth(), 90); }
     void mouseExit (const juce::MouseEvent&) override { hover = { -1, -1 }; repaint(); }
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w) override
     {
-        const int content = (int) items.size() * kRow + (searching() ? 0 : 6 * kCatRow) + 10, view = getHeight() - kHead - kTools - kPrev;
+        const int content = (int) items.size() * kRow + 10, view = getHeight() - kHead - kTools - kPrev;
         scroll = juce::jlimit (0, juce::jmax (0, content - view), scroll - (int) (w.deltaY * 400)); repaint();
     }
 
 private:
     struct Item { juce::File file; int depth = 0; bool isDir = false, isRoot = false; };
-    std::vector<Item> items; std::set<juce::String> expanded; juce::File selected, dragFile, rootFile; int scroll = 0; bool dragged = false;
+    std::vector<Item> items; std::set<juce::String> expanded; juce::File selected, dragFile, rootFile, curDir; int scroll = 0; bool dragged = false;
     juce::AudioFormatManager fm; juce::AudioThumbnailCache thumbCache; std::unique_ptr<juce::AudioThumbnail> thumb; std::unique_ptr<juce::FileChooser> chooser; juce::TextEditor search; juce::Point<float> hover { -1, -1 };
     bool searching() const { return search.getText().trim().isNotEmpty(); }
-    juce::Rectangle<float> toolR (int b) const { const float w = ((float) getWidth() - 28.f) * .5f; return { 10.f + b * (w + 8.f), (float) kHead + 36.f, w, 30.f }; }
+    juce::Rectangle<float> toolR (int b) const { const float w = ((float) getWidth() - 28.f) * .5f; return { 10.f + (b % 2) * (w + 8.f), (float) kHead + 36.f + (b / 2) * 34.f, w, 30.f }; }
 
     juce::Rectangle<float> closeR() const { return { (float) getWidth() - 52.f, 10.f, 36.f, 36.f }; }
     juce::Rectangle<float> collapseR() const { return { (float) getWidth() - 94.f, 10.f, 36.f, 36.f }; }
     static void drawX (juce::Graphics& g, juce::Rectangle<float> r) { auto c = r.getCentre(); g.drawLine (c.x - 6, c.y - 6, c.x + 6, c.y + 6, 1.8f); g.drawLine (c.x + 6, c.y - 6, c.x - 6, c.y + 6, 1.8f); }
     static void drawChevrons (juce::Graphics& g, juce::Rectangle<float> r) { auto c = r.getCentre(); for (float o : { -3.f, 4.f }) { juce::Path p; p.startNewSubPath (c.x + o + 3, c.y - 6); p.lineTo (c.x + o - 3, c.y); p.lineTo (c.x + o + 3, c.y + 6); g.strokePath (p, juce::PathStrokeType (1.8f)); } }
-    int itemAt (int y) const { float yy = (float) kHead + kTools + 6 - (float) scroll + (searching() ? 0 : 6 * kCatRow + 4); if (y < kHead + kTools || y > getHeight() - kPrev) return -1; const int i = (int) std::floor ((y - yy) / kRow); return (i >= 0 && i < (int) items.size()) ? i : -1; }
+    int itemAt (int y) const { float yy = (float) kHead + kTools + 6 - (float) scroll; if (y < kHead + kTools || y > getHeight() - kPrev) return -1; const int i = (int) std::floor ((y - yy) / kRow); return (i >= 0 && i < (int) items.size()) ? i : -1; }
 
     void rebuild()
     {
@@ -125,6 +147,35 @@ private:
             for (auto& f : fl) if (isAudio (f)) items.push_back ({ f, dep, false, false });
         };
         rec (root, 1); repaint();
+    }
+    static bool copyUnique (const juce::File& src, const juce::File& dir)
+    {
+        if (src.getParentDirectory() == dir) return false;
+        auto dst = dir.getChildFile (src.getFileName());
+        for (int k = 2; dst.exists() && k < 1000; ++k) dst = dir.getChildFile (src.getFileNameWithoutExtension() + "_" + juce::String (k) + src.getFileExtension());
+        return src.copyFileTo (dst);
+    }
+    void importDialog (const juce::File& dest)
+    {
+        chooser = std::make_unique<juce::FileChooser> (juce::String::fromUTF8 ("Elige los samples que quieres guardar en tu biblioteca"), juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectMultipleItems, [this, dest] (const juce::FileChooser& fc) { if (fc.getResults().size() > 0) importFiles (fc.getResults(), dest); });
+    }
+    void newFolder (const juce::File& parent)
+    {
+        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Nueva carpeta"), juce::String::fromUTF8 ("Se crea dentro de «") + (parent == root ? juce::String::fromUTF8 ("Muestras") : parent.getFileName()) + juce::String::fromUTF8 ("»"), juce::MessageBoxIconType::NoIcon);
+        aw->addTextEditor ("n", "", juce::String::fromUTF8 ("Nombre")); aw->addButton ("Crear", 1); aw->addButton ("Cancelar", 0);
+        aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, parent, aw] (int res)
+        {
+            auto name = juce::File::createLegalFileName (aw->getTextEditorContents ("n").trim());
+            if (res == 1 && name.isNotEmpty()) { auto d = parent.getChildFile (name); d.createDirectory(); expanded.insert (parent.getFullPathName()); curDir = d; rebuild(); }
+            delete aw;
+        }));
+    }
+    void itemMenu (const juce::File& f, bool isDir, bool isRoot)
+    {
+        juce::PopupMenu m; const auto dir = isDir ? f : f.getParentDirectory();
+        m.addItem (1, juce::String::fromUTF8 ("Importar samples aquí…")); m.addItem (2, juce::String::fromUTF8 ("Nueva subcarpeta…")); m.addSeparator(); m.addItem (3, juce::String::fromUTF8 ("Mostrar en el Explorador")); if (isRoot) m.addItem (4, juce::String::fromUTF8 ("Cambiar carpeta de samples…"));
+        m.showMenuAsync ({}, [this, f, dir, isRoot] (int id) { if (id == 1) importDialog (dir); else if (id == 2) newFolder (dir); else if (id == 3) f.revealToUser(); else if (id == 4 && isRoot) chooseRoot(); });
     }
     void chooseRoot()
     {

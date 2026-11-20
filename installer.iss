@@ -13,6 +13,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\INJUSTICE DAW.exe
 WizardStyle=modern
+SetupIconFile=assets\icon.ico
 
 [Files]
 Source: "build\src\InjusticeDAW_artefacts\Release\INJUSTICE DAW.exe"; DestDir: "{app}"; Flags: ignoreversion
