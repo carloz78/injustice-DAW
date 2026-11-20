@@ -72,14 +72,20 @@ public:
             g.fillRect (beatToX (b), (float) kRulerH, 1.f, (float) (H - kRulerH));
         }
         // clips
+        auto visibleRow = [&] (int i) { const int t = trackTop (i); return t + hOf (i) >= kRulerH && t <= H; };   // solo se dibuja lo que se ve
         for (int i = 0; i < tracks.size(); ++i)
+        {
+            if (! visibleRow (i)) { if (trackTop (i) > H) break; continue; }
             for (auto* c : tracks[i]->getClips()) drawClip (g, *c, i);
+        }
+        for (int i = 0; i < tracks.size(); ++i) { if (! visibleRow (i)) { if (trackTop (i) > H) break; continue; } if (autoShown (*tracks[i])) drawAuto (g, i); }
         g.restoreState();
 
         drawRuler (g, W);
-        for (int i = 0; i < tracks.size(); ++i) drawHeader (g, *tracks[i], i);
+        for (int i = 0; i < tracks.size(); ++i) { if (! visibleRow (i)) { if (trackTop (i) > H) break; continue; } drawHeader (g, *tracks[i], i); }
         { auto ar = addR(); if (ar.getBottom() > kRulerH && ar.getY() < H) { g.setColour (juce::Colour (0xff1d1c22)); g.fillRoundedRectangle (ar, 6.f); g.setColour (juce::Colour (0xff34323a)); g.drawRoundedRectangle (ar.reduced (.5f), 6.f, 1.f);
             icons::draw (g, icons::Plus, { ar.getX() + 6, ar.getY(), 38.f, ar.getHeight() }, text); g.setColour (textDim); g.setFont (juce::FontOptions (14.f)); g.drawText ("Agregar pista", ar.withTrimmedLeft (46).toNearestInt(), juce::Justification::centredLeft); } }
+        if (marquee && ! mqRect.isEmpty()) { g.setColour (juce::Colours::white); g.drawRect (mqRect, 1.5f); }
         drawScrollbars (g);
 
         // cabezal
@@ -95,11 +101,12 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        grabKeyboardFocus(); sbDrag = 0;
+        grabKeyboardFocus(); sbDrag = 0; edit.getUndoManager().beginNewTransaction();   // cada gesto = un solo "deshacer"
+        if (tool == "auto" && e.x >= kHeaderW + 6 && e.y >= kRulerH && ! (needHScroll() && hScrollR().expanded (0, 4).contains (e.position)) && ! vScrollR().expanded (4, 0).contains (e.position)) { autoDown (e); return; }
         if (e.mods.isPopupMenu()) { contextMenu (e); return; }
-        if (hScrollR().expanded (0, 4).contains (e.position)) { sbDrag = 1; sbGrab = e.x - hThumb().getX(); if (! hThumb().contains (e.position)) sbGrab = hThumb().getWidth() * .5f; dragScroll (e); return; }
+        if ((needHScroll() && hScrollR().expanded (0, 4).contains (e.position))) { sbDrag = 1; sbGrab = e.x - hThumb().getX(); if (! hThumb().contains (e.position)) sbGrab = hThumb().getWidth() * .5f; dragScroll (e); return; }
         if (vScrollR().expanded (4, 0).contains (e.position)) { sbDrag = 2; sbGrab = e.y - vThumb().getY(); if (! vThumb().contains (e.position)) sbGrab = vThumb().getHeight() * .5f; dragScroll (e); return; }
-        scrubbing = false; brushSrc = nullptr; brushTrack = -1;
+        scrubbing = false; brushSrc = nullptr; brushTrack = -1; lastDT = 0;
         if (e.y < kRulerH && e.x >= kHeaderW) { scrubbing = true; seekTo (e.x); return; }
         dragClip = nullptr; dragMode = 0;
         if (const int ed = edgeAt (e.getPosition()); ed >= 0) { resizing = ed; resizeStartY = e.position.y; resizeStartH = hOf (ed); return; }
@@ -117,6 +124,11 @@ public:
             auto c = tr->insertMIDIClip ("MIDI", te::TimeRange (te::TimePosition::fromSeconds (beatsToTime (sb)), te::TimePosition::fromSeconds (beatsToTime (sb + 16.0))), nullptr);
             selected = c.get(); repaint(); return;
         }
+        if (tool == "select" && hit == nullptr && e.x >= kHeaderW + 6)   // selector: rectángulo para elegir varios clips
+        { marquee = true; mqStart = e.position; mqRect = {}; group.clear(); selected = nullptr; dragClip = nullptr; repaint(); return; }
+        if (hit == nullptr) group.clear();
+        else if (e.mods.isShiftDown()) { if (inGroup (hit)) group.removeObject (hit); else group.add (hit); }
+        else if (! inGroup (hit)) { group.clear(); group.add (hit); }
         selected = hit; dragClip = hit;
         if (hit)
         {
@@ -125,6 +137,8 @@ public:
             if (e.x >= x1 - zone) dragMode = 2; else if (e.x <= x0 + zone) dragMode = 1; else if (tool == "trim") dragClip = nullptr;
         }
         if (hit) { dragOffsetBeats = xToBeat ((float) e.x) - timeToBeats (hit->getPosition().getStart().inSeconds()); }
+        dragOrig.clear(); downTrack = ti; auto allT = te::getAudioTracks (edit);
+        if (hit && dragMode == 0 && tool == "select") for (auto* c : group) { if (c->getTrack() == nullptr) continue; int idx = 0; for (int k = 0; k < allT.size(); ++k) if (allT[k] == c->getTrack()) idx = k; dragOrig.push_back ({ c, timeToBeats (c->getPosition().getStart().inSeconds()), idx }); }
         repaint();
     }
     void mouseDoubleClick (const juce::MouseEvent& e) override
@@ -138,20 +152,36 @@ public:
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        if (autoIdx >= 0) { autoDrag (e); return; }
         if (scrubbing) { seekTo (e.x); return; }   // arrastrar el cabezal en la regla (aunque haya un clip seleccionado)
         if (brushTrack >= 0) { if (const int ti = trackAt ((float) e.y); ti >= 0 && e.x >= kHeaderW + 6) brushPaint (ti, xToBeat ((float) e.x)); return; }
         if (resizing >= 0) { setTrackHeight (resizing, resizeStartH + (int) (e.position.y - resizeStartY)); repaint(); return; }
         if (sbDrag) { dragScroll (e); return; }
+        if (marquee)
+        {
+            mqRect = juce::Rectangle<float>::leftTopRightBottom (std::min (mqStart.x, (float) e.x), std::min (mqStart.y, (float) e.y), std::max (mqStart.x, (float) e.x), std::max (mqStart.y, (float) e.y));
+            group.clear(); auto tl = te::getAudioTracks (edit);
+            for (int i = 0; i < tl.size(); ++i) { const float y0 = (float) trackTop (i), y1 = y0 + (float) hOf (i); if (y1 < mqRect.getY() || y0 > mqRect.getBottom()) continue;
+                for (auto* c : tl[i]->getClips()) { const float x0 = beatToX (timeToBeats (c->getPosition().getStart().inSeconds())), x1 = beatToX (timeToBeats (c->getPosition().getEnd().inSeconds())); if (x1 >= mqRect.getX() && x0 <= mqRect.getRight()) group.add (c); } }
+            selected = group.size() == 1 ? group.getUnchecked (0).get() : nullptr; repaint(); return;
+        }
         if (dragClip == nullptr || (tool != "select" && tool != "trim")) return;
         const double cs = timeToBeats (dragClip->getPosition().getStart().inSeconds()), ce = timeToBeats (dragClip->getPosition().getEnd().inSeconds());
         if (dragMode == 2) { const double nb = std::max (cs + 0.25, snapBeat (xToBeat ((float) e.x))); dragClip->setEnd (te::TimePosition::fromSeconds (beatsToTime (nb)), true); repaint(); return; }
         if (dragMode == 1) { const double nb = juce::jlimit (0.0, ce - 0.25, snapBeat (xToBeat ((float) e.x))); dragClip->setStart (te::TimePosition::fromSeconds (beatsToTime (nb)), true, false); repaint(); return; }
         if (tool == "trim") return;
-        const double nb = std::max (0.0, snapBeat (xToBeat ((float) e.x) - dragOffsetBeats));
-        dragClip->setStart (te::TimePosition::fromSeconds (beatsToTime (nb)), false, true); repaint();
+        // mover: todos los clips elegidos juntos, en horizontal y también a otras pistas
+        double primary = 0.0, minOrig = 1e9; int minT = 1 << 20, maxT = -1;
+        for (auto& o : dragOrig) { if (o.clip == dragClip) primary = o.beat; minOrig = std::min (minOrig, o.beat); minT = std::min (minT, o.track); maxT = std::max (maxT, o.track); }
+        if (dragOrig.empty()) { const double nb = std::max (0.0, snapBeat (xToBeat ((float) e.x) - dragOffsetBeats)); dragClip->setStart (te::TimePosition::fromSeconds (beatsToTime (nb)), false, true); repaint(); return; }
+        double delta = snapBeat (xToBeat ((float) e.x) - dragOffsetBeats) - primary; delta = std::max (delta, -minOrig);
+        auto allT = te::getAudioTracks (edit); const int tNow = trackAt ((float) e.y); int dT = tNow >= 0 ? tNow - downTrack : lastDT; dT = juce::jlimit (-minT, allT.size() - 1 - maxT, dT); lastDT = dT;
+        for (auto& o : dragOrig) { if (o.clip->getTrack() == nullptr) continue; auto* dest = allT[o.track + dT]; if (o.clip->getTrack() != dest) o.clip->moveTo (*dest); o.clip->setStart (te::TimePosition::fromSeconds (beatsToTime (std::max (0.0, o.beat + delta))), false, true); }
+        repaint();
     }
+    void setZoom (double ppb) { pxPerBeat = ppb; repaint(); }
     void resetView() { scrollX = 0; scrollY = 0; repaint(); }
-    void mouseUp (const juce::MouseEvent&) override { sbDrag = 0; dragMode = 0; resizing = -1; scrubbing = false; brushTrack = -1; brushSrc = nullptr; }
+    void mouseUp (const juce::MouseEvent&) override { autoIdx = -1; sbDrag = 0; dragMode = 0; resizing = -1; scrubbing = false; brushTrack = -1; brushSrc = nullptr; marquee = false; dragOrig.clear(); lastDT = 0; repaint(); }
     // Pincel: sobre un hueco pinta clips MIDI de 1 compás; sobre un clip, lo copia a lo largo del arrastre (sin pisar otros clips).
     void brushPaint (int ti, double beat)
     {
@@ -192,8 +222,18 @@ public:
     }
     bool keyPressed (const juce::KeyPress& k) override
     {
-        if (k.getModifiers().isCommandDown() && juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) k.getKeyCode()) == 'd' && selected != nullptr) { if (auto* nc = trackutil::duplicateClip (edit, *selected)) selected = nc; repaint(); return true; }
-        if ((k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) && selected != nullptr) { selected->removeFromParent(); selected = nullptr; dragClip = nullptr; repaint(); return true; }
+        auto lower = [&] { return juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) k.getKeyCode()); };
+        if (k.getModifiers().isCommandDown() && lower() == 'm') { addMarker (snapBeat (timeToBeats (edit.getTransport().getPosition().inSeconds()))); return true; }
+        if (k.getModifiers().isCommandDown() && k.getKeyCode() == juce::KeyPress::rightKey) { jumpToMarker (1); return true; }
+        if (k.getModifiers().isCommandDown() && k.getKeyCode() == juce::KeyPress::leftKey) { jumpToMarker (-1); return true; }
+        if (k.getModifiers().isCommandDown() && lower() == 'c' && (selected != nullptr || group.size() > 0)) { copySelection(); return true; }
+        if (k.getModifiers().isCommandDown() && lower() == 'v' && ! clipboard.empty()) { pasteAtPlayhead(); return true; }
+        if (k.getModifiers().isCommandDown() && lower() == 'x' && (selected != nullptr || group.size() > 0)) { copySelection(); return keyPressed (juce::KeyPress (juce::KeyPress::deleteKey)); }
+        if (k.getModifiers().isCommandDown() && juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) k.getKeyCode()) == 'a')   // Ctrl+A: elegir todos los clips
+        { group.clear(); for (auto* t : te::getAudioTracks (edit)) for (auto* c : t->getClips()) group.add (c); selected = group.size() == 1 ? group.getUnchecked (0).get() : nullptr; repaint(); return true; }
+        if (k == juce::KeyPress::escapeKey && (selected != nullptr || group.size() > 0)) { group.clear(); selected = nullptr; repaint(); return true; }
+        if (k.getModifiers().isCommandDown() && juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) k.getKeyCode()) == 'd' && (selected != nullptr || group.size() > 0)) { if (group.size() > 1) { juce::ReferenceCountedArray<te::Clip> nw; for (auto* c : group) if (auto* nc = trackutil::duplicateClip (edit, *c)) nw.add (nc); group = nw; selected = nullptr; } else if (auto* nc = trackutil::duplicateClip (edit, *selected)) { selected = nc; group.clear(); group.add (nc); } repaint(); return true; }
+        if ((k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) && (selected != nullptr || group.size() > 0)) { if (group.size() > 1) { for (auto* c : group) c->removeFromParent(); } else if (selected) selected->removeFromParent(); group.clear(); selected = nullptr; dragClip = nullptr; repaint(); return true; }
         return false;
     }
 
@@ -222,6 +262,9 @@ public:
 
 private:
     int dragMode = 0, sbDrag = 0; float sbGrab = 0;   // dragMode: 0 mover, 1 recortar inicio, 2 recortar final
+    struct Orig { te::Clip::Ptr clip; double beat; int track; };
+    juce::ReferenceCountedArray<te::Clip> group; std::vector<Orig> dragOrig; bool marquee = false; juce::Point<float> mqStart; juce::Rectangle<float> mqRect; int downTrack = 0, lastDT = 0;
+    bool inGroup (te::Clip* c) const { return group.contains (c); }
     bool scrubbing = false; te::Clip* brushSrc = nullptr; int brushTrack = -1;
     te::Edit& edit; double pxPerBeat = 3.6, scrollX = 0, scrollY = 0, dragOffsetBeats = 0; te::Clip* dragClip = nullptr;
     juce::AudioFormatManager fm; juce::AudioThumbnailCache thumbCache; std::map<juce::String, std::unique_ptr<juce::AudioThumbnail>> thumbs;
@@ -230,7 +273,8 @@ private:
     //---- barras de desplazamiento
     double contentBeats() const { double e = 64; for (auto* t : te::getAudioTracks (edit)) for (auto* c : t->getClips()) e = std::max (e, timeToBeats (c->getPosition().getEnd().inSeconds())); return e + 32; }
     double contentH() const { ensureLayout(); return (double) tops.back() + trackH + kGap + 20; }
-    juce::Rectangle<float> hScrollR() const { return { (float) kHeaderW + 6, (float) getHeight() - 11.f, (float) getWidth() - kHeaderW - 22.f, 8.f }; }
+    juce::Rectangle<float> hScrollR() const { return { (float) kHeaderW + 6, (float) getHeight() - 34.f, (float) getWidth() - kHeaderW - 22.f, 24.f }; }
+    bool needHScroll() const { return contentBeats() * pxPerBeat > getWidth() - kHeaderW - 14; }
     juce::Rectangle<float> vScrollR() const { return { (float) getWidth() - 11.f, (float) kRulerH, 8.f, (float) getHeight() - kRulerH - 14.f }; }
     juce::Rectangle<float> hThumb() const { auto r = hScrollR(); const double tot = contentBeats() * pxPerBeat, vis = getWidth() - kHeaderW - 14; const float w = (float) juce::jlimit (30.0, (double) r.getWidth(), r.getWidth() * vis / tot); return { r.getX() + (float) ((r.getWidth() - w) * juce::jlimit (0.0, 1.0, scrollX / std::max (1.0, tot - vis))), r.getY(), w, r.getHeight() }; }
     juce::Rectangle<float> vThumb() const { auto r = vScrollR(); const double tot = contentH(), vis = getHeight() - kRulerH; const float h = (float) juce::jlimit (30.0, (double) r.getHeight(), r.getHeight() * vis / tot); return { r.getX(), r.getY() + (float) ((r.getHeight() - h) * juce::jlimit (0.0, 1.0, scrollY / std::max (1.0, tot - vis))), r.getWidth(), h }; }
@@ -244,7 +288,27 @@ private:
     {
         const bool needH = contentBeats() * pxPerBeat > getWidth() - kHeaderW - 14, needV = contentH() > getHeight() - kRulerH;
         g.setColour (juce::Colours::white.withAlpha (.07f));
-        if (needH) { g.fillRoundedRectangle (hScrollR(), 4.f); g.setColour (theme::accent.withAlpha (.75f)); g.fillRoundedRectangle (hThumb(), 4.f); }
+        if (needH)
+        {   // vista general: miniatura de todo el proyecto; el recuadro es lo que se ve ahora
+            auto r = hScrollR(); g.setColour (juce::Colour (0xe017171f)); g.fillRoundedRectangle (r, 5.f);
+            const double tot = contentBeats(); int n = 4; { auto tt = te::getAudioTracks (edit); for (int i = 0; i < tt.size(); ++i) if (! tt[i]->getClips().isEmpty()) n = std::max (n, i + 1); }
+            const float rowH = std::min (6.f, (r.getHeight() - 6.f) / (float) n);
+            g.saveState(); g.reduceClipRegion (r.toNearestInt());
+            auto tracks = te::getAudioTracks (edit);
+            for (int i = 0; i < tracks.size(); ++i)
+            {
+                const int cv = (int) tracks[i]->state.getProperty ("injColour", -1); const auto col = cv != -1 ? juce::Colour ((juce::uint32) cv) : theme::trackColours[i % 8];
+                for (auto* c : tracks[i]->getClips())
+                {
+                    const double b0 = timeToBeats (c->getPosition().getStart().inSeconds()), b1 = timeToBeats (c->getPosition().getEnd().inSeconds());
+                    const float x0 = r.getX() + (float) (b0 / tot) * r.getWidth(), x1 = r.getX() + (float) (b1 / tot) * r.getWidth();
+                    const int cc = (int) c->state.getProperty ("injColour", -1);
+                    g.setColour ((cc != -1 ? juce::Colour ((juce::uint32) cc) : col).withAlpha (.85f)); g.fillRect (x0, r.getY() + 3.f + (float) i * rowH, std::max (1.5f, x1 - x0), std::max (1.f, rowH - 0.5f));
+                }
+            }
+            g.restoreState();
+            auto th = hThumb(); g.setColour (theme::accent.withAlpha (.28f)); g.fillRoundedRectangle (th, 5.f); g.setColour (theme::accentHi.withAlpha (.9f)); g.drawRoundedRectangle (th.reduced (.5f), 5.f, 1.2f);
+        }
         g.setColour (juce::Colours::white.withAlpha (.07f));
         if (needV) { g.fillRoundedRectangle (vScrollR(), 4.f); g.setColour (theme::accent.withAlpha (.75f)); g.fillRoundedRectangle (vThumb(), 4.f); }
     }
@@ -278,6 +342,22 @@ private:
         m.addSubMenu ("Color", col);
         { juce::PopupMenu hm; hm.addItem (20, "Pequeñas (todas)"); hm.addItem (21, "Medianas (todas)"); hm.addItem (22, "Grandes (todas)"); hm.addItem (23, "Esta pista: pequeña"); hm.addItem (24, "Esta pista: grande"); m.addSubMenu ("Altura de pistas", hm); }
         m.addSeparator();
+        {
+            auto* vp = autoParamOf (*t); const juce::String an = autoParamName (*t);
+            m.addItem (6, autoShown (*t) ? juce::String::fromUTF8 ("Ocultar automatización") : juce::String::fromUTF8 ("Mostrar automatización: ") + an);
+            m.addItem (7, juce::String::fromUTF8 ("Borrar automatización de ") + an, vp != nullptr && vp->getCurve().getNumPoints() > 0);
+            juce::PopupMenu ap; const juce::String cur = t->state.getProperty ("injAutoParam", "vol").toString();
+            ap.addItem (300, "Volumen", true, cur == "vol"); ap.addItem (301, "Pan", true, cur == "pan");
+            auto pl = t->pluginList.getPlugins();
+            for (int pi = 0; pi < pl.size(); ++pi)
+            {
+                if (dynamic_cast<te::VolumeAndPanPlugin*> (pl[pi].get()) || dynamic_cast<te::LevelMeterPlugin*> (pl[pi].get())) continue;
+                juce::PopupMenu pm; const int np = std::min (200, pl[pi]->getNumAutomatableParameters());
+                for (int qi = 0; qi < np; ++qi) { auto prm = pl[pi]->getAutomatableParameter (qi); if (prm == nullptr) continue; pm.addItem (1000 + pi * 256 + qi, prm->getParameterName(), true, cur == "P" + pl[pi]->itemID.toString() + "|" + prm->paramID); }
+                if (np > 0) ap.addSubMenu (pl[pi]->getName(), pm);
+            }
+            m.addSubMenu (juce::String::fromUTF8 ("Parámetro a automatizar"), ap);
+        }
         m.addItem (4, "Agregar pista al final"); m.addItem (5, "Eliminar pista", tracks.size() > 1);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (dotsR (i).toNearestInt())), [this, t, i] (int r)
         {
@@ -287,13 +367,57 @@ private:
             else if (r == 20) setAllHeights (34); else if (r == 21) setAllHeights (76); else if (r == 22) setAllHeights (116);
             else if (r == 23) setTrackHeight (i, 34); else if (r == 24) setTrackHeight (i, 116);
             else if (r >= 10 && r < 18) trackutil::setColour (edit, t.get(), r - 10);
+            else if (r == 6) t->state.setProperty ("injAuto", ! autoShown (*t), nullptr);
+            else if (r == 7) { if (auto* vp = autoParamOf (*t)) { edit.getUndoManager().beginNewTransaction(); vp->getCurve().clear(); } }
+            else if (r == 300) { t->state.setProperty ("injAutoParam", "vol", nullptr); t->state.setProperty ("injAuto", true, nullptr); }
+            else if (r == 301) { t->state.setProperty ("injAutoParam", "pan", nullptr); t->state.setProperty ("injAuto", true, nullptr); }
+            else if (r >= 1000) { auto pl = t->pluginList.getPlugins(); const int pi = (r - 1000) / 256, qi = (r - 1000) % 256; if (pi < pl.size()) if (auto prm = pl[pi]->getAutomatableParameter (qi)) { t->state.setProperty ("injAutoParam", "P" + pl[pi]->itemID.toString() + "|" + prm->paramID, nullptr); t->state.setProperty ("injAuto", true, nullptr); } }
             else if (r == 4) { trackutil::addTrack (edit); if (onTracksChanged) onTracksChanged(); if (onTrackSelected) onTrackSelected (numTracks() - 1); }
             else if (r == 5) { if (selected != nullptr && selected->getTrack() == t.get()) selected = nullptr; dragClip = nullptr; trackutil::deleteTrack (edit, t.get()); }
             layoutDirty = true; if (r != 0 && onTracksChanged) onTracksChanged(); repaint();
         });
     }
+    // ---- marcadores: se guardan en el proyecto (hijos INJMARKER de edit.state) ----
+public:
+    struct Marker { juce::ValueTree v; double beat; juce::String name; };
+    std::vector<Marker> markers() const
+    {
+        std::vector<Marker> out; for (auto c : edit.state) if (c.hasType ("INJMARKER")) out.push_back ({ c, (double) c.getProperty ("beat", 0.0), c.getProperty ("name", "").toString() });
+        std::sort (out.begin(), out.end(), [] (const Marker& a, const Marker& b) { return a.beat < b.beat; }); return out;
+    }
+    void addMarker (double beat, const juce::String& name = {})
+    {
+        juce::ValueTree v ("INJMARKER"); v.setProperty ("beat", beat, nullptr); v.setProperty ("name", name.isEmpty() ? juce::String (markers().size() + 1) : name, nullptr);
+        edit.getUndoManager().beginNewTransaction ("Marcador"); edit.state.addChild (v, -1, &edit.getUndoManager()); repaint();
+    }
+    int markerAt (float x) const { auto ms = markers(); for (int i = 0; i < (int) ms.size(); ++i) { const float mx = beatToX (ms[(size_t) i].beat); if (x >= mx - 4 && x <= mx + 8 + 7.f * (float) std::min (14, ms[(size_t) i].name.length()) + 4) return i; } return -1; }
+    void jumpToMarker (int dir)   // -1 anterior, +1 siguiente
+    {
+        auto ms = markers(); const double cur = timeToBeats (edit.getTransport().getPosition().inSeconds()); const double eps = 1e-3;
+        if (dir > 0) { for (auto& m : ms) if (m.beat > cur + eps) { edit.getTransport().setPosition (te::TimePosition::fromSeconds (beatsToTime (m.beat))); repaint(); return; } }
+        else for (int i = (int) ms.size() - 1; i >= 0; --i) if (ms[(size_t) i].beat < cur - eps) { edit.getTransport().setPosition (te::TimePosition::fromSeconds (beatsToTime (ms[(size_t) i].beat))); repaint(); return; }
+    }
+private:
+    std::unique_ptr<juce::AlertWindow> markerDlg;
+    void rulerMenu (const juce::MouseEvent& e)
+    {
+        const double beat = snapBeat (std::max (0.0, xToBeat ((float) e.x))); const int mi = markerAt ((float) e.x); auto ms = markers(); juce::PopupMenu m;
+        m.addItem (1, juce::String::fromUTF8 ("Agregar marcador aquí"));
+        if (mi >= 0) { m.addItem (2, juce::String::fromUTF8 ("Renombrar marcador…")); m.addItem (3, "Eliminar marcador"); }
+        m.showMenuAsync (juce::PopupMenu::Options(), [this, beat, mi, ms] (int r)
+        {
+            if (r == 1) addMarker (beat);
+            else if (r == 3 && mi >= 0) { edit.getUndoManager().beginNewTransaction ("Marcador"); edit.state.removeChild (ms[(size_t) mi].v, &edit.getUndoManager()); repaint(); }
+            else if (r == 2 && mi >= 0)
+            {
+                auto v = ms[(size_t) mi].v; markerDlg = std::make_unique<juce::AlertWindow> ("Marcador", "", juce::MessageBoxIconType::NoIcon); markerDlg->addTextEditor ("n", ms[(size_t) mi].name, ""); markerDlg->addButton ("Aceptar", 1); markerDlg->addButton ("Cancelar", 0);
+                markerDlg->enterModalState (true, juce::ModalCallbackFunction::create ([this, v] (int ok) mutable { if (ok == 1 && markerDlg) { edit.getUndoManager().beginNewTransaction ("Marcador"); v.setProperty ("name", markerDlg->getTextEditorContents ("n"), &edit.getUndoManager()); } markerDlg.reset(); repaint(); }), false);
+            }
+        });
+    }
     void contextMenu (const juce::MouseEvent& e)
     {
+        if (e.y < kRulerH && e.x >= kHeaderW) { rulerMenu (e); return; }
         if (e.x < kHeaderW + 6) { const int ti = trackAt ((float) e.y); if (ti >= 0) trackMenu (ti); return; }
         const int ti = trackAt ((float) e.y); if (ti < 0) return;
         auto tr = te::getAudioTracks (edit)[ti]; const double t = beatsToTime (xToBeat ((float) e.x)); te::Clip* hit = nullptr;
@@ -303,13 +427,40 @@ private:
         {
             selected = hit; te::Clip::Ptr c (hit);
             if (dynamic_cast<te::MidiClip*> (hit)) m.addItem (1, "Abrir en Piano Roll");
-            m.addItem (2, "Duplicar  (Ctrl+D)"); m.addItem (3, "Dividir aqu\xc3\xad"); m.addSeparator(); m.addItem (4, "Eliminar  (Supr)");
+            { juce::PopupMenu cm; cm.addItem (99, "Color de la pista"); cm.addSeparator(); for (int ci = 0; ci < 8; ++ci) cm.addColouredItem (100 + ci, "      ", theme::trackColours[ci], false, false, nullptr); m.addSubMenu ("Color del clip", cm); }
+            if (auto* wc = dynamic_cast<te::WaveAudioClip*> (hit))
+            {
+                static const double fd[] { 0.0, 0.01, 0.05, 0.25, 1.0 }; static const char* fl[] { "Ninguno", "10 ms", "50 ms", "250 ms", "1 s" };
+                juce::PopupMenu fi, fo; for (int k = 0; k < 5; ++k) { fi.addItem (200 + k, fl[k], true, std::abs (wc->getFadeIn().inSeconds() - fd[k]) < 0.002); fo.addItem (210 + k, fl[k], true, std::abs (wc->getFadeOut().inSeconds() - fd[k]) < 0.002); }
+                m.addSubMenu ("Fundido de entrada", fi); m.addSubMenu ("Fundido de salida", fo);
+                juce::PopupMenu pt, sp, md; static const int st[] { -12, -7, -5, -3, -2, -1, 0, 1, 2, 3, 5, 7, 12 }; static const int sr[] { 50, 75, 90, 100, 110, 125, 150, 200 };
+                for (int k = 0; k < 13; ++k) pt.addItem (400 + k, (st[k] > 0 ? "+" : "") + juce::String (st[k]) + " semitonos", true, std::abs (wc->getPitchChange() - (float) st[k]) < 0.01f);
+                for (int k = 0; k < 8; ++k) sp.addItem (430 + k, juce::String (sr[k]) + " %", true, std::abs (wc->getSpeedRatio() * 100.0 - sr[k]) < 0.5);
+                md.addItem (450, juce::String::fromUTF8 ("Melódico"), true, wc->getTimeStretchMode() != te::TimeStretcher::rubberbandPercussive); md.addItem (451, "Percusivo", true, wc->getTimeStretchMode() == te::TimeStretcher::rubberbandPercussive);
+                m.addSubMenu ("Tono", pt); m.addSubMenu ("Velocidad", sp); m.addSubMenu ("Modo de estiramiento", md);
+            }
+            if (dynamic_cast<te::MidiClip*> (hit)) m.addItem (8, juce::String::fromUTF8 ("Exportar como archivo MIDI…"));
+            m.addItem (5, juce::String::fromUTF8 ("Renombrar…")); m.addItem (6, hit->isMuted() ? "Quitar silencio del clip" : "Silenciar clip"); m.addSeparator(); m.addItem (2, "Duplicar  (Ctrl+D)"); m.addItem (3, "Dividir aqu\xc3\xad"); m.addSeparator(); m.addItem (4, "Eliminar  (Supr)");
             m.showMenuAsync (juce::PopupMenu::Options(), [this, c, tr, clickBeat] (int r)
             {
                 if (r == 1) { if (onOpenMidi) onOpenMidi (dynamic_cast<te::MidiClip*> (c.get())); }
                 else if (r == 2) { if (auto* nc = trackutil::duplicateClip (edit, *c)) selected = nc; }
                 else if (r == 3) tr->splitAt (te::TimePosition::fromSeconds (beatsToTime (clickBeat)));
                 else if (r == 4) { if (selected == c.get()) selected = nullptr; dragClip = nullptr; c->removeFromParent(); }
+                else if (r >= 200 && r < 205) { static const double fd[] { 0.0, 0.01, 0.05, 0.25, 1.0 }; if (auto* wc = dynamic_cast<te::WaveAudioClip*> (c.get())) { edit.getUndoManager().beginNewTransaction(); wc->setFadeIn (te::TimeDuration::fromSeconds (fd[r - 200])); } }
+                else if (r >= 210 && r < 215) { static const double fd[] { 0.0, 0.01, 0.05, 0.25, 1.0 }; if (auto* wc = dynamic_cast<te::WaveAudioClip*> (c.get())) { edit.getUndoManager().beginNewTransaction(); wc->setFadeOut (te::TimeDuration::fromSeconds (fd[r - 210])); } }
+                else if (r >= 400 && r < 413) { static const int st[] { -12, -7, -5, -3, -2, -1, 0, 1, 2, 3, 5, 7, 12 }; if (auto* wc = dynamic_cast<te::WaveAudioClip*> (c.get())) { edit.getUndoManager().beginNewTransaction(); setClipPitch (*wc, (float) st[r - 400]); } }
+                else if (r >= 430 && r < 438) { static const int sr[] { 50, 75, 90, 100, 110, 125, 150, 200 }; if (auto* wc = dynamic_cast<te::WaveAudioClip*> (c.get())) { edit.getUndoManager().beginNewTransaction(); setClipSpeed (*wc, sr[r - 430] / 100.0); } }
+                else if (r == 450 || r == 451) { if (auto* wc = dynamic_cast<te::WaveAudioClip*> (c.get())) { edit.getUndoManager().beginNewTransaction(); wc->setTimeStretchMode (r == 451 ? te::TimeStretcher::rubberbandPercussive : te::TimeStretcher::rubberbandMelodic); } }
+                else if (r == 8) { if (auto* mc = dynamic_cast<te::MidiClip*> (c.get())) exportMidiDialog (*mc); }
+                else if (r == 99) { edit.getUndoManager().beginNewTransaction(); c->state.removeProperty ("injColour", &edit.getUndoManager()); }
+                else if (r >= 100 && r < 108) { edit.getUndoManager().beginNewTransaction(); c->state.setProperty ("injColour", (int) theme::trackColours[r - 100].getARGB(), &edit.getUndoManager()); }
+                else if (r == 6) { edit.getUndoManager().beginNewTransaction(); c->setMuted (! c->isMuted()); }
+                else if (r == 5)
+                {
+                    auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Renombrar clip"), "", juce::MessageBoxIconType::NoIcon); aw->addTextEditor ("n", c->getName()); aw->addButton ("Aceptar", 1); aw->addButton ("Cancelar", 0);
+                    aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, c, aw] (int res) { if (res == 1) { edit.getUndoManager().beginNewTransaction(); c->setName (aw->getTextEditorContents ("n")); repaint(); } delete aw; }));
+                }
                 repaint();
             });
         }
@@ -333,6 +484,7 @@ private:
             mix (t->isMuted (false) ? 1 : 2); mix (t->isSolo (false) ? 3 : 4); mix ((uint64_t) t->getName().hashCode64()); mix ((uint64_t) (int) t->state.getProperty ("injColour", -1));
             for (auto* c : t->getClips()) { mix (std::hash<double>{} (c->getPosition().getStart().inSeconds())); mix (std::hash<double>{} (c->getPosition().getLength().inSeconds())); }
         }
+        for (auto& mk : markers()) { mix (std::hash<double>{} (mk.beat)); mix ((uint64_t) mk.name.hashCode64()); }
         return h;
     }
     bool thumbsPending() const { for (auto& kv : thumbs) if (kv.second && ! kv.second->isFullyLoaded()) return true; return false; }
@@ -362,6 +514,15 @@ private:
             if (x < kHeaderW + 10 || (bar % stride) != (stride == 1 ? 0 : 0)) { if (x < kHeaderW + 10 || bar % stride != 0) continue; }
             g.drawText (juce::String (bar + 1), juce::Rectangle<float> (x - 20, 18, 40, 20).toNearestInt(), juce::Justification::centred);
         }
+        g.saveState(); g.reduceClipRegion (kHeaderW + 6, 0, W, kRulerH);
+        for (auto& mk : markers())
+        {
+            const float x = beatToX (mk.beat); if (x < kHeaderW - 20 || x > W) continue;
+            g.setColour (pink.withAlpha (.5f)); g.fillRect (x, (float) kRulerH - 14.f, 1.f, (float) getHeight());
+            const float w = 10.f + 7.f * (float) std::min (14, mk.name.length()); g.setColour (pink); g.fillRoundedRectangle (x, 5.f, w, 14.f, 3.f);
+            g.setColour (juce::Colour (0xff1a1522)); g.setFont (juce::FontOptions (11.f, juce::Font::bold)); g.drawText (mk.name, juce::Rectangle<float> (x + 4.f, 5.f, w - 6.f, 14.f), juce::Justification::centredLeft, true);
+        }
+        g.restoreState();
     }
 
     void drawHeader (juce::Graphics& g, te::AudioTrack& t, int i)
@@ -385,13 +546,133 @@ private:
         g.restoreState();
     }
 
+    // ---- Automatización de volumen ----
+    int autoIdx = -1, autoTrack = -1;
+public:
+    static te::AutomatableParameter* volParamOf (te::AudioTrack& t) { auto* v = t.getVolumePlugin(); return v ? v->volParam.get() : nullptr; }
+    // Parametro que se automatiza en la pista: "vol" (por defecto), "pan" o "P<plugin>:<parametro>"
+    static te::AutomatableParameter* autoParamOf (te::AudioTrack& t)
+    {
+        const juce::String id = t.state.getProperty ("injAutoParam", "vol").toString();
+        if (id == "pan") { auto* v = t.getVolumePlugin(); return v ? v->panParam.get() : nullptr; }
+        if (id.startsWithChar ('P'))   // "P<id del plugin>|<id del parametro>": no depende del orden de los plugins
+        {
+            const juce::String pid = id.substring (1).upToFirstOccurrenceOf ("|", false, false), prm = id.fromFirstOccurrenceOf ("|", false, false);
+            for (auto* pl : t.pluginList.getPlugins()) if (pl->itemID.toString() == pid) return pl->getAutomatableParameterByID (prm).get();
+        }
+        return volParamOf (t);
+    }
+    static bool autoIsVolume (te::AudioTrack& t) { return autoParamOf (t) == volParamOf (t); }
+    static juce::String autoParamName (te::AudioTrack& t) { auto* p = autoParamOf (t); if (! p) return {}; return autoIsVolume (t) ? juce::String ("Volumen") : p->getPluginAndParamName(); }
+    bool autoShown (te::AudioTrack& t) const { return (bool) t.state.getProperty ("injAuto", false); }
+    float autoY (int ti, float norm) const { const float h = (float) hOf (ti); return (float) trackTop (ti) + h - 6.f - norm * (h - 12.f); }
+    float autoNorm (int ti, float y) const { const float h = (float) hOf (ti); return juce::jlimit (0.f, 1.f, ((float) trackTop (ti) + h - 6.f - y) / (h - 12.f)); }
+    double timeAtX (float x) const { return beatsToTime (xToBeat (x)); }
+    // Cambia el tono (semitonos) sin cambiar la duracion. Activa el motor de estiramiento si hace falta.
+    static void setClipPitch (te::WaveAudioClip& c, float semitones)
+    {
+        if (c.getTimeStretchMode() == te::TimeStretcher::disabled) c.setTimeStretchMode (te::TimeStretcher::rubberbandMelodic);
+        c.setPitchChange (semitones);
+    }
+    // Cambia la velocidad (1.0 = original) y ajusta la longitud del clip para que se oiga todo el audio.
+    static void setClipSpeed (te::WaveAudioClip& c, double ratio)
+    {
+        ratio = juce::jlimit (0.25, 4.0, ratio); const double old = c.getSpeedRatio(); if (std::abs (old - ratio) < 1e-6) return;
+        if (c.getTimeStretchMode() == te::TimeStretcher::disabled) c.setTimeStretchMode (te::TimeStretcher::rubberbandMelodic);
+        const auto pos = c.getPosition(); const double newLen = pos.getLength().inSeconds() * old / ratio;
+        c.setSpeedRatio (ratio); c.setLength (te::TimeDuration::fromSeconds (newLen), true);
+    }
+    static void setAutoParam (te::AudioTrack& t, const juce::String& id) { t.state.setProperty ("injAutoParam", id, nullptr); }
+    void addAutoPoint (int ti, double timeSec, float norm)   // para el editor y las pruebas
+    {
+        auto tracks = te::getAudioTracks (edit); if (ti < 0 || ti >= tracks.size()) return; auto* p = autoParamOf (*tracks[ti]); if (! p) return;
+        tracks[ti]->state.setProperty ("injAuto", true, nullptr);
+        p->getCurve().addPoint (te::TimePosition::fromSeconds (std::max (0.0, timeSec)), p->valueRange.convertFrom0to1 (norm), 0.f); repaint();
+    }
+private:
+    void drawAuto (juce::Graphics& g, int ti)
+    {
+        auto* tk = te::getAudioTracks (edit)[ti]; auto* p = autoParamOf (*tk); if (! p) return; auto& cv = p->getCurve();
+        const float x0 = (float) (kHeaderW + 6), x1 = (float) getWidth(); const float top = (float) trackTop (ti), bot = top + (float) hOf (ti);
+        g.setColour (juce::Colours::black.withAlpha (.28f)); g.fillRect (x0, top, x1 - x0, bot - top);
+        juce::Path line; const int n = cv.getNumPoints();
+        auto yOfValue = [&] (float v) { return autoY (ti, p->valueRange.convertTo0to1 (v)); };
+        if (n == 0) { const float y = yOfValue (p->getCurrentValue()); line.startNewSubPath (x0, y); line.lineTo (x1, y); }
+        else
+        {
+            line.startNewSubPath (x0, yOfValue (cv.getPointValue (0)));
+            for (int i = 0; i < n; ++i) { const float x = beatToX (timeToBeats (cv.getPointTime (i).inSeconds())); line.lineTo (x, yOfValue (cv.getPointValue (i))); }
+            line.lineTo (x1, yOfValue (cv.getPointValue (n - 1)));
+        }
+        g.setColour (theme::pink); g.strokePath (line, juce::PathStrokeType (2.f));
+        for (int i = 0; i < n; ++i) { const float x = beatToX (timeToBeats (cv.getPointTime (i).inSeconds())), y = yOfValue (cv.getPointValue (i)); g.setColour (juce::Colour (0xff15151d)); g.fillEllipse (x - 6, y - 6, 12, 12); g.setColour (i == autoIdx && ti == autoTrack ? juce::Colours::white : theme::pink); g.fillEllipse (x - 4, y - 4, 8, 8); }
+        if (autoIdx >= 0 && ti == autoTrack && autoIdx < n)
+        {
+            const float x = beatToX (timeToBeats (cv.getPointTime (autoIdx).inSeconds())), y = yOfValue (cv.getPointValue (autoIdx)); const float db = te::volumeFaderPositionToDB (cv.getPointValue (autoIdx)); const bool isVol = autoIsVolume (*tk); const juce::String lab = isVol ? (db <= -99.f ? juce::String ("-inf dB") : juce::String (db, 1) + " dB") : p->valueToString (cv.getPointValue (autoIdx));
+            g.setColour (juce::Colour (0xe01b1b25)); g.fillRoundedRectangle (x + 10, y - 24, 62, 20, 5.f); g.setColour (theme::text); g.setFont (juce::FontOptions (12.f)); g.drawText (lab, juce::Rectangle<float> (x + 10, y - 24, 62, 20).toNearestInt(), juce::Justification::centred);
+        }
+    }
+    void autoDown (const juce::MouseEvent& e)
+    {
+        const int ti = trackAt ((float) e.y); if (ti < 0) return; auto* tk = te::getAudioTracks (edit)[ti]; auto* p = autoParamOf (*tk); if (! p) return;
+        tk->state.setProperty ("injAuto", true, nullptr); auto& cv = p->getCurve(); autoTrack = ti; autoIdx = -1;
+        int hit = -1; float best = 11.f;
+        for (int i = 0; i < cv.getNumPoints(); ++i) { const float x = beatToX (timeToBeats (cv.getPointTime (i).inSeconds())), y = autoY (ti, p->valueRange.convertTo0to1 (cv.getPointValue (i))); const float d = std::hypot (x - (float) e.x, y - (float) e.y); if (d < best) { best = d; hit = i; } }
+        if (e.mods.isPopupMenu()) { if (hit >= 0) cv.removePoint (hit); repaint(); return; }
+        if (hit < 0) { const double tb = snapBeat (xToBeat ((float) e.x)); hit = cv.addPoint (te::TimePosition::fromSeconds (std::max (0.0, beatsToTime (tb))), p->valueRange.convertFrom0to1 (autoNorm (ti, (float) e.y)), 0.f); }
+        autoIdx = hit; repaint();
+    }
+    void autoDrag (const juce::MouseEvent& e)
+    {
+        auto* tk = te::getAudioTracks (edit)[autoTrack]; auto* p = autoParamOf (*tk); if (! p || autoIdx < 0) return; auto& cv = p->getCurve();
+        const double tb = snapBeat (xToBeat ((float) e.x));
+        autoIdx = cv.movePoint (autoIdx, te::TimePosition::fromSeconds (std::max (0.0, beatsToTime (tb))), p->valueRange.convertFrom0to1 (autoNorm (autoTrack, (float) e.y)), false); repaint();
+    }
+    std::unique_ptr<juce::FileChooser> midiChooser;
+    void exportMidiDialog (te::MidiClip& mc)
+    {
+        te::MidiClip::Ptr keep (&mc); midiChooser = std::make_unique<juce::FileChooser> ("Exportar MIDI", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile (mc.getName() + ".mid"), "*.mid");
+        midiChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting, [this, keep] (const juce::FileChooser& fc)
+        { auto f = fc.getResult(); if (f != juce::File()) trackutil::exportMidiClip (edit, *keep, f.withFileExtension ("mid")); });
+    }
+    struct Copied { te::Clip::Ptr clip; double beat; int track; };
+    std::vector<Copied> clipboard;
+    void copySelection()
+    {
+        clipboard.clear(); auto tracks = te::getAudioTracks (edit);
+        auto add = [&] (te::Clip* c) { clipboard.push_back ({ c, timeToBeats (c->getPosition().getStart().inSeconds()), tracks.indexOf (dynamic_cast<te::AudioTrack*> (c->getTrack())) }); };
+        if (group.size() > 1) { for (auto* c : group) add (c); } else if (selected) add (selected);
+    }
+public:
+    int clipboardSize() const { return (int) clipboard.size(); }
+    double beatsToTimePublic (double b) const { return beatsToTime (b); }
+    // Pega lo copiado empezando en el cursor de reproducción (o donde se indique), en las mismas pistas.
+    void pasteAtPlayhead (double atBeat = -1.0)
+    {
+        if (clipboard.empty()) return; auto tracks = te::getAudioTracks (edit);
+        double first = 1e12; for (auto& c : clipboard) first = std::min (first, c.beat);
+        const double target = atBeat >= 0 ? atBeat : timeToBeats (edit.getTransport().getPosition().inSeconds());
+        edit.getUndoManager().beginNewTransaction(); group.clear(); selected = nullptr;
+        for (auto& c : clipboard)
+        {
+            if (c.track < 0 || c.track >= tracks.size()) continue;
+            if (auto* nc = trackutil::copyClipTo (edit, *c.clip, *tracks[c.track], te::TimePosition::fromSeconds (beatsToTime (target + (c.beat - first))))) group.add (nc);
+        }
+        if (group.size() == 1) { selected = group.getUnchecked (0).get(); group.clear(); }
+        repaint();
+    }
+private:
     void drawClip (juce::Graphics& g, te::Clip& c, int ti)
     {
         using namespace theme;
+        if (c.isMuted()) g.beginTransparencyLayer (.35f);
+        struct EndLayer { juce::Graphics& g; bool on; ~EndLayer() { if (on) g.endTransparencyLayer(); } } endLayer { g, c.isMuted() };
         const float x0 = beatToX (timeToBeats (c.getPosition().getStart().inSeconds())), x1 = beatToX (timeToBeats (c.getPosition().getEnd().inSeconds()));
+        if (x1 < (float) kHeaderW || x0 > (float) getWidth()) return;   // fuera de pantalla
         auto r = juce::Rectangle<float> (x0, (float) trackTop (ti), std::max (2.f, x1 - x0), (float) hOf (ti));
-        auto col = trackutil::colourOf (te::getAudioTracks (edit)[ti], ti);
-        const bool muted = te::getAudioTracks (edit)[ti]->isMuted (false);
+        auto col = trackutil::colourOf (dynamic_cast<te::AudioTrack*> (c.getTrack()), ti);
+        if (c.state.hasProperty ("injColour")) col = juce::Colour ((juce::uint32) (int) c.state.getProperty ("injColour"));
+        const bool muted = dynamic_cast<te::AudioTrack*> (c.getTrack())->isMuted (false);
         if (muted) col = col.withSaturation (col.getSaturation() * .25f).darker (.35f);
         const auto ink = inkOn (col);
         juce::Path shape; shape.addRectangle (r);
@@ -399,7 +680,7 @@ private:
         { g.saveState(); g.reduceClipRegion (shape, {}); g.setColour (juce::Colours::white.withAlpha (.17f));
           const double gs = pxPerBeat >= 14 ? 1.0 : 4.0; for (double b = std::floor (xToBeat (r.getX()) / gs) * gs; beatToX (b) < r.getRight(); b += gs) g.fillRect (beatToX (b), r.getY(), 1.f, r.getHeight()); g.restoreState(); }
         g.setColour (juce::Colour (0xff15151d)); g.drawRect (r, 1.5f);
-        if (&c == selected) { g.setColour (juce::Colours::white); g.drawRect (r, 2.f); }
+        if (&c == selected || inGroup (&c)) { g.setColour (juce::Colours::white); g.drawRect (r, 2.f); }
         { const float bandH = r.getHeight() >= 60.f ? 16.f : (r.getHeight() >= 40.f ? 8.f : 0.f); if (bandH > 0.f) { g.setColour (juce::Colour (0xff15151d)); g.fillRect (r.getX(), r.getY() + bandH, r.getWidth(), 1.5f); } }
         if (&c == selected && r.getHeight() >= 26.f) { g.setColour (ink.withAlpha (.8f)); g.setFont (juce::FontOptions (11.f, juce::Font::bold));
         g.drawText (c.getName(), r.toNearestInt().reduced (5, 1).withHeight (15), juce::Justification::centredLeft); }

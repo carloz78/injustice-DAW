@@ -12,10 +12,10 @@ public:
 
     std::function<void (const juce::String&)> onButton;
     std::function<void (double)> onBpm;
-    bool metro = false, pianoMode = false, mixerOpen = false, stepsOpen = false, browserOpen = true, recArmed = false;
+    bool metro = false, pianoMode = false, mixerOpen = false, stepsOpen = false, metersOpen = false, browserOpen = true, recArmed = false;
     bool playing = false, looping = false, snap = true;
     juce::String quantLabel = "1/16", tool = "select", view = "playlist", crumb;
-    double bpm = 172.0, posBeats = 0.0, cpu = 0.0, ramMB = 0.0, ramTotalMB = 0.0;
+    bool timeMode = false; double bpm = 172.0, posBeats = 0.0, cpu = 0.0, ramMB = 0.0, ramTotalMB = 0.0;
 
     static constexpr int kRow1 = 56, kRow2 = 46, kHeight = kRow1 + kRow2;
 
@@ -71,6 +71,7 @@ public:
         for (auto& m : menus) if (m.r.contains (p)) { showMenu (m.name); return; }
         if (pianoMode && quantR.contains (p)) { pressedId = "quant"; repaint(); if (onButton) onButton ("quant"); return; }
         for (auto& b : btns) if (b.enabled && b.r.contains (p)) { pressedId = b.id; repaint(); if (onButton) onButton (b.id); return; }
+        if (posR.contains (p)) { timeMode = ! timeMode; repaint(); return; }
         dragBpm = bpmR.contains (p); lastY = p.y;
     }
     void mouseUp (const juce::MouseEvent&) override { if (pressedId.isNotEmpty() || dragBpm) { pressedId = {}; dragBpm = false; repaint(); } }
@@ -92,7 +93,7 @@ public:
         auto p = getMouseXYRelative().toFloat();
         for (auto& b : btns) if (b.r.contains (p)) return tip (b.id);
         if (bpmR.contains (p)) return juce::String::fromUTF8 ("Tempo: arrastra o usa la rueda (Mayús = fino)");
-        if (posR.contains (p)) return juce::String::fromUTF8 ("Posición: compás.tiempo.semicorchea");
+        if (posR.contains (p)) return juce::String::fromUTF8 ("Posición (clic: compases / minutos)");
         if (pianoMode && quantR.contains (p)) return juce::String::fromUTF8 ("Cuantización (clic para cambiar)");
         return {};
     }
@@ -102,7 +103,7 @@ public:
             { "layout", "Mostrar/ocultar el explorador (F8)" }, { "undo", "Deshacer (Ctrl+Z)" }, { "redo", "Rehacer (Ctrl+Y)" },
             { "play", "Reproducir / pausa (Espacio)" }, { "stop", "Detener y volver al inicio" }, { "rec", "Armar grabaci\xc3\xb3n (pr\xc3\xb3ximamente)" },
             { "loop", "Repetir en bucle" }, { "audio", "Ajustes de audio" }, { "plugins", "Lista de plugins VST3 (F10)" },
-            { "tool:select", "Seleccionar" }, { "tool:pencil", "L\xc3\xa1piz: dibujar" }, { "tool:brush", "Pincel: pinta clips arrastrando (sobre un clip lo copia)" }, { "tool:cut", "Cortar clips" }, { "tool:trim", "Recortar el borde de un clip" },
+            { "tool:select", "Seleccionar" }, { "tool:pencil", "L\xc3\xa1piz: dibujar" }, { "tool:brush", "Pincel: pinta clips arrastrando (sobre un clip lo copia)" }, { "tool:auto", "Automatizaci\xc3\xb3n: curva de volumen (clic crea punto, clic derecho lo borra)" }, { "tool:cut", "Cortar clips" }, { "tool:trim", "Recortar el borde de un clip" },
             { "tool:erase", "Borrador" }, { "metro", "Metr\xc3\xb3nomo" }, { "snap", "Ajustar a la cuadr\xc3\xad" "cula" },
             { "view:playlist", "Playlist (F5)" }, { "view:mixer", "Mixer (F9)" }, { "view:piano", "Piano Roll (F7)" }, { "view:steps", "Step Sequencer (F6)" } };
         auto it = t.find (id); return it == t.end() ? juce::String() : juce::String::fromUTF8 (it->second);
@@ -117,6 +118,7 @@ private:
     static bool isTransport (const juce::String& id) { return id == "play" || id == "stop" || id == "rec"; }
     juce::String posText() const
     {
+        if (timeMode) { const double sec = std::max (0.0, posBeats) * 60.0 / std::max (1.0, bpm); const int m = (int) (sec / 60.0); return juce::String (m) + ":" + juce::String (std::fmod (sec, 60.0), 2).paddedLeft ('0', 5); }
         const double b = std::max (0.0, posBeats); const int bar = (int) (b / 4.0) + 1; const double inBar = std::fmod (b, 4.0);
         return juce::String (bar) + "." + juce::String ((int) inBar + 1) + "." + juce::String ((int) ((inBar - std::floor (inBar)) * 4.0) + 1);
     }
@@ -140,6 +142,7 @@ private:
         if (b.id.startsWith ("tool:")) return b.id.substring (5) == tool;
         if (b.id == "view:mixer") return mixerOpen;
         if (b.id == "view:steps") return stepsOpen;
+        if (b.id == "view:meters") return metersOpen;
         if (b.id == "layout") return browserOpen;
         if (b.id.startsWith ("view:")) return b.id.substring (5) == view;
         return false;
@@ -202,11 +205,11 @@ private:
         std::vector<It> items;   // id vacío = separador
         auto I = [&] (const char* id, const char* l, bool tick = false) { items.push_back ({ id, juce::String::fromUTF8 (l), tick, true }); };
         auto S = [&] { items.push_back ({}); };
-        if (name == "File") { I ("new", "Proyecto nuevo\tCtrl+N"); I ("open", "Abrir…\tCtrl+O"); I ("save", "Guardar\tCtrl+S"); I ("saveas", "Guardar como…\tCtrl+Mayús+S"); S(); I ("export", "Exportar a WAV…\tCtrl+E"); S(); I ("quit", "Salir"); }
+        if (name == "File") { I ("new", "Proyecto nuevo\tCtrl+N"); I ("open", "Abrir…\tCtrl+O"); I ("save", "Guardar\tCtrl+S"); I ("saveas", "Guardar como…\tCtrl+Mayús+S"); I ("savesamples", "Guardar con los samples…"); S(); I ("importmidi", "Importar MIDI…"); I ("export", "Exportar audio…\tCtrl+E"); S(); I ("quit", "Salir"); }
         else if (name == "Edit") { I ("undo", "Deshacer\tCtrl+Z"); I ("redo", "Rehacer\tCtrl+Y"); S(); I ("dup", "Duplicar clip\tCtrl+D"); I ("del", "Eliminar clip\tSupr"); }
-        else if (name == "View") { I ("view:playlist", "Playlist\tF5", view == "playlist" && ! pianoMode); I ("view:mixer", "Mixer\tF9", mixerOpen); I ("view:piano", "Piano Roll\tF7", pianoMode); I ("view:steps", "Step Sequencer\tF6", stepsOpen); S(); I ("layout", "Explorador de samples\tF8", browserOpen); }
+        else if (name == "View") { I ("view:playlist", "Playlist\tF5", view == "playlist" && ! pianoMode); I ("view:mixer", "Mixer\tF9", mixerOpen); I ("view:piano", "Piano Roll\tF7", pianoMode); I ("view:steps", "Step Sequencer\tF6", stepsOpen); I ("view:meters", "Medidores\tF11", metersOpen); S(); I ("layout", "Explorador de samples\tF8", browserOpen); }
         else if (name == "Options") { I ("audio", "Ajustes de audio…"); S(); I ("metro", "Metrónomo", metro); I ("loop", "Repetir en bucle", looping); I ("snap", "Ajustar a la cuadrícula", snap); }
-        else if (name == "Tools") { I ("plugins", "Lista de plugins VST3…\tF10"); S(); I ("tool:select", "Herramienta: seleccionar", tool == "select"); I ("tool:pencil", "Herramienta: lápiz", tool == "pencil"); I ("tool:brush", "Herramienta: pincel", tool == "brush"); I ("tool:cut", "Herramienta: cortar", tool == "cut"); I ("tool:trim", "Herramienta: recortar", tool == "trim"); }
+        else if (name == "Tools") { I ("plugins", "Lista de plugins VST3…\tF10"); S(); I ("tool:select", "Herramienta: seleccionar", tool == "select"); I ("tool:pencil", "Herramienta: lápiz", tool == "pencil"); I ("tool:brush", "Herramienta: pincel", tool == "brush"); I ("tool:auto", "Herramienta: automatización", tool == "auto"); I ("tool:cut", "Herramienta: cortar", tool == "cut"); I ("tool:trim", "Herramienta: recortar", tool == "trim"); }
         else if (name == "Help") { I ("help", "Ayuda y atajos\tF1"); I ("about", "Acerca de INJUSTICE DAW"); }
         juce::PopupMenu m; int n = 1;
         for (auto& it : items) { if (it.id.isEmpty()) m.addSeparator(); else m.addItem (n, it.label, it.en, it.tick); ++n; }
@@ -246,7 +249,7 @@ private:
         add ("view:playlist", icons::Playlist, x, y2, 108, 34, "Playlist"); x += 114; add ("view:mixer", icons::Mixer, x, y2, 90, 34, "Mixer"); x += 96;
         add ("view:piano", icons::PianoRoll, x, y2, 116, 34, "Piano Roll"); x += 122; add ("view:steps", icons::Steps, x, y2, 154, 34, "Step Sequencer"); x += 164;
         divX = x; x += 14;
-        if (! pianoMode) for (auto [id, ic] : { std::pair<const char*, icons::Id> { "tool:select", icons::Select }, { "tool:pencil", icons::Pencil }, { "tool:brush", icons::Brush }, { "tool:cut", icons::Scissors }, { "tool:trim", icons::Stretch } }) { add (id, ic, x, y2, 40, 34); x += 44; }
+        if (! pianoMode) for (auto [id, ic] : { std::pair<const char*, icons::Id> { "tool:select", icons::Select }, { "tool:pencil", icons::Pencil }, { "tool:brush", icons::Brush }, { "tool:auto", icons::Curve }, { "tool:cut", icons::Scissors }, { "tool:trim", icons::Stretch } }) { add (id, ic, x, y2, 40, 34); x += 44; }
         add ("snap", icons::Magnet, x, y2, 40, 34); x += 50;
         quantR = {};
         float rx = w - 12.f - 3 * 44.f; add ("undo", icons::Undo, rx, y2, 40, 34); add ("redo", icons::Redo, rx + 44, y2, 40, 34); add ("plugins", icons::Plugins, rx + 88, y2, 40, 34);

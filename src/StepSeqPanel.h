@@ -1,5 +1,6 @@
 #pragma once
 #include "FloatingPanel.h"
+#include "TrackUtil.h"
 #include <tracktion_engine/tracktion_engine.h>
 namespace te = tracktion;
 
@@ -10,7 +11,7 @@ public:
     std::function<void()> onClipChanged;
     explicit StepSeqPanel (te::Edit& e) : edit (e)
     {
-        title = "Step Sequencer"; icon = icons::Steps; setDesign (1130, kHead + 96 + 4 * 76 + 26); startTimerHz (20);
+        title = "Step Sequencer"; icon = icons::Steps; setDesign (1130, kHead + 96 + 4 * 76 + kPanel + 26); startTimerHz (20);
     }
 
     // Crea (si hace falta) el clip de patrón en la primera pista libre, con su sampler.
@@ -58,6 +59,13 @@ public:
     void setStep (int row, int step, bool on) { ensureClip(); if (clip) clip->getPattern (0).setNote (row, step, on); }
     bool getStep (int row, int step) { ensureClip(); return clip && clip->getPattern (0).getNote (row, step); }
     te::StepClip* getClip() { ensureClip(); return clip.get(); }
+    int numPatterns() { ensureClip(); return patterns().size(); }
+    void newPattern() { ensureClip(); addPattern (false); }
+    void pickPattern (int i) { ensureClip(); selectPattern (i); }
+    void setRowVolume (int r, float db) { setVol (r, db); }
+    void setRowPan (int r, float pn) { setPan (r, pn); }
+    float rowVolume (int r) { const int i = soundForRow (r); return i >= 0 && sampler ? sampler->getSoundGainDb (i) : 0.f; }
+    void setStepVelocity (int r, int st, int v) { ensureClip(); if (clip) clip->getPattern (0).setVelocity (r, st, v); }
     void assignSample (int row, const juce::File& f)
     {
         ensureClip(); if (! clip || ! sampler) return;
@@ -68,7 +76,12 @@ public:
     }
 
 protected:
-    static constexpr int kRowH = 76, kBtn = 52, kNameX = 86, kNameW = 230, kStepX0 = 336;
+    static constexpr int kRowH = 76, kBtn = 52, kNameX = 86, kNameW = 230, kStepX0 = 336, kPanel = 150, kMaxPat = 8;
+    int panelY() { return kHead + 96 + rows * kRowH + 8; }
+    juce::Rectangle<float> volR() { return { 16.f, (float) panelY() + 58, 290.f, 16.f }; }
+    juce::Rectangle<float> panR() { return { 16.f, (float) panelY() + 108, 290.f, 16.f }; }
+    juce::Rectangle<float> velR() { return { (float) kStepX0, (float) panelY() + 26, (float) designW - kStepX0 - 26.f, 100.f }; }
+    juce::Rectangle<float> tabR (int i) { return { 462.f + i * 60.f, (float) kHead + 18, 54, 56 }; }
     int stepCount() { return clip ? clip->getPattern (0).getNumNotes() : 16; }
     float stepW() { return (float) (designW - kStepX0 - 26) / (float) stepCount(); }
     juce::Rectangle<float> stepR (int row, int s) { const float w = stepW(); return { kStepX0 + s * w + 2, (float) (kHead + 96 + row * kRowH) + 8, w - 6, kRowH - 16.f }; }
@@ -106,6 +119,43 @@ protected:
                 g.setColour (v ? (on ? juce::Colour (0xffcf26f5) : juce::Colour (0xff6b3a78)) : (((s / 4) & 1) ? juce::Colour (0xff2a2830) : juce::Colour (0xff24222a))); g.fillRoundedRectangle (sr, 7.f);
                 if (s == cur) { g.setColour (juce::Colours::white.withAlpha (.85f)); g.drawRoundedRectangle (sr.reduced (.5f), 7.f, 2.f); }
             }
+            if (r == selRow) { g.setColour (accentHi); g.fillRoundedRectangle (nameR (r).getX() - 6.f, nameR (r).getY() + 6, 3.f, nameR (r).getHeight() - 12, 1.5f); }
+        }
+        paintTabsAndPanel (g);
+    }
+    void paintTabsAndPanel (juce::Graphics& g)
+    {
+        using namespace theme; const auto pats = patterns();
+        g.setColour (textDim); g.setFont (juce::FontOptions (12.f)); g.drawText ("Patrones", 462, kHead + 2, 120, 14, juce::Justification::centredLeft);
+        for (int i = 0; i <= pats.size() && i <= kMaxPat; ++i)
+        {
+            auto r = tabR (i); const bool plus = i == pats.size(), cur = ! plus && pats[i] == clip.get();
+            if (plus && pats.size() >= kMaxPat) break;
+            g.setColour (cur ? accent : juce::Colour (0xff211f27)); g.fillRoundedRectangle (r, 8.f);
+            g.setColour (cur ? juce::Colours::white : (plus ? textDim : text)); g.setFont (juce::FontOptions (plus ? 28.f : 22.f)); g.drawText (plus ? "+" : juce::String (i + 1), r.toNearestInt(), juce::Justification::centred);
+        }
+        // panel inferior: sonido de la fila elegida
+        auto box = juce::Rectangle<float> (12.f, (float) panelY() - 2, (float) designW - 24.f, (float) kPanel + 4); g.setColour (juce::Colour (0xff1d1c24)); g.fillRoundedRectangle (box, 10.f);
+        selRow = juce::jlimit (0, rows - 1, selRow); const bool has = hasSample (selRow); const int si = soundForRow (selRow);
+        g.setColour (text); g.setFont (juce::FontOptions (15.f, juce::Font::bold)); g.drawText (clip->getChannels()[selRow]->name.get(), 20, panelY() + 4, 290, 20, juce::Justification::centredLeft);
+        auto slider = [&] (juce::Rectangle<float> r, float frac, const juce::String& label, bool centred)
+        {
+            g.setColour (has ? text : textDim); g.setFont (juce::FontOptions (13.f)); g.drawText (label, (int) r.getX(), (int) r.getY() - 22, 290, 18, juce::Justification::centredLeft);
+            g.setColour (juce::Colour (0xff2e2c36)); g.fillRoundedRectangle (r.withSizeKeepingCentre (r.getWidth(), 6.f), 3.f);
+            g.setColour (has ? accent : textDim.withAlpha (.4f)); const float x = r.getX() + frac * r.getWidth();
+            if (centred) g.fillRoundedRectangle (juce::Rectangle<float> (std::min (x, r.getCentreX()), r.getCentreY() - 3, std::abs (x - r.getCentreX()), 6.f), 3.f); else g.fillRoundedRectangle (juce::Rectangle<float> (r.getX(), r.getCentreY() - 3, x - r.getX(), 6.f), 3.f);
+            g.setColour (has ? accentHi : textDim); g.fillEllipse (x - 8, r.getCentreY() - 8, 16, 16);
+        };
+        const float db = si >= 0 ? sampler->getSoundGainDb (si) : 0.f, pn = si >= 0 ? sampler->getSoundPan (si) : 0.f;
+        slider (volR(), juce::jmap (db, -40.f, 6.f, 0.f, 1.f), has ? "Volumen   " + juce::String (db, 1) + " dB" : juce::String ("Volumen"), false);
+        slider (panR(), (pn + 1.f) * .5f, has ? juce::String ("Pan   ") + (std::abs (pn) < .02f ? juce::String ("centro") : juce::String (juce::roundToInt (std::abs (pn) * 100)) + (pn < 0 ? "% izq." : "% der.")) : juce::String ("Pan"), true);
+        g.setColour (text); g.setFont (juce::FontOptions (13.f)); g.drawText ("Fuerza", (int) velR().getX(), panelY() + 4, 500, 18, juce::Justification::centredLeft);
+        g.setColour (juce::Colour (0xff17161c)); g.fillRoundedRectangle (velR(), 6.f);
+        for (int s = 0; s < stepCount(); ++s)
+        {
+            const float w = velR().getWidth() / (float) stepCount(); const int v = clip->getPattern (0).getVelocity (selRow, s); const bool on = clip->getPattern (0).getNote (selRow, s);
+            const float h = (velR().getHeight() - 6.f) * (float) v / 127.f;
+            g.setColour (on ? juce::Colour (0xffcf26f5) : juce::Colour (0xff3a3842)); g.fillRoundedRectangle (velR().getX() + s * w + 3, velR().getBottom() - 3 - h, w - 6, h, 3.f);
         }
     }
     void bodyDown (const juce::MouseEvent& e) override
@@ -114,21 +164,56 @@ protected:
         if (playR().contains (p)) { if (tc.isPlaying() && patternMode) { tc.stop (false, false); endPattern(); } else startPattern(); repaint(); return; }
         if (stopR().contains (p)) { tc.stop (false, false); endPattern(); tc.setPosition (clip->getPosition().getStart()); repaint(); return; }
         if (stepsR().contains (p)) { static const int opts[] { 8, 12, 16, 24, 32 }; int i = 0; for (int k = 0; k < 5; ++k) if (opts[k] == stepCount()) i = k; setSteps (opts[(i + 1) % 5]); return; }
-        if (addR().contains (p)) { if (rows < 8) { ++rows; setDesign (designW, kHead + 96 + rows * kRowH + 26); } repaint(); return; }
+        if (addR().contains (p)) { if (rows < 8) { ++rows; setDesign (designW, kHead + 96 + rows * kRowH + kPanel + 26); } repaint(); return; }
+        for (int i = 0; i < patterns().size() + 1 && i < kMaxPat + 1; ++i) if (tabR (i).contains (p))
+        { if (i < patterns().size()) { if (e.mods.isPopupMenu()) patternMenu (i); else selectPattern (i); } else if (patterns().size() < kMaxPat) addPattern (false); return; }
+        if (volR().expanded (0, 10).contains (p)) { drag = Drag::vol; bodyDrag (e); return; }
+        if (panR().expanded (0, 10).contains (p)) { drag = Drag::pan; bodyDrag (e); return; }
+        if (velR().contains (p)) { drag = Drag::vel; bodyDrag (e); return; }
         for (int r = 0; r < rows; ++r)
         {
             if (powerR (r).contains (p)) { setOn (r, ! isOn (r)); return; }
-            if (nameR (r).contains (p)) { rowMenu (r); return; }
-            for (int s = 0; s < stepCount(); ++s) if (stepR (r, s).expanded (3).contains (p)) { auto pat = clip->getPattern (0); paint_ = ! pat.getNote (r, s); pat.setNote (r, s, paint_); lastCell = { r, s }; painting = true; if (onClipChanged) onClipChanged(); repaint(); return; }
+            if (nameR (r).contains (p)) { selRow = r; if (p.x > nameR (r).getRight() - 52) rowMenu (r); else repaint(); return; }
+            for (int s = 0; s < stepCount(); ++s) if (stepR (r, s).expanded (3).contains (p)) { selRow = r; auto pat = clip->getPattern (0); paint_ = ! pat.getNote (r, s); pat.setNote (r, s, paint_); lastCell = { r, s }; painting = true; if (onClipChanged) onClipChanged(); repaint(); return; }
         }
+    }
+    juce::String tipAt (juce::Point<float> p) override
+    {
+        if (playR().contains (p)) return juce::String::fromUTF8 ("Reproducir patrón");
+        if (stopR().contains (p)) return "Detener";
+        if (stepsR().contains (p)) return "Cantidad de pasos";
+        if (addR().contains (p)) return "Agregar fila";
+        for (int i = 0; i <= patterns().size() && i < kMaxPat + 1; ++i) if (tabR (i).contains (p)) return i == patterns().size() ? juce::String::fromUTF8 ("Patrón nuevo") : juce::String::fromUTF8 ("Patrón ") + juce::String (i + 1);
+        for (int r = 0; r < rows; ++r)
+        {
+            if (powerR (r).contains (p)) return "Activar fila";
+            if (nameR (r).contains (p)) return p.x > nameR (r).getRight() - 52 ? juce::String ("Sample") : juce::String();
+        }
+        if (volR().expanded (0, 10).contains (p)) return "Volumen";
+        if (panR().expanded (0, 10).contains (p)) return "Pan";
+        if (velR().contains (p)) return "Fuerza";
+        return {};
+    }
+    void bodyDouble (const juce::MouseEvent& e) override
+    {
+        if (volR().expanded (0, 10).contains (e.position)) { setVol (selRow, 0.f); repaint(); }
+        else if (panR().expanded (0, 10).contains (e.position)) { setPan (selRow, 0.f); repaint(); }
     }
     void bodyDrag (const juce::MouseEvent& e) override   // arrastrar sobre varias celdas pinta/borra
     {
-        if (! painting || ! clip) return;
+        if (! clip) return;
+        if (drag == Drag::vol) { setVol (selRow, juce::jmap (juce::jlimit (0.f, 1.f, (e.position.x - volR().getX()) / volR().getWidth()), -40.f, 6.f)); repaint(); return; }
+        if (drag == Drag::pan) { float v = juce::jlimit (-1.f, 1.f, (e.position.x - panR().getX()) / panR().getWidth() * 2.f - 1.f); setPan (selRow, std::abs (v) < .04f ? 0.f : v); repaint(); return; }
+        if (drag == Drag::vel)
+        {
+            const int st = juce::jlimit (0, stepCount() - 1, (int) ((e.position.x - velR().getX()) / (velR().getWidth() / (float) stepCount())));
+            clip->getPattern (0).setVelocity (selRow, st, juce::jlimit (4, 127, (int) juce::jmap (e.position.y, velR().getBottom(), velR().getY(), 4.f, 127.f))); repaint(); return;
+        }
+        if (! painting) return;
         for (int r = 0; r < rows; ++r) for (int s = 0; s < stepCount(); ++s)
             if (stepR (r, s).expanded (3).contains (e.position) && lastCell != juce::Point<int> (r, s)) { clip->getPattern (0).setNote (r, s, paint_); lastCell = { r, s }; repaint(); return; }
     }
-    void bodyUp (const juce::MouseEvent&) override { painting = false; }
+    void bodyUp (const juce::MouseEvent&) override { painting = false; drag = Drag::none; }
 
     bool isInterestedInFileDrag (const juce::StringArray& f) override { return f.size() > 0; }
     void filesDropped (const juce::StringArray& f, int x0, int y0) override
@@ -138,7 +223,7 @@ protected:
     }
 
 private:
-    te::Edit& edit; te::StepClip::Ptr clip; te::Plugin::Ptr samplerPtr; te::SamplerPlugin* sampler = nullptr; bool patternMode = false, oldLoop = false; te::TimeRange oldRange; std::vector<std::pair<te::AudioTrack*, bool>> oldSolo; int rows = 4; bool painting = false, paint_ = true; juce::Point<int> lastCell;
+    te::Edit& edit; te::StepClip::Ptr clip; te::Plugin::Ptr samplerPtr; te::SamplerPlugin* sampler = nullptr; bool patternMode = false, oldLoop = false; te::TimeRange oldRange; std::vector<std::pair<te::AudioTrack*, bool>> oldSolo; int rows = 4, selRow = 0; enum class Drag { none, vol, pan, vel }; Drag drag = Drag::none; bool painting = false, paint_ = true; juce::Point<int> lastCell;
     juce::StringArray dummy;
     std::unique_ptr<juce::FileChooser> chooser;
 
@@ -147,14 +232,54 @@ private:
     bool hasSample (int r) { return soundForRow (r) >= 0; }
     juce::String sampleName (int r) { const int i = soundForRow (r); return i >= 0 && sampler ? sampler->getSoundName (i) : juce::String(); }
     int soundForRow (int row) { if (! sampler || ! clip) return -1; const int note = clip->getChannels()[row]->noteNumber; for (int i = 0; i < sampler->getNumSounds(); ++i) if (sampler->getMinKey (i) == note || sampler->getMinKey (i) == 0) if (sampler->getMaxKey (i) == note || sampler->getMaxKey (i) == 0) return i; return -1; }
-    bool isOn (int r) { return clip == nullptr || ! (bool) clip->state.getProperty ("injOff" + juce::String (r), false); }
+    bool isOn (int r) { return clip == nullptr || clip->getTrack() == nullptr || ! (bool) clip->getTrack()->state.getProperty ("injOff" + juce::String (r), false); }
     void setOn (int r, bool on)
     {
-        clip->state.setProperty ("injOff" + juce::String (r), ! on, nullptr);
+        if (clip->getTrack()) clip->getTrack()->state.setProperty ("injOff" + juce::String (r), ! on, nullptr);
         const int note = clip->getChannels()[r]->noteNumber; const int i = soundForRow (r);   // apagado = el sample deja de responder a su nota
         if (i >= 0 && sampler) sampler->setSoundParams (i, on ? note : 0, on ? note : 0, on ? note : 0);
         repaint();
     }
+    juce::Array<te::StepClip*> patterns()
+    {
+        juce::Array<te::StepClip*> out; if (clip == nullptr || clip->getTrack() == nullptr) return out;
+        if (auto* ct = dynamic_cast<te::ClipTrack*> (clip->getTrack())) for (auto* c : ct->getClips()) if (auto* sc = dynamic_cast<te::StepClip*> (c)) out.add (sc);
+        std::sort (out.begin(), out.end(), [] (te::StepClip* a, te::StepClip* b) { return a->getPosition().getStart() < b->getPosition().getStart(); });
+        return out;
+    }
+    void selectPattern (int i)
+    {
+        auto pats = patterns(); if (i < 0 || i >= pats.size() || pats[i] == clip.get()) return;
+        const bool was = patternMode; if (was) { edit.getTransport().stop (false, false); endPattern(); }
+        clip = pats[i]; if (was) startPattern(); repaint(); if (onClipChanged) onClipChanged();
+    }
+    void addPattern (bool duplicate)
+    {
+        auto pats = patterns(); if (pats.isEmpty() || ! clip) return; auto* host = dynamic_cast<te::AudioTrack*> (clip->getTrack()); if (host == nullptr) return;
+        const double endB = edit.tempoSequence.toBeats (pats.getLast()->getPosition().getEnd()).inBeats(); const double lenB = edit.tempoSequence.toBeats (clip->getPosition().getEnd()).inBeats() - edit.tempoSequence.toBeats (clip->getPosition().getStart()).inBeats();
+        const auto st = edit.tempoSequence.toTime (te::BeatPosition::fromBeats (std::ceil (endB / 4.0) * 4.0));
+        te::StepClip::Ptr n;
+        if (duplicate) { if (auto* c = trackutil::copyClipTo (edit, *clip, *host, st)) n = dynamic_cast<te::StepClip*> (c); }
+        else
+        {
+            n = dynamic_cast<te::StepClip*> (host->insertNewClip (te::TrackItem::Type::step, juce::String::fromUTF8 ("Patrón ") + juce::String (pats.size() + 1), te::TimeRange (st, edit.tempoSequence.toTime (te::BeatPosition::fromBeats (std::ceil (endB / 4.0) * 4.0 + lenB))), nullptr));
+            if (n) { for (int i = 0; i < n->getChannels().size() && i < clip->getChannels().size(); ++i) { n->getChannels()[i]->name = clip->getChannels()[i]->name.get(); n->getChannels()[i]->noteNumber = clip->getChannels()[i]->noteNumber.get(); } n->getPattern (0).setNumNotes (stepCount()); }
+        }
+        if (n) { clip = n; if (onClipChanged) onClipChanged(); } repaint();
+    }
+    void patternMenu (int i)
+    {
+        juce::PopupMenu m; m.addItem (1, juce::String::fromUTF8 ("Duplicar este patrón")); m.addItem (2, juce::String::fromUTF8 ("Eliminar este patrón"), patterns().size() > 1); m.addItem (3, juce::String::fromUTF8 ("Vaciar este patrón (borra todos sus golpes)"));
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (toLocal (tabR (i)))), [this, i] (int id)
+        {
+            auto pats = patterns(); if (i >= pats.size()) return; selectPattern (i);
+            if (id == 1 && pats.size() < kMaxPat) addPattern (true);
+            else if (id == 2 && pats.size() > 1) { te::StepClip::Ptr dead = pats[i]; clip = pats[i == 0 ? 1 : i - 1]; dead->removeFromParent(); if (onClipChanged) onClipChanged(); repaint(); }
+            else if (id == 3) { clip->getPattern (0).clear(); repaint(); }
+        });
+    }
+    void setVol (int r, float db) { const int i = soundForRow (r); if (i >= 0 && sampler) sampler->setSoundGains (i, juce::jlimit (-40.f, 6.f, db), sampler->getSoundPan (i)); }
+    void setPan (int r, float pn) { const int i = soundForRow (r); if (i >= 0 && sampler) sampler->setSoundGains (i, sampler->getSoundGainDb (i), juce::jlimit (-1.f, 1.f, pn)); }
     void setSteps (int n)
     {
         clip->getPattern (0).setNumNotes (n);

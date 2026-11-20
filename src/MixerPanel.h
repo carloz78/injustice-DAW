@@ -1,5 +1,6 @@
 #pragma once
 #include "FloatingPanel.h"
+#include "InjLimiter.h"
 #include "TrackUtil.h"
 #include <tracktion_engine/tracktion_engine.h>
 #include <array>
@@ -14,7 +15,7 @@ public:
     // Escala del fader: lineal en dB, de -60 (abajo, -inf) a +6 (arriba)
     static float dbToPos (float db) { return db <= -60.f ? 0.f : juce::jlimit (0.f, 1.f, (db + 60.f) / 66.f); }
     static float posToDb (float p) { return p <= 0.004f ? -100.f : p * 66.f - 60.f; }
-    std::function<void()> onTracksChanged;
+    std::function<void (const juce::String&)> onMessage; std::function<void()> onTracksChanged;
     std::function<void (int)> onAddEffect;              // índice de pista
     std::function<void (te::Plugin*)> onOpenPlugin;
     int selected = 0, first = 0;   // first = primera pista visible
@@ -27,6 +28,8 @@ public:
     static juce::Rectangle<float> knobOf (juce::Rectangle<float> s) { return { s.getCentreX() - 22, s.getY() + kHdrH + 16, 44, 44 }; }
     static juce::Rectangle<float> faderOf (juce::Rectangle<float> s) { const float y0 = s.getY() + kHdrH + 16 + 44 + 30; return { s.getX() + 14, y0, 18, s.getBottom() - 118 - y0 }; }
     static juce::Rectangle<float> meterOf (juce::Rectangle<float> s) { auto f = faderOf (s); return { s.getX() + 46, f.getY() + 2, 30, f.getHeight() - 4 }; }
+    static juce::Rectangle<float> peakOf (juce::Rectangle<float> s) { return { s.getX() + 2, knobOf (s).getBottom() + 4, s.getWidth() - 4, 20.f }; }
+    juce::Rectangle<float> peakR (juce::Rectangle<float> s) const { return peakOf (s); }
     static juce::Rectangle<float> armOf (juce::Rectangle<float> s) { return { s.getCentreX() - 10, s.getBottom() - 104, 20, 20 }; }
     static juce::Rectangle<float> chevOf (juce::Rectangle<float> s) { return { s.getCentreX() - 14, s.getBottom() - 80, 28, 18 }; }
     static juce::Rectangle<float> smOf (juce::Rectangle<float> s, int k) { return { s.getX() + 8.f + k * 40.f, s.getBottom() - 46.f, 36.f, 32.f }; }
@@ -54,6 +57,26 @@ protected:
         if (tracks.size() > kN) { const float w = std::max (40.f, sb.getWidth() * (float) kN / (float) tracks.size()), x = sb.getX() + (sb.getWidth() - w) * (float) first / (float) (tracks.size() - kN); g.setColour (juce::Colour (0xff9d9dab)); g.fillRoundedRectangle ({ x, sb.getY() + 3, w, sb.getHeight() - 6 }, 4.f); }
         drawEffects (g);
     }
+    juce::String tipAt (juce::Point<float> p) override
+    {
+        for (int i = -1; i < kN; ++i)
+        {
+            const bool master = i < 0; auto s = master ? masterR() : stripR (i); if (! s.contains (p)) continue;
+            if (s.withHeight ((float) kHdrH).contains (p)) return master ? juce::String ("Master") : juce::String ("Canal");
+            if (knobOf (s).expanded (4).contains (p)) return "Pan";
+            if (faderOf (s).expanded (22, 0).contains (p)) return "Volumen";
+            if (meterOf (s).contains (p)) return "Nivel";
+            if (armOf (s).expanded (4).contains (p)) return master ? juce::String() : juce::String::fromUTF8 ("Armar para grabar");
+            if (chevOf (s).expanded (6, 4).contains (p)) return juce::String::fromUTF8 ("Menú del canal");
+            if (smOf (s, 0).contains (p)) return master ? juce::String ("Limitador") : juce::String ("Solo");
+            if (master && peakR (s).contains (p)) return juce::String::fromUTF8 ("Pico máximo (clic para reiniciar)");
+            if (smOf (s, 1).contains (p)) return "Silenciar";
+            return {};
+        }
+        if (plusR().contains (p)) return "Agregar canal";
+        for (int n = 0; n < 10; ++n) if (fxRow (n).contains (p)) return juce::String::fromUTF8 ("Plugin VST3");
+        return {};
+    }
     void bodyDown (const juce::MouseEvent& e) override
     {
         auto p = e.position; auto tracks = te::getAudioTracks (edit); active = Hit {};
@@ -65,7 +88,8 @@ protected:
             auto s = masterR();
             if (faderOf (s).expanded (16, 8).contains (p)) { active = { Hit::MasterFader, -1 }; dragFader (e, true); }
             else if (knobOf (s).expanded (8).contains (p)) { active = { Hit::MasterPan, -1 }; lastY = p.y; }
-            else if (smOf (s, 0).contains (p)) { masterSolo = ! masterSolo; repaint(); }
+            else if (smOf (s, 0).contains (p)) { setLimiter (! limiterOn()); repaint(); }
+            else if (peakR (s).contains (p)) { masterPeak = -100.f; repaint(); }
             else if (smOf (s, 1).contains (p)) { auto mv = edit.getMasterVolumePlugin(); masterMuted = ! masterMuted; if (masterMuted) { preMute = mv->getVolumeDb(); mv->setVolumeDb (-100.f); } else mv->setVolumeDb (preMute); repaint(); }
             return;
         }
@@ -75,7 +99,7 @@ protected:
             selected = i + first; auto* tk = tracks[i + first];
             if (smOf (s, 0).contains (p)) { tk->setSolo (! tk->isSolo (false)); repaint(); return; }
             if (smOf (s, 1).contains (p)) { tk->setMute (! tk->isMuted (false)); repaint(); return; }
-            if (armOf (s).expanded (6).contains (p)) { tk->state.setProperty ("injArm", ! (bool) tk->state.getProperty ("injArm", false), nullptr); repaint(); return; }
+            if (armOf (s).expanded (6).contains (p)) { const bool now = ! trackutil::isArmed (*tk); const int n = trackutil::armTrack (edit, *tk, now); if (now && n == 0 && onMessage) onMessage (trackutil::hasInstrument (*tk) ? juce::String::fromUTF8 ("No hay teclado MIDI conectado para esta pista") : juce::String::fromUTF8 ("No hay entrada de audio disponible (revisa Opciones > Ajustes de audio)")); repaint(); return; }
             if (chevOf (s).expanded (6, 4).contains (p)) { channelMenu (i + first, s); return; }
             if (knobOf (s).expanded (8).contains (p)) { active = { Hit::Pan, i }; lastY = p.y; return; }
             if (faderOf (s).expanded (18, 8).contains (p)) { active = { Hit::Fader, i }; dragFader (e, false); return; }
@@ -120,23 +144,68 @@ private:
     struct Hit { enum Kind { None, Fader, MasterFader, Pan, MasterPan } kind = None; int idx = -1; } active;
     struct Client { te::LevelMeterPlugin* meter = nullptr; te::LevelMeasurer::Client client; float l = -100, r = -100; };
     te::Edit& edit; float lastY = 0; std::array<Client, kN> clients; Client masterClient; te::LevelMeterPlugin* masterMeter = nullptr;
-    bool masterSolo = false, masterMuted = false; float preMute = 0.f;
+    bool masterMuted = false; float preMute = 0.f, masterPeak = -100.f;
+    te::Plugin* findLimiter() { for (auto* p : edit.getMasterPluginList().getPlugins()) if (dynamic_cast<InjLimiter*> (p)) return p; return nullptr; }
+public:
+    bool limiterOn() { auto* p = findLimiter(); return p != nullptr && p->isEnabled(); }
+    void setLimiter (bool on)
+    {
+        auto& ml = edit.getMasterPluginList(); auto* p = findLimiter();
+        if (p == nullptr)
+        {
+            if (! on) return; auto np = edit.getPluginCache().createNewPlugin (InjLimiter::xmlTypeName, {}); if (np == nullptr) return;
+            np->setEnabled (true); int at = -1; if (masterMeter) at = ml.indexOf (masterMeter); ml.insertPlugin (np, at, nullptr); return;
+        }
+        p->setEnabled (on);
+    }
+    float peakHold() const { return masterPeak; }
+    InjLimiter* limiterPlugin() { return dynamic_cast<InjLimiter*> (findLimiter()); }
+private:
 
     juce::Rectangle<float> scrollR() const { return { (float) kX0 + 46.f, (float) (kTop + kStripH + 8), (float) (kN * kStride - 52), 26.f }; }
     juce::Rectangle<float> plusR() const { return { (float) kX0, (float) (kTop + kStripH + 8), 38.f, 26.f }; }
     juce::Rectangle<float> fxR() const { return { (float) (designW - kFxW - 14), (float) kTop, (float) kFxW, (float) (kStripH + kBottomRow) }; }
     juce::Rectangle<float> fxRow (int n) const { auto r = fxR(); return { r.getX() + 10, r.getY() + 58 + n * 40.f, r.getWidth() - 20, 36 }; }
 
+public:
+    static constexpr int kBuses = 2;
+    static juce::String busName (int b) { return juce::String::charToString ((juce::juce_wchar) ('A' + b)); }
+    te::AuxSendPlugin* sendOf (te::AudioTrack& t, int bus) { for (auto* p : t.pluginList.getPlugins()) if (auto* sp = dynamic_cast<te::AuxSendPlugin*> (p)) if (sp->busNumber.get() == bus) return sp; return nullptr; }
+    te::AuxSendPlugin* firstSend (te::AudioTrack& t) { for (auto* p : t.pluginList.getPlugins()) if (auto* sp = dynamic_cast<te::AuxSendPlugin*> (p)) return sp; return nullptr; }
+    te::AuxReturnPlugin* returnOf (te::AudioTrack& t, int bus) { for (auto* p : t.pluginList.getPlugins()) if (auto* rp = dynamic_cast<te::AuxReturnPlugin*> (p)) if (rp->busNumber.get() == bus) return rp; return nullptr; }
+    // Envío posterior al fader (-6 dB al crearlo) hacia el retorno `bus`; si ya existe, lo quita.
+    void toggleSend (te::AudioTrack& t, int bus)
+    {
+        if (auto* sp = sendOf (t, bus)) { sp->deleteFromParent(); return; }
+        auto np = edit.getPluginCache().createNewPlugin (te::AuxSendPlugin::xmlTypeName, {}); auto* sp = dynamic_cast<te::AuxSendPlugin*> (np.get()); if (sp == nullptr) return;
+        sp->busNumber = bus; t.pluginList.insertPlugin (np, -1, nullptr); sp->setGainDb (-6.f);
+    }
+    // Convierte la pista en retorno: recibe lo que los envíos mandan y lo pasa por sus propios efectos.
+    void toggleReturn (te::AudioTrack& t, int bus)
+    {
+        if (auto* rp = returnOf (t, bus)) { rp->deleteFromParent(); return; }
+        auto np = edit.getPluginCache().createNewPlugin (te::AuxReturnPlugin::xmlTypeName, {}); auto* rp = dynamic_cast<te::AuxReturnPlugin*> (np.get()); if (rp == nullptr) return;
+        rp->busNumber = bus; t.pluginList.insertPlugin (np, 0, nullptr);
+    }
+private:
     te::AudioTrack* trackAt (int i) { auto t = te::getAudioTracks (edit); return i >= 0 && i < t.size() ? t[i] : nullptr; }
     juce::Array<te::Plugin*> fxOf (te::AudioTrack* t) { juce::Array<te::Plugin*> a; if (t) for (auto* p : t->pluginList.getPlugins()) if (dynamic_cast<te::ExternalPlugin*> (p)) a.add (p); return a; }
     void channelMenu (int ti, juce::Rectangle<float> s)
     {
         auto* tk = trackAt (ti); if (! tk) return; te::AudioTrack::Ptr t (tk); juce::PopupMenu m;
         m.addItem (1, juce::String::fromUTF8 ("Renombrar…")); m.addItem (2, t->isMuted (false) ? "Quitar silencio" : "Silenciar"); m.addItem (3, t->isSolo (false) ? "Quitar solo" : "Solo");
-        m.addSeparator(); m.addItem (4, juce::String::fromUTF8 ("Agregar efecto…")); m.addItem (5, juce::String::fromUTF8 ("Salida: Master"), false);
+        m.addSeparator(); m.addItem (4, juce::String::fromUTF8 ("Agregar efecto…"));
+        { juce::PopupMenu sm; for (int b = 0; b < kBuses; ++b) sm.addItem (20 + b, juce::String::fromUTF8 ("Enviar al Retorno ") + busName (b), true, sendOf (*t, b) != nullptr);
+          if (auto* any = firstSend (*t)) { sm.addSeparator(); static const float dbs[] { -24.f, -12.f, -6.f, 0.f }; for (int i = 0; i < 4; ++i) sm.addItem (40 + i, juce::String::fromUTF8 ("Nivel de envío: ") + juce::String (dbs[i], 0) + " dB", true, std::abs (any->getGainDb() - dbs[i]) < 1.f); }
+          m.addSubMenu (juce::String::fromUTF8 ("Envíos"), sm); }
+        { juce::PopupMenu rm; for (int b = 0; b < kBuses; ++b) rm.addItem (30 + b, juce::String::fromUTF8 ("Esta pista es el Retorno ") + busName (b), true, returnOf (*t, b) != nullptr); m.addSubMenu (juce::String::fromUTF8 ("Retornos (reverb, delay…)"), rm); }
+        m.addItem (5, juce::String::fromUTF8 ("Salida: Master"), false);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (toLocal (chevOf (s)))), [this, t, ti] (int r)
         {
             if (r == 1) rename (ti); else if (r == 2) t->setMute (! t->isMuted (false)); else if (r == 3) t->setSolo (! t->isSolo (false)); else if (r == 4 && onAddEffect) onAddEffect (ti);
+            else if (r >= 20 && r < 20 + kBuses) toggleSend (*t, r - 20);
+            else if (r >= 30 && r < 30 + kBuses) toggleReturn (*t, r - 30);
+            else if (r >= 40 && r < 44) { static const float dbs[] { -24.f, -12.f, -6.f, 0.f }; for (auto* p : t->pluginList.getPlugins()) if (auto* sp = dynamic_cast<te::AuxSendPlugin*> (p)) sp->setGainDb (dbs[r - 40]); }
             repaint();
         });
     }
@@ -177,13 +246,14 @@ private:
     }
     void pollMaster()
     {
-        if (auto* mt = edit.getMasterTrack(); mt && masterMeter == nullptr)
+        if (masterMeter == nullptr)
         {
-            for (auto* lm : mt->pluginList.getPluginsOfType<te::LevelMeterPlugin>()) { masterMeter = lm; break; }
-            if (masterMeter == nullptr) { auto p = edit.getPluginCache().createNewPlugin (te::LevelMeterPlugin::xmlTypeName, {}); mt->pluginList.insertPlugin (p, -1, nullptr); masterMeter = dynamic_cast<te::LevelMeterPlugin*> (p.get()); }
+            auto& mt = edit.getMasterPluginList();
+            for (auto* lm : mt.getPluginsOfType<te::LevelMeterPlugin>()) { masterMeter = lm; break; }
+            if (masterMeter == nullptr) { auto p = edit.getPluginCache().createNewPlugin (te::LevelMeterPlugin::xmlTypeName, {}); mt.insertPlugin (p, -1, nullptr); masterMeter = dynamic_cast<te::LevelMeterPlugin*> (p.get()); }
             if (masterMeter) masterMeter->measurer.addClient (masterClient.client);
         }
-        if (masterMeter) { const float fall = 26.f / 30.f; masterClient.l = std::max (masterClient.client.getAndClearAudioLevel (0).dB, masterClient.l - fall); masterClient.r = std::max (masterClient.client.getAndClearAudioLevel (1).dB, masterClient.r - fall); }
+        if (masterMeter) { const float fall = 26.f / 30.f; masterPeak = std::max (masterPeak, std::max (masterClient.l, masterClient.r)); masterClient.l = std::max (masterClient.client.getAndClearAudioLevel (0).dB, masterClient.l - fall); masterClient.r = std::max (masterClient.client.getAndClearAudioLevel (1).dB, masterClient.r - fall); }
     }
     void timerCallback() override
     {
@@ -264,7 +334,9 @@ private:
         if (! master && index == selected && ! empty) { g.setColour (juce::Colour (0xffe4e4ee)); g.drawRoundedRectangle (s.reduced (.75f), 6.f, 1.5f); }
         te::VolumeAndPanPlugin* vp = master ? edit.getMasterVolumePlugin().get() : (t ? t->getVolumePlugin() : nullptr);
         knob (g, knobOf (s), vp ? vp->getPan() : 0.f);
-        const bool sig = std::max (lvL, lvR) > -60.f; g.setColour (sig ? accentHi : juce::Colour (0xff637171)); g.fillEllipse (s.getCentreX() - 4.f, knobOf (s).getBottom() + 10.f, 8.f, 8.f);
+        const bool sig = std::max (lvL, lvR) > -60.f;
+        if (master) { const bool hot = masterPeak > -0.1f; g.setColour (hot ? record : textDim); g.setFont (juce::FontOptions (12.f, juce::Font::bold)); g.drawText (masterPeak <= -99.f ? juce::String ("pico -inf") : juce::String ("pico ") + juce::String (masterPeak, 1), peakR (s).toNearestInt(), juce::Justification::centred); }
+        else { g.setColour (sig ? accentHi : juce::Colour (0xff637171)); g.fillEllipse (s.getCentreX() - 4.f, knobOf (s).getBottom() + 10.f, 8.f, 8.f); }
         auto fa = faderOf (s); faderTrack (g, fa);
         auto mr = meterOf (s); g.setColour (juce::Colour (0xff1b1b23)); g.fillRoundedRectangle (mr.expanded (3, 3), 3.f);
         ledMeter (g, { mr.getX(), mr.getY(), 12, mr.getHeight() }, lvL); ledMeter (g, { mr.getX() + 16, mr.getY(), 12, mr.getHeight() }, lvR);
@@ -277,7 +349,7 @@ private:
         }
         else if (master) { auto ar = armOf (s); g.setColour (juce::Colour (0xffb9b8c6)); g.drawEllipse (ar.reduced (2), 1.6f); }
         { auto cv = chevOf (s); juce::Path p; p.startNewSubPath (cv.getCentreX() - 6, cv.getCentreY() - 3); p.lineTo (cv.getCentreX(), cv.getCentreY() + 3); p.lineTo (cv.getCentreX() + 6, cv.getCentreY() - 3); g.setColour (juce::Colour (0xffb9b8c6)); g.strokePath (p, juce::PathStrokeType (1.8f)); }
-        smButton (g, smOf (s, 0), "S", master ? masterSolo : (t && t->isSolo (false)), true);
+        if (! master) smButton (g, smOf (s, 0), "S", t && t->isSolo (false), true); else smButton (g, smOf (s, 0), "LIM", limiterOn(), false);
         smButton (g, smOf (s, 1), "M", master ? masterMuted : (t && t->isMuted (false)), false);
     }
     void drawEffects (juce::Graphics& g)

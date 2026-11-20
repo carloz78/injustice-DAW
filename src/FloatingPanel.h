@@ -4,7 +4,7 @@
 
 // Ventana flotante propia: se arrastra por la barra, se redimensiona desde bordes y esquinas (el contenido
 // se escala), se maximiza y se cierra. El contenido se dibuja en coordenadas de diseño (designW x designH).
-class FloatingPanel : public juce::Component
+class FloatingPanel : public juce::Component, public juce::TooltipClient
 {
 public:
     static constexpr int kHead = 48;
@@ -60,7 +60,14 @@ public:
     void mouseUp (const juce::MouseEvent& e) override { if (! dragging) bodyUp (sc (e)); dragging = false; }
     void mouseDoubleClick (const juce::MouseEvent& e0) override { auto e = sc (e0); if (e.position.y >= kHead) bodyDouble (e); else if (! closeR().contains (e.position) && ! maxR().contains (e.position)) toggleMax(); }
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override { bodyWheel (sc (e), w); }
-    void mouseMove (const juce::MouseEvent& e) override { bodyMove (sc (e)); }
+    void mouseMove (const juce::MouseEvent& e) override { hoverPos = sc (e).position; bodyMove (sc (e)); }
+    void mouseExit (const juce::MouseEvent&) override { hoverPos = { -1.f, -1.f }; }
+    juce::String getTooltip() override
+    {
+        if (closeR().contains (hoverPos)) return "Cerrar";
+        if (maxR().contains (hoverPos)) return "Maximizar";
+        return hoverPos.y >= kHead ? tipAt (hoverPos) : juce::String();
+    }
 
     void toggleMax()
     {
@@ -92,6 +99,8 @@ protected:
     virtual void bodyDouble (const juce::MouseEvent&) {}
     virtual void bodyMove (const juce::MouseEvent&) {}
     virtual void bodyWheel (const juce::MouseEvent&, const juce::MouseWheelDetails&) {}
+    virtual juce::String tipAt (juce::Point<float>) { return {}; }
+    juce::Point<float> hoverPos { -1.f, -1.f };
     juce::MouseEvent sc (const juce::MouseEvent& e) const { return e.withNewPosition (e.position / scale); }
     juce::Rectangle<int> toLocal (juce::Rectangle<float> r) const { return r.transformedBy (juce::AffineTransform::scale (scale)).toNearestInt(); }
 private:

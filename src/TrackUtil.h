@@ -62,4 +62,64 @@ namespace trackutil
         auto* nc = track->insertClipWithState (vt); if (nc == nullptr) return nullptr;
         nc->setStart (c.getPosition().getEnd(), false, true); return nc;
     }
+
+    // ---- Grabación ----
+    inline bool hasInstrument (te::AudioTrack& t)
+    {
+        for (auto* p : t.pluginList.getPlugins()) { if (dynamic_cast<te::SamplerPlugin*> (p)) return true; if (auto* ep = dynamic_cast<te::ExternalPlugin*> (p)) if (ep->isSynth()) return true; }
+        return false;
+    }
+    inline bool isArmed (te::AudioTrack& t) { return (bool) t.state.getProperty ("injArm", false); }
+    inline bool anyArmed (te::Edit& e) { for (auto* t : te::getAudioTracks (e)) if (isArmed (*t)) return true; return false; }
+    // Arma o desarma una pista: con instrumento graba MIDI de todos los teclados conectados; sin instrumento, audio de la primera entrada.
+    // Devuelve cuántas entradas quedaron asignadas a la pista.
+    inline int armTrack (te::Edit& e, te::AudioTrack& t, bool arm)
+    {
+        e.getTransport().ensureContextAllocated (true);
+        const bool wantMidi = hasInstrument (t); bool waveDone = false; int n = 0;
+        for (auto* inst : e.getAllInputDevices())
+        {
+            auto& dev = inst->getInputDevice(); const auto type = dev.getDeviceType();
+            const bool midi = type != te::InputDevice::waveDevice; if (midi != wantMidi) continue;
+            if (! midi && waveDone && arm) continue;
+            if (arm)
+            {
+                if (! dev.isEnabled()) dev.setEnabled (true);
+                auto r = inst->setTarget (t.itemID, false, &e.getUndoManager(), 0); if (! r.has_value()) continue;
+                inst->setRecordingEnabled (t.itemID, true); ++n; if (! midi) waveDone = true;
+            }
+            else if (inst->getTargets().contains (t.itemID)) { inst->setRecordingEnabled (t.itemID, false); (void) inst->removeTarget (t.itemID, &e.getUndoManager()); }
+        }
+        t.state.setProperty ("injArm", arm && n > 0, nullptr);
+        return n;
+    }
+
+    // ---- MIDI: exportar un clip a .mid e importar un .mid como clip ----
+    inline bool exportMidiClip (te::Edit& e, te::MidiClip& mc, const juce::File& f)
+    {
+        juce::MidiMessageSequence seq; const int tpq = 960;
+        for (auto* n : mc.getSequence().getNotes())
+        {
+            const double s = n->getStartBeat().inBeats() * tpq, l = n->getLengthBeats().inBeats() * tpq;
+            seq.addEvent (juce::MidiMessage::noteOn (1, n->getNoteNumber(), (juce::uint8) n->getVelocity()), s);
+            seq.addEvent (juce::MidiMessage::noteOff (1, n->getNoteNumber()), s + std::max (1.0, l));
+        }
+        seq.updateMatchedPairs(); juce::MidiMessageSequence tempo; tempo.addEvent (juce::MidiMessage::tempoMetaEvent ((int) (60000000.0 / std::max (20.0, e.tempoSequence.getTempo (0)->getBpm()))), 0.0);
+        juce::MidiFile mf; mf.setTicksPerQuarterNote (tpq); mf.addTrack (tempo); mf.addTrack (seq);
+        f.deleteFile(); if (auto os = f.createOutputStream()) return mf.writeTo (*os); return false;
+    }
+    // Devuelve el clip creado (o nullptr). Los compases del archivo se respetan aunque su tempo sea otro.
+    inline te::MidiClip* importMidiFile (te::Edit& e, const juce::File& f, te::AudioTrack& track, te::TimePosition start)
+    {
+        juce::FileInputStream in (f); if (! in.openedOk()) return nullptr; juce::MidiFile mf; if (! mf.readFrom (in)) return nullptr;
+        const int tpq = mf.getTimeFormat(); if (tpq <= 0) return nullptr;
+        juce::MidiMessageSequence all; for (int i = 0; i < mf.getNumTracks(); ++i) all.addSequence (*mf.getTrack (i), 0.0);
+        juce::MidiMessageSequence conv;
+        for (auto* ev : all) { auto m = ev->message; if (m.isNoteOnOrOff() || m.isController() || m.isPitchWheel()) { m.setTimeStamp (e.tempoSequence.toTime (te::BeatPosition::fromBeats (m.getTimeStamp() / (double) tpq)).inSeconds()); conv.addEvent (m); } }
+        conv.updateMatchedPairs(); if (conv.getNumEvents() == 0) return nullptr;
+        const double len = conv.getEndTime();
+        auto clip = track.insertMIDIClip (f.getFileNameWithoutExtension(), te::TimeRange (start, te::TimePosition::fromSeconds (start.inSeconds() + std::max (1.0, len))), nullptr); if (clip == nullptr) return nullptr;
+        te::mergeInMidiSequence (*clip, conv, te::TimeDuration::fromSeconds (start.inSeconds()), te::MidiList::NoteAutomationType::none);
+        return clip.get();
+    }
 }
