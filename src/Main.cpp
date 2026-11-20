@@ -6,6 +6,7 @@
 #include "StepSeqPanel.h"
 #include "InjLimiter.h"
 #include "Meters.h"
+#include "Instruments.h"
 #include "BrowserPanel.h"
 #include "PluginHost.h"
 #include "TrackUtil.h"
@@ -147,6 +148,8 @@ public:
         mixer.onOpenPlugin = [this] (te::Plugin* p) { if (p) openEditorWhenReady (p); };
         playlist.onTracksChanged = [this] { mixer.refreshTracks(); playlist.repaint(); };
         playlist.onTrackSelected = [this] (int i) { mixer.selected = i; mixer.showTrack (i); };
+        playlist.samplesRoot = [this] { return browser.getRoot(); }; playlist.onInstrument = [this] (int ti, juce::String nm) { mixer.selected = ti; mixer.repaint(); note (nm + juce::String::fromUTF8 (" listo en la pista ") + juce::String (ti + 1) + juce::String::fromUTF8 (". Dibuja notas con el piano roll.")); };
+        if (! std::getenv ("INJ_SAMPLES")) { const auto before = samplepack::packDir (browser.getRoot()).getChildFile (".pack_v1").existsAsFile(); samplepack::ensure (browser.getRoot()); if (! before) browser.reload(); }
         mixer.onTracksChanged = [this] { playlist.repaint(); };
         piano.onMessage = [this] (const juce::String& m) { note (m); };
         playlist.onOpenMidi = [this] (te::MidiClip* c) { piano.setClip (c); showView ("piano"); };
@@ -161,6 +164,7 @@ public:
             else if (id == "undo") { undoRedo (true); }
             else if (id == "redo") { undoRedo (false); }
             else if (id == "snap") { playlist.snap = ! playlist.snap; piano.snap = playlist.snap; bars.snap = playlist.snap; }
+            else if (id == "tool:auto" && bars.tool == "auto") { bars.tool = "select"; playlist.tool = "select"; piano.tool = "select"; playlist.hideAllAutomation(); }
             else if (id.startsWith ("tool:")) { bars.tool = id.substring (5); playlist.tool = bars.tool; piano.tool = bars.tool; }
             else if (id == "quant") { static const double qs[] { 1.0, 0.5, 0.25, 0.125 }; static const char* ql[] { "1/4", "1/8", "1/16", "1/32" }; qi = (qi + 1) % 4; piano.quantum = qs[qi]; bars.quantLabel = ql[qi]; bars.repaint(); }
             else if (id == "view:playlist") showView ("playlist");
@@ -208,6 +212,9 @@ public:
         auto chk = [fails] (bool ok, const juce::String& what) { std::printf ("%s  %s\n", ok ? "OK  " : "FALLO", what.toRawUTF8()); if (! ok) ++*fails; };
         auto sine = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_sine440.wav"); sine.deleteFile();
         { juce::WavAudioFormat wf; std::unique_ptr<juce::FileOutputStream> os (sine.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 44100.0, 1, 16, {}, 0)); if (w) { os.release(); juce::AudioBuffer<float> b (1, 88200); for (int i = 0; i < 88200; ++i) b.setSample (0, i, 0.5f * std::sin (juce::MathConstants<float>::twoPi * 440.f * (float) i / 44100.f)); w->writeFromAudioSampleBuffer (b, 0, 88200); } }
+        trackutil::addTrack (edit); int kti = -1;
+        { auto kl = te::getAudioTracks (edit); auto* kt = kl.getLast(); kti = te::getAllTracks (edit).indexOf (kt); auto kc = kt->insertMIDIClip ("kit", te::TimeRange (te::TimePosition(), te::TimePosition::fromSeconds (2.0)), nullptr); kc->getSequence().addNote (36, te::BeatPosition::fromBeats (0.0), te::BeatDuration::fromBeats (1.0), 110, 0, nullptr);
+          auto pd = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_pack_test"); instruments::addKit (edit, *kt, pd); }
         trackutil::addTrack (edit); auto tt = te::getAudioTracks (edit); auto* st = tt.getLast(); const int sti = te::getAllTracks (edit).indexOf (st);
         auto sc = st->insertWaveClip ("seno", sine, { te::TimeRange (te::TimePosition::fromSeconds (0.0), te::TimeDuration::fromSeconds (2.0)), te::TimeDuration() }, false);
         auto* wc = dynamic_cast<te::WaveAudioClip*> (sc.get()); if (wc == nullptr) { std::printf ("FALLO  el clip de prueba no es de audio\n"); std::fflush (stdout); std::_Exit (1); }
@@ -220,15 +227,20 @@ public:
         };
         const double f0 = freqOf ("inj_p0.wav", 2.0); chk (std::abs (f0 - 440.0) < 6.0, "tono: sin cambios el seno suena a 440 Hz (" + juce::String (f0, 1) + ")");
         PlaylistView::setClipPitch (*wc, 12.f);
-        juce::Timer::callAfterDelay (4000, [this, freqOf, chk, wc, fails]() mutable
+        juce::Timer::callAfterDelay (4000, [this, kti, freqOf, chk, wc, fails]() mutable
         {
             const double f12 = freqOf ("inj_p12.wav", 2.0); chk (std::abs (f12 - 880.0) < 25.0, "tono: +12 semitonos sube una octava (" + juce::String (f12, 1) + " Hz)");
             PlaylistView::setClipPitch (*wc, 0.f); PlaylistView::setClipSpeed (*wc, 2.0);
-            juce::Timer::callAfterDelay (4000, [freqOf, chk, wc, fails]() mutable
+            juce::Timer::callAfterDelay (4000, [this, kti, freqOf, chk, wc, fails]() mutable
             {
                 const double fs2 = freqOf ("inj_s2.wav", 2.0);
                 chk (std::abs (wc->getPosition().getLength().inSeconds() - 1.0) < 0.01, "velocidad: al 200 % el clip dura la mitad (" + juce::String (wc->getPosition().getLength().inSeconds(), 3) + " s)");
                 chk (std::abs (fs2 - 440.0) < 12.0, "velocidad: al 200 % el tono se conserva (" + juce::String (fs2, 1) + " Hz)");
+                {   // kit de batería (los sonidos del sampler se cargan en segundo plano)
+                    auto kf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_kit.wav"); double kv = -1.0;
+                    if (renderWav (kf, 1.5, {}, kti)) { juce::AudioFormatManager afm; afm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (afm.createReaderFor (kf)); if (r) { juce::AudioBuffer<float> b (2, (int) r->lengthInSamples); r->read (&b, 0, (int) r->lengthInSamples, 0, true, true); kv = (double) b.getRMSLevel (0, 0, b.getNumSamples()); } }
+                    chk (kv > 0.002, "kit de bateria: suena al tocar notas (" + juce::String (kv, 4) + ")");
+                }
                 std::printf (*fails == 0 ? "TODO OK\n" : "%d FALLOS\n", *fails); std::fflush (stdout); std::_Exit (*fails == 0 ? 0 : 1);
             });
         });
@@ -480,6 +492,39 @@ public:
                 auto tr = te::getAudioTracks (edit); auto* imp = trackutil::importMidiFile (edit, mf, *tr.getLast(), te::TimePosition::fromSeconds (200.0));
                 chk (imp != nullptr && imp->getSequence().getNotes().size() == n0 && n0 > 0, "MIDI: al importar vuelven todas las notas");
                 if (imp) imp->removeFromParent();
+            }
+            if (auto* sf2 = std::getenv ("INJ_SAMPLE_FILE"))
+            {   // explorador: categorias automaticas y carpeta principal plegable
+                auto lib = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_cat_test"); lib.deleteRecursively(); lib.getChildFile ("Mis sonidos/Kicks").createDirectory(); lib.getChildFile ("Mis sonidos/Varios").createDirectory();
+                browser.setCategories (true); auto cnt = [&] (const char* n) { return std::max (0, browser.categoryCount (n)); };
+                std::map<juce::String, int> before; for (auto& n : BrowserPanel::categoryNames()) before[n] = cnt (n.toRawUTF8());
+                const char* files[] { "Mis sonidos/Kick_gabber_01.wav", "Mis sonidos/Kicks/pum.wav", "Mis sonidos/Snare_x.wav", "Mis sonidos/Varios/HiHat_closed.wav", "Mis sonidos/808 bass.wav", "Mis sonidos/Riser_long.wav", "Mis sonidos/Vox_shout.wav", "Mis sonidos/Clap_01.wav", "Mis sonidos/loop_170bpm.wav", "Mis sonidos/Varios/misterio.wav" };
+                for (auto* f : files) juce::File (sf2).copyFileTo (lib.getChildFile (f));
+                browser.addExtraRoot (lib);
+                auto d = [&] (const char* n) { return cnt (n) - before[n]; };
+                chk (d ("Kicks") == 2 && d ("Snares") == 1 && d ("Hats") == 1 && d ("Bajos") == 1 && d ("FX") == 1 && d ("Voces") == 1 && d ("Claps") == 1 && d ("Loops") == 1 && d ("Otros") == 1,
+                     "explorador: acomoda los samples por tipo (kicks, snares, hats, bajos, fx, voces, claps, loops)");
+                chk (BrowserPanel::categoryOf (juce::File ("/x/Kicks/pum.wav")) == "Kicks" && BrowserPanel::categoryOf (juce::File ("/x/BD_03.wav")) == "Kicks" && BrowserPanel::categoryOf (juce::File ("/x/Shout.wav")) == "Voces", "explorador: reconoce el tipo por el nombre de la carpeta y abreviaturas");
+                const int nCat = browser.numShown(); browser.clickItem (0); chk (browser.numShown() < nCat, "explorador: tocar una categoría la pliega"); browser.clickItem (0); chk (browser.numShown() == nCat, "explorador: tocarla otra vez la despliega");
+                browser.setCategories (false);
+                const int n0 = browser.numShown(); browser.clickItem (0); chk (browser.numShown() < n0, "explorador: tocar Muestras pliega sus carpetas"); browser.clickItem (0); chk (browser.numShown() == n0, "explorador: tocar Muestras otra vez las despliega");
+                browser.removeExtraRoot (lib); lib.deleteRecursively();
+            }
+            {   // imán de tamaño original y zoom
+                const double ppb = playlist.zoomPx(); const double orig = 16.0;
+                chk (playlist.applyMagnet (orig + 4.0 / ppb, orig) == orig, "imán: cerca del borde original el clip se pega a él");
+                chk (std::abs (playlist.applyMagnet (orig + 40.0 / ppb, orig) - (orig + 40.0 / ppb)) < 1e-9, "imán: más lejos se suelta y se mueve libre");
+                playlist.zoomAt (400.f, 0.3); const double z1 = playlist.zoomPx(); chk (z1 > ppb, "zoom: la rueda hacia arriba acerca"); playlist.zoomAt (400.f, -0.3); chk (playlist.zoomPx() < z1, "zoom: hacia abajo aleja");
+                playlist.setZoom (ppb);
+            }
+            {   // instrumentos incluidos
+                trackutil::addTrack (edit); auto tl = te::getAudioTracks (edit); auto* it = tl.getLast(); const int iti = te::getAllTracks (edit).indexOf (it);
+                auto mc = it->insertMIDIClip ("inst", te::TimeRange (te::TimePosition(), te::TimePosition::fromSeconds (2.0)), nullptr); mc->getSequence().addNote (33, te::BeatPosition::fromBeats (0.0), te::BeatDuration::fromBeats (3.0), 100, 0, nullptr);
+                auto rms = [this, iti] (const char* nm) -> double { auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (nm); if (! renderWav (f, 1.5, {}, iti)) return -1.0; juce::AudioFormatManager afm; afm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (afm.createReaderFor (f)); if (! r) return -1.0; juce::AudioBuffer<float> b (2, (int) r->lengthInSamples); r->read (&b, 0, (int) r->lengthInSamples, 0, true, true); return (double) b.getRMSLevel (0, 0, b.getNumSamples()); };
+                double prev = -2.0; int ok = 0; for (size_t k = 0; k < instruments::list().size(); ++k) { instruments::addSynth (edit, *it, (int) k); const double v = rms (("inj_inst" + juce::String ((int) k) + ".wav").toRawUTF8()); if (v > 0.002) ++ok; prev = v; }
+                chk (ok == (int) instruments::list().size(), ("instrumentos: los 8 sonidos incluidos suenan (" + juce::String (ok) + ")").toRawUTF8()); (void) prev;
+                auto pdir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_pack_test"); pdir.deleteRecursively(); auto pk = samplepack::ensure (pdir); int nw = 0; for (auto& f : pk.findChildFiles (juce::File::findFiles, true, "*.wav")) { ++nw; (void) f; }
+                chk (nw >= 25, ("paquete de sonidos: se generan " + juce::String (nw) + " archivos").toRawUTF8());
             }
             {   // marcadores
                 const size_t n0 = playlist.markers().size(); playlist.addMarker (8.0, "Drop"); playlist.addMarker (16.0);
@@ -1055,7 +1100,7 @@ private:
             f.deleteFile(); juce::WavAudioFormat wav; if (auto os = f.createOutputStream()) if (std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), sr, 1, 16, {}, 0)); w) { os.release(); w->writeFromAudioSampleBuffer (b, 0, n); }
         };
         auto big = pluginhost::dataDir().getChildFile ("click_acento.wav"), little = pluginhost::dataDir().getChildFile ("click_tiempo.wav");
-        make (big, 1760.0, 0.85f); make (little, 1175.0, 0.6f);
+        make (big, 2093.0, 1.0f); make (little, 1046.0, 0.45f);
         engine->getPropertyStorage().setProperty (te::SettingID::clickTrackSampleBig, big.getFullPathName()); engine->getPropertyStorage().setProperty (te::SettingID::clickTrackSampleSmall, little.getFullPathName());
     }
     std::unique_ptr<te::Edit> makeEdit (const juce::File& f)
@@ -1064,6 +1109,7 @@ private:
         if (f.existsAsFile()) e = te::loadEditFromFile (*engine, f);
         const bool fresh = (e == nullptr);
         if (fresh) e = te::createEmptyEdit (*engine, juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("injustice_untitled.tracktionedit"));
+        e->clickTrackEmphasiseBars = true;   // el primer tiempo de cada compás suena con acento
         trackutil::ensureTracks (*e, 500);   // siempre 500 pistas, también al abrir un proyecto guardado
         if (! fresh) e->resetChangedStatus();
         if (fresh)

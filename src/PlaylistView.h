@@ -1,4 +1,5 @@
 #pragma once
+#include "Instruments.h"
 #include "Theme.h"
 #include "Icons.h"
 #include "TrackUtil.h"
@@ -37,8 +38,10 @@ public:
     //==============================================================================
     double beatsToTime (double b) const { return edit.tempoSequence.toTime (te::BeatPosition::fromBeats (b)).inSeconds(); }
     double timeToBeats (double t) const { return edit.tempoSequence.toBeats (te::TimePosition::fromSeconds (t)).inBeats(); }
-    float beatToX (double b) const { return (float) (kHeaderW + 14 + b * pxPerBeat - scrollX); }
-    double xToBeat (float x) const { return (x - kHeaderW - 14 + scrollX) / pxPerBeat; }
+    std::function<juce::File()> samplesRoot; std::function<void (int, juce::String)> onInstrument;
+    void hideAllAutomation() { for (auto* t : te::getAudioTracks (edit)) t->state.setProperty ("injAuto", false, nullptr); repaint(); }
+    float beatToX (double b) const { return (float) (kHeaderW + 6 + b * pxPerBeat - scrollX); }
+    double xToBeat (float x) const { return (x - kHeaderW - 6 + scrollX) / pxPerBeat; }
     int trackTop (int i) const { ensureLayout(); const int n = (int) tops.size() - 1; return kRulerH + (i <= n ? tops[(size_t) std::max (0, i)] : tops[(size_t) n] + (i - n) * (trackH + kGap)) - (int) scrollY; }
     // Cuadrícula adaptable: el paso es el más fino que se ve separado (>= 12 px); con el zoom por defecto es el compás
     double snapStep() const { for (double st : { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0 }) if (st * pxPerBeat >= 12.0) return st; return 32.0; }
@@ -90,6 +93,10 @@ public:
 
         // cabezal
         const float px = beatToX (timeToBeats (edit.getTransport().getPosition().inSeconds()));
+        if (magnetBeat >= 0 && dragMode != 0)
+        {
+            const float mx = beatToX (magnetBeat); if (mx >= kHeaderW + 6 && mx <= W) { g.setColour (theme::accentHi.withAlpha (magnetHit ? .95f : .35f)); g.fillRect (mx - (magnetHit ? 1.f : .5f), (float) kRulerH, magnetHit ? 2.f : 1.f, (float) (H - kRulerH)); }
+        }
         if (px >= kHeaderW + 6 && px <= W)
         {
             g.setColour (juce::Colours::white.withAlpha (.75f)); g.fillRect (px - .5f, (float) kRulerH - 6, 1.f, (float) (H - kRulerH + 6));
@@ -135,6 +142,7 @@ public:
             const float x0 = beatToX (timeToBeats (hit->getPosition().getStart().inSeconds())), x1 = beatToX (timeToBeats (hit->getPosition().getEnd().inSeconds()));
             const float zone = tool == "trim" ? 16.f : juce::jmin (7.f, (x1 - x0) * .3f);
             if (e.x >= x1 - zone) dragMode = 2; else if (e.x <= x0 + zone) dragMode = 1; else if (tool == "trim") dragClip = nullptr;
+            origStartBeat = timeToBeats (hit->getPosition().getStart().inSeconds()); origEndBeat = timeToBeats (hit->getPosition().getEnd().inSeconds()); magnetBeat = -1; magnetHit = false;
         }
         if (hit) { dragOffsetBeats = xToBeat ((float) e.x) - timeToBeats (hit->getPosition().getStart().inSeconds()); }
         dragOrig.clear(); downTrack = ti; auto allT = te::getAudioTracks (edit);
@@ -167,8 +175,10 @@ public:
         }
         if (dragClip == nullptr || (tool != "select" && tool != "trim")) return;
         const double cs = timeToBeats (dragClip->getPosition().getStart().inSeconds()), ce = timeToBeats (dragClip->getPosition().getEnd().inSeconds());
-        if (dragMode == 2) { const double nb = std::max (cs + 0.25, snapBeat (xToBeat ((float) e.x))); dragClip->setEnd (te::TimePosition::fromSeconds (beatsToTime (nb)), true); repaint(); return; }
-        if (dragMode == 1) { const double nb = juce::jlimit (0.0, ce - 0.25, snapBeat (xToBeat ((float) e.x))); dragClip->setStart (te::TimePosition::fromSeconds (beatsToTime (nb)), true, false); repaint(); return; }
+        // Imán: al acercarse al borde que tenía el clip antes de empezar a arrastrar, se pega; si sigues jalando, se suelta.
+        auto magnet = [this] (double nb, double orig) { return applyMagnet (nb, orig); };
+        if (dragMode == 2) { const double nb = std::max (cs + 0.25, magnet (snapBeat (xToBeat ((float) e.x)), origEndBeat)); dragClip->setEnd (te::TimePosition::fromSeconds (beatsToTime (nb)), true); repaint(); return; }
+        if (dragMode == 1) { const double nb = juce::jlimit (0.0, ce - 0.25, magnet (snapBeat (xToBeat ((float) e.x)), origStartBeat)); dragClip->setStart (te::TimePosition::fromSeconds (beatsToTime (nb)), true, false); repaint(); return; }
         if (tool == "trim") return;
         // mover: todos los clips elegidos juntos, en horizontal y también a otras pistas
         double primary = 0.0, minOrig = 1e9; int minT = 1 << 20, maxT = -1;
@@ -181,7 +191,7 @@ public:
     }
     void setZoom (double ppb) { pxPerBeat = ppb; repaint(); }
     void resetView() { scrollX = 0; scrollY = 0; repaint(); }
-    void mouseUp (const juce::MouseEvent&) override { autoIdx = -1; sbDrag = 0; dragMode = 0; resizing = -1; scrubbing = false; brushTrack = -1; brushSrc = nullptr; marquee = false; dragOrig.clear(); lastDT = 0; repaint(); }
+    void mouseUp (const juce::MouseEvent&) override { magnetBeat = -1; magnetHit = false; autoIdx = -1; sbDrag = 0; dragMode = 0; resizing = -1; scrubbing = false; brushTrack = -1; brushSrc = nullptr; marquee = false; dragOrig.clear(); lastDT = 0; repaint(); }
     // Pincel: sobre un hueco pinta clips MIDI de 1 compás; sobre un clip, lo copia a lo largo del arrastre (sin pisar otros clips).
     void brushPaint (int ti, double beat)
     {
@@ -211,10 +221,9 @@ public:
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
         if (e.mods.isAltDown()) { setAllHeights ((int) std::round (trackH * (w.deltaY > 0 ? 1.15 : 1.0 / 1.15))); scrollY = juce::jlimit (0.0, juce::jmax (0.0, contentH() - (getHeight() - kRulerH)), scrollY); }
-        else if (e.mods.isCtrlDown() || e.mods.isCommandDown())
+        else if (e.mods.isCtrlDown() || e.mods.isCommandDown() || (e.y < kRulerH && e.x >= kHeaderW))   // rueda sobre la regla = zoom
         {
-            const double anchor = xToBeat ((float) e.x); pxPerBeat = juce::jlimit (1.5, 120.0, pxPerBeat * (1.0 + w.deltaY * 0.6));
-            scrollX = juce::jmax (0.0, anchor * pxPerBeat - (e.x - kHeaderW - 14));
+            zoomAt ((float) e.x, w.deltaY);
         }
         else if (e.mods.isShiftDown() || std::abs (w.deltaX) > std::abs (w.deltaY)) scrollX = juce::jmax (0.0, scrollX - (w.deltaX != 0 ? w.deltaX : w.deltaY) * 600.0);
         else scrollY = juce::jlimit (0.0, juce::jmax (0.0, contentH() - (getHeight() - kRulerH)), scrollY - w.deltaY * 400.0);
@@ -261,6 +270,12 @@ public:
     te::Clip* selected = nullptr; std::function<void (te::MidiClip*)> onOpenMidi; std::function<void()> onTracksChanged; std::function<void (int)> onTrackSelected;
 
 private:
+public:
+    double applyMagnet (double nb, double orig) { magnetBeat = orig; magnetHit = std::abs (beatToX (nb) - beatToX (orig)) <= kMagnetPx; return magnetHit ? orig : nb; }
+    void zoomAt (float x, double deltaY) { const double anchor = xToBeat (x); pxPerBeat = juce::jlimit (1.5, 120.0, pxPerBeat * (1.0 + deltaY * 0.6)); scrollX = juce::jmax (0.0, anchor * pxPerBeat - (x - kHeaderW - 6)); repaint(); }
+    double zoomPx() const { return pxPerBeat; }
+private:
+    static constexpr float kMagnetPx = 9.f; double origStartBeat = 0, origEndBeat = 0, magnetBeat = -1; bool magnetHit = false;
     int dragMode = 0, sbDrag = 0; float sbGrab = 0;   // dragMode: 0 mover, 1 recortar inicio, 2 recortar final
     struct Orig { te::Clip::Ptr clip; double beat; int track; };
     juce::ReferenceCountedArray<te::Clip> group; std::vector<Orig> dragOrig; bool marquee = false; juce::Point<float> mqStart; juce::Rectangle<float> mqRect; int downTrack = 0, lastDT = 0;
@@ -274,19 +289,19 @@ private:
     double contentBeats() const { double e = 64; for (auto* t : te::getAudioTracks (edit)) for (auto* c : t->getClips()) e = std::max (e, timeToBeats (c->getPosition().getEnd().inSeconds())); return e + 32; }
     double contentH() const { ensureLayout(); return (double) tops.back() + trackH + kGap + 20; }
     juce::Rectangle<float> hScrollR() const { return { (float) kHeaderW + 6, (float) getHeight() - 34.f, (float) getWidth() - kHeaderW - 22.f, 24.f }; }
-    bool needHScroll() const { return contentBeats() * pxPerBeat > getWidth() - kHeaderW - 14; }
+    bool needHScroll() const { return contentBeats() * pxPerBeat > getWidth() - kHeaderW - 6; }
     juce::Rectangle<float> vScrollR() const { return { (float) getWidth() - 11.f, (float) kRulerH, 8.f, (float) getHeight() - kRulerH - 14.f }; }
-    juce::Rectangle<float> hThumb() const { auto r = hScrollR(); const double tot = contentBeats() * pxPerBeat, vis = getWidth() - kHeaderW - 14; const float w = (float) juce::jlimit (30.0, (double) r.getWidth(), r.getWidth() * vis / tot); return { r.getX() + (float) ((r.getWidth() - w) * juce::jlimit (0.0, 1.0, scrollX / std::max (1.0, tot - vis))), r.getY(), w, r.getHeight() }; }
+    juce::Rectangle<float> hThumb() const { auto r = hScrollR(); const double tot = contentBeats() * pxPerBeat, vis = getWidth() - kHeaderW - 6; const float w = (float) juce::jlimit (30.0, (double) r.getWidth(), r.getWidth() * vis / tot); return { r.getX() + (float) ((r.getWidth() - w) * juce::jlimit (0.0, 1.0, scrollX / std::max (1.0, tot - vis))), r.getY(), w, r.getHeight() }; }
     juce::Rectangle<float> vThumb() const { auto r = vScrollR(); const double tot = contentH(), vis = getHeight() - kRulerH; const float h = (float) juce::jlimit (30.0, (double) r.getHeight(), r.getHeight() * vis / tot); return { r.getX(), r.getY() + (float) ((r.getHeight() - h) * juce::jlimit (0.0, 1.0, scrollY / std::max (1.0, tot - vis))), r.getWidth(), h }; }
     void dragScroll (const juce::MouseEvent& e)
     {
-        if (sbDrag == 1) { auto r = hScrollR(); const double tot = contentBeats() * pxPerBeat, vis = getWidth() - kHeaderW - 14; const float tw = hThumb().getWidth(); scrollX = juce::jlimit (0.0, std::max (0.0, tot - vis), (double) ((e.x - sbGrab - r.getX()) / std::max (1.f, r.getWidth() - tw)) * (tot - vis)); }
+        if (sbDrag == 1) { auto r = hScrollR(); const double tot = contentBeats() * pxPerBeat, vis = getWidth() - kHeaderW - 6; const float tw = hThumb().getWidth(); scrollX = juce::jlimit (0.0, std::max (0.0, tot - vis), (double) ((e.x - sbGrab - r.getX()) / std::max (1.f, r.getWidth() - tw)) * (tot - vis)); }
         else { auto r = vScrollR(); const double tot = contentH(), vis = getHeight() - kRulerH; const float th = vThumb().getHeight(); scrollY = juce::jlimit (0.0, std::max (0.0, tot - vis), (double) ((e.y - sbGrab - r.getY()) / std::max (1.f, r.getHeight() - th)) * (tot - vis)); }
         repaint();
     }
     void drawScrollbars (juce::Graphics& g)
     {
-        const bool needH = contentBeats() * pxPerBeat > getWidth() - kHeaderW - 14, needV = contentH() > getHeight() - kRulerH;
+        const bool needH = contentBeats() * pxPerBeat > getWidth() - kHeaderW - 6, needV = contentH() > getHeight() - kRulerH;
         g.setColour (juce::Colours::white.withAlpha (.07f));
         if (needH)
         {   // vista general: miniatura de todo el proyecto; el recuadro es lo que se ve ahora
@@ -314,7 +329,7 @@ private:
     }
 
     //---- cabeceras de pista: nombre, M/S, men\xc3\xba y "agregar pista"
-    juce::Rectangle<int> headerR (int i) const { return { 6, trackTop (i), kHeaderW - 6, hOf (i) }; }
+    juce::Rectangle<int> headerR (int i) const { return { 6, trackTop (i), kHeaderW, hOf (i) }; }
     juce::Rectangle<float> dotsR (int i) const { auto r = headerR (i); const float h = (float) r.getHeight(); const float s = std::min (26.f, h - 2.f); return { (float) r.getRight() - 32.f, (float) r.getY() + (h >= 40.f ? 6.f : (h - s) * .5f), 26.f, s }; }
     juce::Rectangle<float> addR() const { return { 6.f, (float) trackTop (numTracks()) + 6.f, (float) kHeaderW - 6.f, 42.f }; }
     void headerClick (const juce::MouseEvent& e)
@@ -343,6 +358,12 @@ private:
         { juce::PopupMenu hm; hm.addItem (20, "Pequeñas (todas)"); hm.addItem (21, "Medianas (todas)"); hm.addItem (22, "Grandes (todas)"); hm.addItem (23, "Esta pista: pequeña"); hm.addItem (24, "Esta pista: grande"); m.addSubMenu ("Altura de pistas", hm); }
         m.addSeparator();
         {
+            juce::PopupMenu im; juce::String lastG;
+            for (size_t k = 0; k < instruments::list().size(); ++k) { const auto& pr = instruments::list()[k]; if (lastG.isNotEmpty() && lastG != pr.group) im.addSeparator(); lastG = pr.group; im.addItem (500 + (int) k, juce::String (pr.group) + ": " + pr.name); }
+            im.addSeparator(); im.addItem (520, juce::String::fromUTF8 ("Batería: Kit INJUSTICE"));
+            m.addSubMenu ("Instrumento incluido", im);
+        }
+        {
             auto* vp = autoParamOf (*t); const juce::String an = autoParamName (*t);
             m.addItem (6, autoShown (*t) ? juce::String::fromUTF8 ("Ocultar automatización") : juce::String::fromUTF8 ("Mostrar automatización: ") + an);
             m.addItem (7, juce::String::fromUTF8 ("Borrar automatización de ") + an, vp != nullptr && vp->getCurve().getNumPoints() > 0);
@@ -367,6 +388,8 @@ private:
             else if (r == 20) setAllHeights (34); else if (r == 21) setAllHeights (76); else if (r == 22) setAllHeights (116);
             else if (r == 23) setTrackHeight (i, 34); else if (r == 24) setTrackHeight (i, 116);
             else if (r >= 10 && r < 18) trackutil::setColour (edit, t.get(), r - 10);
+            else if (r >= 500 && r < 520) { if (instruments::addSynth (edit, *t, r - 500) != nullptr) { repaint(); if (onInstrument) onInstrument (i, juce::String (instruments::list()[(size_t) (r - 500)].name)); } }
+            else if (r == 520) { if (instruments::addKit (edit, *t, samplesRoot ? samplesRoot() : juce::File()) != nullptr) { repaint(); if (onInstrument) onInstrument (i, "Kit INJUSTICE"); } }
             else if (r == 6) t->state.setProperty ("injAuto", ! autoShown (*t), nullptr);
             else if (r == 7) { if (auto* vp = autoParamOf (*t)) { edit.getUndoManager().beginNewTransaction(); vp->getCurve().clear(); } }
             else if (r == 300) { t->state.setProperty ("injAutoParam", "vol", nullptr); t->state.setProperty ("injAuto", true, nullptr); }
@@ -538,7 +561,7 @@ private:
         g.setColour (fg); g.setFont (juce::FontOptions (13.f));
         g.drawText (t.getName() == "Track" ? juce::String::fromUTF8 ("Pista ") + juce::String (i + 1) : t.getName(), r.getX() + 29, r.getHeight() >= 40 ? r.getY() + 4 : r.getY() + (r.getHeight() - 20) / 2, r.getWidth() - 62, 20, juce::Justification::centredLeft);
         if (r.getHeight() >= 26) icons::draw (g, icons::Dots, dotsR (i), fg);
-        juce::String inst; for (auto* p : t.pluginList.getPlugins()) if (dynamic_cast<te::ExternalPlugin*> (p) || dynamic_cast<te::SamplerPlugin*> (p)) { inst = p->getName(); break; }
+        juce::String inst; for (auto* p : t.pluginList.getPlugins()) if (dynamic_cast<te::ExternalPlugin*> (p) || dynamic_cast<te::SamplerPlugin*> (p) || dynamic_cast<te::FourOscPlugin*> (p)) { inst = p->state.getProperty ("injPreset", p->getName()).toString(); break; }
         g.setColour (fg.withAlpha (.8f)); g.setFont (juce::FontOptions (13.f));
         if (r.getHeight() >= 60 && inst.isNotEmpty()) g.drawText (inst, r.getX() + 29, r.getY() + 24, r.getWidth() - 36, 18, juce::Justification::centredLeft);
         if (r.getHeight() >= 60 && (t.isMuted (false) || t.isSolo (false))) { g.setColour (fg.withAlpha (.85f)); g.setFont (juce::FontOptions (12.f, juce::Font::bold)); g.drawText (t.isSolo (false) ? "SOLO" : juce::String::fromUTF8 ("SILENCIADA"), r.getX() + 10, r.getBottom() - 26, r.getWidth() - 16, 20, juce::Justification::centredLeft); }

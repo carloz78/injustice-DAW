@@ -26,8 +26,8 @@ namespace theme
 
     // Colores de pista: pasteles suaves (rosas y lilas primero)
     // Colores medidos de la referencia de Ableton (morado y rosa primero)
-    inline const Colour trackColours[] { Colour (0xffca71df), Colour (0xffef99a6), Colour (0xff95a6f6), Colour (0xfff2a579),
-                                         Colour (0xfff7f48d), Colour (0xff8efbe8), Colour (0xffb4f08a), Colour (0xffe98ad0) };
+    inline const Colour trackColours[] { Colour (0xffd985ff), Colour (0xffff9db8), Colour (0xff9fb6ff), Colour (0xffffb27d),
+                                         Colour (0xfffff08c), Colour (0xff8cffe0), Colour (0xffb9ff8c), Colour (0xffff9fe6) };
     // Tinta casi negra para ondas y notas sobre un clip pastel (como Ableton)
     inline Colour inkOn (Colour) { return Colour (0xff15151d); }
 
