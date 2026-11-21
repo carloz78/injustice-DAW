@@ -1,7 +1,9 @@
 #pragma once
 #include "Instruments.h"
 #include "Theme.h"
+#include "TimeSig.h"
 #include "Icons.h"
+#include "Cursors.h"
 #include "TrackUtil.h"
 #include <tracktion_engine/tracktion_engine.h>
 #include <functional>
@@ -39,7 +41,7 @@ public:
     double beatsToTime (double b) const { return edit.tempoSequence.toTime (te::BeatPosition::fromBeats (b)).inSeconds(); }
     double timeToBeats (double t) const { return edit.tempoSequence.toBeats (te::TimePosition::fromSeconds (t)).inBeats(); }
     // tijeras: línea guía donde se va a cortar y destello al cortar
-    int cutTrack = -1, flashTrack = -1; double cutBeat = -1, flashBeat = -1; float flashA = 0.f;
+    float cutX = -1.f; int cutTrack = -1, flashTrack = -1; double cutBeat = -1, flashBeat = -1; float flashA = 0.f;
     juce::Point<float> chevronCentre (int i) const { return chevronR (i).getCentre(); }
     bool folded (int i) const { return isFolded (i); }
     std::function<juce::File()> samplesRoot; std::function<void (int, juce::String)> onInstrument;
@@ -81,7 +83,7 @@ public:
         const bool showBeats = pxPerBeat >= 14;
         for (double b = std::max (0.0, b0); b <= b1; b += 1.0)
         {
-            const bool bar = std::fmod (b, 4.0) == 0.0;
+            const bool bar = std::fmod (b, timesig::bar()) == 0.0;
             if (! bar && ! showBeats) continue;
             g.setColour (bar ? barLine : gridLine.withAlpha (.55f));
             g.fillRect (beatToX (b), (float) kRulerH, 1.f, (float) (H - kRulerH));
@@ -115,7 +117,7 @@ public:
             g.setColour (juce::Colours::white.withAlpha (.75f)); g.fillRect (px - .5f, (float) kRulerH - 6, 1.f, (float) (H - kRulerH + 6));
             g.setColour (accentHi); g.fillEllipse (px - 11.f, kRulerH - 26.f, 22.f, 22.f);
             g.setColour (juce::Colours::white); g.setFont (juce::FontOptions (13.f, juce::Font::bold));
-            g.drawText (juce::String ((int) (timeToBeats (edit.getTransport().getPosition().inSeconds()) / 4.0) + 1), juce::Rectangle<int> ((int) px - 11, kRulerH - 26, 22, 22), juce::Justification::centred);
+            g.drawText (juce::String ((int) (timeToBeats (edit.getTransport().getPosition().inSeconds()) / timesig::bar()) + 1), juce::Rectangle<int> ((int) px - 11, kRulerH - 26, 22, 22), juce::Justification::centred);
         }
     }
 
@@ -147,7 +149,7 @@ public:
         }
         if (tool == "pencil" && hit == nullptr)
         {
-            const double sb = std::max (0.0, std::floor (xToBeat ((float) e.x) / 4.0) * 4.0);
+            const double sb = std::max (0.0, std::floor (xToBeat ((float) e.x) / timesig::bar()) * timesig::bar());
             auto c = tr->insertMIDIClip ("MIDI", te::TimeRange (te::TimePosition::fromSeconds (beatsToTime (sb)), te::TimePosition::fromSeconds (beatsToTime (sb + 16.0))), nullptr);
             selected = c.get(); repaint(); return;
         }
@@ -238,25 +240,29 @@ public:
                 if (! over) ti = -1;
             }
         }
-        if (ti != cutTrack || (ti >= 0 && std::abs (b - cutBeat) > 1e-9)) { cutTrack = ti; cutBeat = b; repaint(); }
+        if (ti != cutTrack || (ti >= 0 && std::abs (b - cutBeat) > 1e-9)) { if (ti != cutTrack) cutX = -1.f; cutTrack = ti; cutBeat = b; repaint(); }
     }
     void drawCut (juce::Graphics& g)
     {
-        auto line = [&] (int ti, double beat, float a, float w)
+        const juce::Colour blue (0xff3da5ff);
+        auto line = [&] (int ti, float x, float a, float w, juce::Colour c)
         {
-            if (ti < 0) return; const float x = beatToX (beat); if (x < kHeaderW + 6 || x > getWidth()) return; const float y0 = (float) trackTop (ti), y1 = y0 + (float) hOf (ti);
-            g.setColour (theme::accentHi.withAlpha (a * .35f)); g.fillRect (x - w * 2.f, y0, w * 4.f, y1 - y0);
+            if (ti < 0) return; if (x < kHeaderW + 6 || x > getWidth()) return; const float y0 = (float) trackTop (ti), y1 = y0 + (float) hOf (ti);
+            g.setColour (c.withAlpha (a * .22f)); g.fillRect (x - w * 3.f, y0, w * 6.f, y1 - y0);
+            g.setColour (c.withAlpha (a * .45f)); g.fillRect (x - w * 1.5f, y0, w * 3.f, y1 - y0);
             g.setColour (juce::Colours::white.withAlpha (a)); g.fillRect (x - w * .5f, y0, w, y1 - y0);
-            juce::Path tri; tri.addTriangle (x - 5.f, y0 - 1.f, x + 5.f, y0 - 1.f, x, y0 + 6.f); g.fillPath (tri);
+            g.setColour (c.withAlpha (a)); juce::Path tri; tri.addTriangle (x - 6.f, y0 - 1.f, x + 6.f, y0 - 1.f, x, y0 + 7.f); g.fillPath (tri);
+            juce::Path tri2; tri2.addTriangle (x - 6.f, y1 + 1.f, x + 6.f, y1 + 1.f, x, y1 - 7.f); g.fillPath (tri2);
         };
-        if (cutTrack >= 0 && tool == "cut") line (cutTrack, cutBeat, .95f, 1.5f);
-        if (flashA > 0.f) line (flashTrack, flashBeat, flashA, 1.5f + 5.f * (1.f - flashA));
+        if (cutTrack >= 0 && tool == "cut") line (cutTrack, cutX >= 0.f ? cutX : beatToX (cutBeat), .95f, 1.4f, blue);
+        if (flashA > 0.f) line (flashTrack, beatToX (flashBeat), flashA, 1.4f + 5.f * (1.f - flashA), blue);
     }
-    void mouseExit (const juce::MouseEvent&) override { if (cutTrack >= 0) { cutTrack = -1; repaint(); } }
+    void mouseExit (const juce::MouseEvent&) override { if (cutTrack >= 0) { cutTrack = -1; cutX = -1.f; repaint(); } }
     void mouseMove (const juce::MouseEvent& e) override
     {
         auto cur = juce::MouseCursor::NormalCursor;
-        updateCut (e); if (tool == "cut" && e.x >= kHeaderW + 6 && e.y >= kRulerH) { setMouseCursor (juce::MouseCursor::CrosshairCursor); return; }
+        updateCut (e); if (tool == "cut" && e.x >= kHeaderW + 6 && e.y >= kRulerH) { setMouseCursor (cursors::forTool ("cut")); return; }
+        if ((tool == "brush" || tool == "pencil") && e.x >= kHeaderW + 6 && e.y >= kRulerH && ! (needHScroll() && hScrollR().expanded (0, 4).contains (e.position))) { setMouseCursor (cursors::forTool (tool)); return; }
         if (edgeAt (e.getPosition()) >= 0) { setMouseCursor (juce::MouseCursor::UpDownResizeCursor); return; }
         if (e.x >= kHeaderW + 6 && e.y >= kRulerH && (tool == "select" || tool == "trim"))
             if (auto ti = trackAt ((float) e.y); ti >= 0)
@@ -438,6 +444,15 @@ private:
             }
             m.addSubMenu (juce::String::fromUTF8 ("Parámetro a automatizar"), ap);
         }
+        { const auto gid = trackutil::groupOf (*t);
+          m.addItem (40, juce::String::fromUTF8 ("Agrupar con la pista de arriba"), i > 0);
+          if (gid.isNotEmpty())
+          {
+              juce::PopupMenu gm; gm.addItem (41, juce::String::fromUTF8 ("Renombrar grupo…")); gm.addItem (42, juce::String::fromUTF8 ("Plegar o desplegar el grupo"));
+              gm.addItem (43, trackutil::groupMuted (edit, gid) ? juce::String::fromUTF8 ("Quitar silencio al grupo") : juce::String::fromUTF8 ("Silenciar el grupo")); gm.addItem (44, juce::String::fromUTF8 ("Subir 1 dB al grupo")); gm.addItem (45, juce::String::fromUTF8 ("Bajar 1 dB al grupo"));
+              gm.addSeparator(); gm.addItem (46, juce::String::fromUTF8 ("Quitar esta pista del grupo")); m.addSubMenu (juce::String::fromUTF8 ("Grupo: ") + trackutil::groupName (*t), gm);
+          } }
+        m.addSeparator();
         m.addItem (4, "Agregar pista al final"); m.addItem (5, "Eliminar pista", tracks.size() > 1);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (dotsR (i).toNearestInt())), [this, t, i] (int r)
         {
@@ -453,6 +468,16 @@ private:
                 if (instruments::addKit (edit, *t, samplepack::packsDir(), r - 600) != nullptr) { repaint(); if (onInstrument) onInstrument (i, instruments::kits()[(size_t) (r - 600)].name); }
                 else if (onInstrument) onInstrument (-1, juce::String::fromUTF8 ("Los sonidos se están creando; inténtalo en unos segundos."));
             }
+            else if (r == 40 && i > 0) { auto all = te::getAudioTracks (edit); edit.getUndoManager().beginNewTransaction(); trackutil::joinGroup (edit, *t, *all[i - 1]); }
+            else if (r == 41) { const auto gid = trackutil::groupOf (*t); auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Nombre del grupo"), {}, juce::MessageBoxIconType::NoIcon); aw->addTextEditor ("n", trackutil::groupName (*t), "");
+                aw->addButton ("Aceptar", 1, juce::KeyPress (juce::KeyPress::returnKey)); aw->addButton ("Cancelar", 0, juce::KeyPress (juce::KeyPress::escapeKey)); juce::Component::SafePointer<PlaylistView> self (this);
+                aw->enterModalState (true, juce::ModalCallbackFunction::create ([self, aw, gid] (int rr) { if (rr == 1 && self != nullptr) { const auto nm = aw->getTextEditorContents ("n").trim(); if (nm.isNotEmpty()) { trackutil::renameGroup (self->edit, gid, nm); self->repaint(); } } }), true); }
+            else if (r == 42) { const auto gid = trackutil::groupOf (*t); auto mem = trackutil::groupMembers (edit, gid); bool anyOpen = false; for (auto* x : mem) if (! (bool) x->state.getProperty ("injFold", false)) anyOpen = true;
+                auto all = te::getAudioTracks (edit); for (auto* x : mem) { const int ix = all.indexOf (x); if (ix >= 0 && isFolded (ix) != anyOpen) toggleFold (ix); } }
+            else if (r == 43) { const auto gid = trackutil::groupOf (*t); trackutil::groupMute (edit, gid, ! trackutil::groupMuted (edit, gid)); }
+            else if (r == 44) trackutil::groupGainDb (edit, trackutil::groupOf (*t), 1.f);
+            else if (r == 45) trackutil::groupGainDb (edit, trackutil::groupOf (*t), -1.f);
+            else if (r == 46) { edit.getUndoManager().beginNewTransaction(); trackutil::leaveGroup (edit, *t); }
             else if (r == 6) t->state.setProperty ("injAuto", ! autoShown (*t), nullptr);
             else if (r == 7) { if (auto* vp = autoParamOf (*t)) { edit.getUndoManager().beginNewTransaction(); vp->getCurve().clear(); } }
             else if (r == 300) { t->state.setProperty ("injAutoParam", "vol", nullptr); t->state.setProperty ("injAuto", true, nullptr); }
@@ -555,7 +580,7 @@ private:
             m.addItem (1, "Crear clip MIDI aqu\xc3\xad");
             m.showMenuAsync (juce::PopupMenu::Options(), [this, tr, clickBeat] (int r)
             {
-                if (r != 1) return; const double sb = std::max (0.0, std::floor (clickBeat / 4.0) * 4.0);
+                if (r != 1) return; const double sb = std::max (0.0, std::floor (clickBeat / timesig::bar()) * timesig::bar());
                 selected = tr->insertMIDIClip ("MIDI", te::TimeRange (te::TimePosition::fromSeconds (beatsToTime (sb)), te::TimePosition::fromSeconds (beatsToTime (sb + 16.0))), nullptr).get(); repaint();
             });
         }
@@ -577,6 +602,10 @@ private:
     void timerCallback() override
     {
         if (flashA > 0.f) { flashA = std::max (0.f, flashA - .09f); repaint(); }
+        if (cutTrack >= 0 && tool == "cut")   // la línea azul de las tijeras se desliza hasta el punto de corte
+        {
+            const float tx = beatToX (cutBeat); if (cutX < 0.f) cutX = tx; else if (std::abs (tx - cutX) > .4f) { cutX += (tx - cutX) * .5f; repaint(); } else cutX = tx;
+        }
         if (selected != nullptr && selected->getTrack() != nullptr && lastTouched.get() != selected) lastTouched = te::Clip::Ptr (selected);
         const double pos = edit.getTransport().getPosition().inSeconds(); const auto sig = signature();
         if (sig != lastSig || thumbsPending() || ! isVisible()) { lastSig = sig; lastPos = pos; if (isVisible()) repaint(); return; }
@@ -598,7 +627,7 @@ private:
         const int stride = pxPerBeat * 4 >= 64 ? 1 : (pxPerBeat * 16 >= 64 ? 4 : 8);
         for (int bar = 0; ; bar += 1)
         {
-            const float x = beatToX (bar * 4.0); if (x > W) break;
+            const float x = beatToX (bar * timesig::bar()); if (x > W) break;
             if (x < kHeaderW + 10 || (bar % stride) != (stride == 1 ? 0 : 0)) { if (x < kHeaderW + 10 || bar % stride != 0) continue; }
             g.drawText (juce::String (bar + 1), juce::Rectangle<float> (x - 20, 18, 40, 20).toNearestInt(), juce::Justification::centred);
         }
@@ -630,6 +659,14 @@ private:
         g.setColour (fg.withAlpha (.8f)); g.setFont (juce::FontOptions (13.f));
         if (r.getHeight() >= 60 && inst.isNotEmpty()) g.drawText (inst, r.getX() + 29, r.getY() + 24, r.getWidth() - 36, 18, juce::Justification::centredLeft);
         if (r.getHeight() >= 60 && (t.isMuted (false) || t.isSolo (false))) { g.setColour (fg.withAlpha (.85f)); g.setFont (juce::FontOptions (12.f, juce::Font::bold)); g.drawText (t.isSolo (false) ? "SOLO" : juce::String::fromUTF8 ("SILENCIADA"), r.getX() + 10, r.getBottom() - 26, r.getWidth() - 16, 20, juce::Justification::centredLeft); }
+        { const auto gid = trackutil::groupOf (t);
+          if (gid.isNotEmpty())
+          {
+              const auto gc = theme::trackColours[trackutil::groupColour (gid)]; auto all = te::getAudioTracks (edit);
+              const bool first = i == 0 || trackutil::groupOf (*all[i - 1]) != gid, last = i + 1 >= all.size() || trackutil::groupOf (*all[i + 1]) != gid;
+              g.setColour (juce::Colour (0xff1a1522)); g.fillRect (r.getX(), r.getY(), 7, r.getHeight()); g.setColour (gc); g.fillRect (r.getX() + 1, r.getY() + (first ? 2 : 0), 5, r.getHeight() - (first ? 2 : 0) - (last ? 2 : 0));
+              if (first && r.getHeight() >= 40) { g.setColour (juce::Colour (0xff1a1522)); g.setFont (juce::FontOptions (11.f, juce::Font::bold)); g.drawText (trackutil::groupName (t), r.getX() + 29, r.getBottom() - 20, r.getWidth() - 40, 16, juce::Justification::centredLeft, true); }
+          } }
         if (t.isMuted (false)) { g.setColour (juce::Colour (0xff32353e).withAlpha (.6f)); g.fillRect (r); }
         g.restoreState();
     }
@@ -766,7 +803,7 @@ private:
         juce::Path shape; shape.addRectangle (r);
         g.setColour (col); g.fillPath (shape);
         { g.saveState(); g.reduceClipRegion (shape, {}); g.setColour (juce::Colours::white.withAlpha (.17f));
-          const double gs = pxPerBeat >= 14 ? 1.0 : 4.0; for (double b = std::floor (xToBeat (r.getX()) / gs) * gs; beatToX (b) < r.getRight(); b += gs) g.fillRect (beatToX (b), r.getY(), 1.f, r.getHeight()); g.restoreState(); }
+          const double gs = pxPerBeat >= 14 ? 1.0 : timesig::bar(); for (double b = std::floor (xToBeat (r.getX()) / gs) * gs; beatToX (b) < r.getRight(); b += gs) g.fillRect (beatToX (b), r.getY(), 1.f, r.getHeight()); g.restoreState(); }
         g.setColour (juce::Colour (0xff15151d)); g.drawRect (r, 1.5f);
         if (&c == selected || inGroup (&c)) { g.setColour (juce::Colours::white); g.drawRect (r, 2.f); }
         { const float bandH = r.getHeight() >= 60.f ? 16.f : (r.getHeight() >= 40.f ? 8.f : 0.f); if (bandH > 0.f) { g.setColour (juce::Colour (0xff15151d)); g.fillRect (r.getX(), r.getY() + bandH, r.getWidth(), 1.5f); } }

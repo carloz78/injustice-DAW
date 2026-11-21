@@ -203,12 +203,19 @@ namespace pluginhost
         std::unique_ptr<Scanner> scanner; juce::Array<juce::PluginDescription> shown; std::unique_ptr<juce::FileChooser> chooser;
         struct Relay : juce::ChangeListener { ListContent* owner = nullptr; void changeListenerCallback (juce::ChangeBroadcaster*) override { if (owner) owner->refresh(); } } relay;
 
+        static bool isOurs (const juce::PluginDescription& d)
+        {
+            const auto m = d.manufacturerName.toLowerCase(), n = d.name.toLowerCase();
+            if (m.contains ("injustice")) return true;
+            for (auto* k : { "injustice", "ravecore", "lowcore", "comp core", "kick forge", "gabber drive" }) if (n.contains (k)) return true;
+            return false;
+        }
         void refresh()
         {
             shown.clear(); const auto q = search.getText().trim();
             for (auto& d : engine.getPluginManager().knownPluginList.getTypes())
                 if (q.isEmpty() || d.name.containsIgnoreCase (q) || d.manufacturerName.containsIgnoreCase (q)) shown.add (d);
-            struct Cmp { static int compareElements (const juce::PluginDescription& a, const juce::PluginDescription& b) { return a.name.compareIgnoreCase (b.name); } } cmp; shown.sort (cmp);
+            struct Cmp { static int compareElements (const juce::PluginDescription& a, const juce::PluginDescription& b) { const bool oa = isOurs (a), ob = isOurs (b); if (oa != ob) return oa ? -1 : 1; return a.name.compareIgnoreCase (b.name); } } cmp; shown.sort (cmp);
             table.updateContent(); table.repaint(); updateAddLabel(); repaint();
         }
         void updateAddLabel()
@@ -230,11 +237,18 @@ namespace pluginhost
             { auto d = fc.getResult(); if (d.isDirectory()) { auto a = customFolders(); a.addIfNotAlreadyThere (d.getFullPathName()); saveCustomFolders (a); startScan(); } });
         }
         int getNumRows() override { return shown.size(); }
-        void paintRowBackground (juce::Graphics& g, int row, int, int, bool sel) override { g.fillAll (sel ? theme::accent : (row % 2 ? juce::Colour (0xff141218) : theme::bgBar)); }
+        void paintRowBackground (juce::Graphics& g, int row, int w, int h, bool sel) override
+        {
+            const bool ours = row < shown.size() && isOurs (shown.getReference (row));
+            g.fillAll (sel ? theme::accent : ours ? juce::Colour (0xff231a33) : (row % 2 ? juce::Colour (0xff141218) : theme::bgBar));
+            if (ours && ! sel) { g.setColour (theme::accentHi); g.fillRect (0, 0, 3, h); }
+            if (ours && (row + 1 >= shown.size() || ! isOurs (shown.getReference (row + 1)))) { g.setColour (juce::Colour (0xff4a3a6e)); g.fillRect (0, h - 1, w, 1); }
+        }
         void paintCell (juce::Graphics& g, int row, int col, int w, int h, bool) override
         {
             if (row >= shown.size()) return; auto& d = shown.getReference (row); g.setColour (juce::Colours::white); g.setFont (juce::FontOptions (14.f));
-            const juce::String t = col == 1 ? d.name : col == 2 ? d.manufacturerName : col == 3 ? (d.isInstrument ? juce::String ("Instrumento") : juce::String ("Efecto")) : d.pluginFormatName;
+            const bool ours = isOurs (d); if (ours) g.setFont (juce::FontOptions (14.f, juce::Font::bold));
+            const juce::String t = col == 1 ? d.name : col == 2 ? (ours ? juce::String ("INJUSTICE AUDIO") : d.manufacturerName) : col == 3 ? (d.isInstrument ? juce::String ("Instrumento") : juce::String ("Efecto")) : d.pluginFormatName;
             g.drawText (t, 10, 0, w - 14, h, juce::Justification::centredLeft, true);
         }
         void selectedRowsChanged (int) override { updateAddLabel(); }

@@ -66,9 +66,41 @@ namespace trackutil
     // ---- Grabación ----
     inline bool hasInstrument (te::AudioTrack& t)
     {
-        for (auto* p : t.pluginList.getPlugins()) { if (dynamic_cast<te::SamplerPlugin*> (p)) return true; if (auto* ep = dynamic_cast<te::ExternalPlugin*> (p)) if (ep->isSynth()) return true; }
+        for (auto* p : t.pluginList.getPlugins()) { if (dynamic_cast<te::SamplerPlugin*> (p) || dynamic_cast<te::FourOscPlugin*> (p)) return true; if (auto* ep = dynamic_cast<te::ExternalPlugin*> (p)) if (ep->isSynth()) return true; }
         return false;
     }
+    // ---- grupos de pistas (se guardan en el proyecto como propiedades de la pista) ----
+    inline juce::String groupOf (te::AudioTrack& t) { return t.state.getProperty ("injGroup", "").toString(); }
+    inline juce::String groupName (te::AudioTrack& t) { return t.state.getProperty ("injGroupName", "Grupo").toString(); }
+    inline juce::Array<te::AudioTrack*> groupMembers (te::Edit& e, const juce::String& id)
+    {
+        juce::Array<te::AudioTrack*> v; if (id.isEmpty()) return v;
+        for (auto* t : te::getAudioTracks (e)) if (groupOf (*t) == id) v.add (t);
+        return v;
+    }
+    inline int groupColour (const juce::String& id) { return id.isEmpty() ? 0 : (int) (((unsigned) id.hashCode()) % 8u); }
+    // une t al grupo de other (o crea uno nuevo con las dos)
+    inline void joinGroup (te::Edit& e, te::AudioTrack& t, te::AudioTrack& other, const juce::String& newName = {})
+    {
+        auto id = groupOf (other); auto* um = &e.getUndoManager();
+        if (id.isEmpty())
+        {
+            int n = 1; juce::StringArray used; for (auto* x : te::getAudioTracks (e)) if (groupOf (*x).isNotEmpty()) used.addIfNotAlreadyThere (groupOf (*x)); n = used.size() + 1;
+            id = "g" + juce::String (juce::Time::currentTimeMillis()) + "_" + juce::String (n);
+            other.state.setProperty ("injGroup", id, um); other.state.setProperty ("injGroupName", newName.isNotEmpty() ? newName : "Grupo " + juce::String (n), um);
+        }
+        t.state.setProperty ("injGroup", id, um); t.state.setProperty ("injGroupName", groupName (other), um);
+    }
+    inline void leaveGroup (te::Edit& e, te::AudioTrack& t)
+    {
+        auto id = groupOf (t); auto* um = &e.getUndoManager(); t.state.removeProperty ("injGroup", um); t.state.removeProperty ("injGroupName", um);
+        auto rest = groupMembers (e, id); if (rest.size() == 1) { rest[0]->state.removeProperty ("injGroup", um); rest[0]->state.removeProperty ("injGroupName", um); }   // un grupo de una sola pista se disuelve
+    }
+    inline void renameGroup (te::Edit& e, const juce::String& id, const juce::String& name) { for (auto* t : groupMembers (e, id)) t->state.setProperty ("injGroupName", name, &e.getUndoManager()); }
+    inline void groupGainDb (te::Edit& e, const juce::String& id, float db) { for (auto* t : groupMembers (e, id)) if (auto* vp = t->getVolumePlugin()) vp->setVolumeDb (juce::jlimit (-60.f, 6.f, vp->getVolumeDb() + db)); }
+    inline bool groupMuted (te::Edit& e, const juce::String& id) { auto m = groupMembers (e, id); return m.size() > 0 && m[0]->isMuted (false); }
+    inline void groupMute (te::Edit& e, const juce::String& id, bool mute) { for (auto* t : groupMembers (e, id)) t->setMute (mute); }
+
     inline bool isArmed (te::AudioTrack& t) { return (bool) t.state.getProperty ("injArm", false); }
     inline bool anyArmed (te::Edit& e) { for (auto* t : te::getAudioTracks (e)) if (isArmed (*t)) return true; return false; }
     // Arma o desarma una pista: con instrumento graba MIDI de todos los teclados conectados; sin instrumento, audio de la primera entrada.

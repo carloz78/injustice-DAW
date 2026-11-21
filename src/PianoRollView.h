@@ -1,6 +1,9 @@
 #pragma once
 #include "Theme.h"
+#include "TimeSig.h"
 #include "Icons.h"
+#include "Cursors.h"
+#include <set>
 #include <tracktion_engine/tracktion_engine.h>
 namespace te = tracktion;
 
@@ -9,12 +12,12 @@ class PianoRollView : public juce::Component, public juce::TooltipClient, privat
 {
 public:
     static constexpr int kKeyW = 96, kBarH = 52, kRulerH = 32, kTop = kBarH + kRulerH, kVelH = 132, kNoteH = 20;
-    juce::String tool = "select"; double quantum = 0.25; bool snap = true;   // 0.25 beats = 1/16
-    std::function<void()> onClipChanged; std::function<void (const juce::String&)> onMessage;
+    juce::String tool = "pencil"; double quantum = 0.25; bool snap = true;   // 0.25 beats = 1/16
+    std::function<void()> onClipChanged; std::function<void (const juce::String&)> onMessage; std::function<void (te::AudioTrack*, int)> onAudition;   // suena la nota en la pista del clip
 
     explicit PianoRollView (te::Edit& e) : edit (e) { setWantsKeyboardFocus (true); setOpaque (true); startTimerHz (30); scrollY = (127 - 76) * kNoteH; }
 
-    void setClip (te::MidiClip* c) { clip = c; sel = nullptr; scrollX = 0; if (clip) { auto n = clip->getSequence().getNotes(); if (n.size()) scrollY = (127 - n[0]->getNoteNumber() - 5) * (double) kNoteH; } repaint(); }
+    void setClip (te::MidiClip* c) { clip = c; sel = nullptr; selSet.clear(); scrollX = 0; if (clip) { auto n = clip->getSequence().getNotes(); scrollY = n.size() ? (127 - n[0]->getNoteNumber() - 5) * (double) kNoteH : (127 - 76) * (double) kNoteH; } repaint(); }
     te::MidiClip* getClip() const { return clip.get(); }
 
     //==============================================================================
@@ -51,7 +54,7 @@ public:
         const double step = ppb * quantum >= 9 ? quantum : (ppb >= 9 ? 1.0 : 4.0);
         for (double b = std::floor (xb ((float) kKeyW) / step) * step; bx (b) < W; b += step)
         {
-            const bool bar = std::fmod (std::round (b * 1000) / 1000, 4.0) == 0.0, beat = std::fmod (std::round (b * 1000) / 1000, 1.0) == 0.0;
+            const bool bar = std::fmod (std::round (b * 1000) / 1000, timesig::bar()) == 0.0, beat = std::fmod (std::round (b * 1000) / 1000, 1.0) == 0.0;
             g.setColour (bar ? juce::Colour (0xff4b4b60) : (beat ? juce::Colour (0xff30303f) : juce::Colour (0xff2a2a37)));
             g.fillRect (bx (b), (float) kTop, 1.f, (float) (gb - kTop));
         }
@@ -61,6 +64,7 @@ public:
             g.setColour (pink.withAlpha (.16f)); g.fillRect (r); g.setColour (pink.withAlpha (.4f)); g.drawRect (r, 1.f);
         }
         for (auto* n : clip->getSequence().getNotes()) drawNote (g, *n);
+        if (mode == Mode::rubber && ! rubber.isEmpty()) { g.setColour (accent.withAlpha (.18f)); g.fillRect (rubber); g.setColour (accentHi.withAlpha (.9f)); g.drawRect (rubber, 1.f); }
         g.restoreState();
 
         drawRuler (g, W); drawKeyboard (g, gb); drawVelocity (g, W, H, gb);
@@ -76,53 +80,94 @@ public:
         if (e.y < kBarH) { toolbarClick (e); return; }
         if (! clip) return;
         if (e.y >= gridBottom()) { velocityAt (e); return; }
-        if (e.x < kKeyW || e.y < kTop) { if (e.y < kTop && e.x > kKeyW) seek (e.x); else if (e.x < kKeyW) { litKey = yp ((float) e.y); repaint(); } return; }
-        auto* hit = noteAt (e.position); mode = Mode::none;
-        if (tool == "erase") { if (hit) removeNote (hit); mode = Mode::erase; return; }
+        if (e.x < kKeyW || e.y < kTop)
+        {
+            if (e.y < kTop && e.x > kKeyW) seek (e.x);
+            else if (e.x < kKeyW) { litKey = yp ((float) e.y); audition (litKey); repaint(); }
+            return;
+        }
+        auto* hit = noteAt (e.position); mode = Mode::none; grp.clear(); newNote = false; downPos = e.position;
+        auto* um = &edit.getUndoManager();
+        if (e.mods.isPopupMenu() || tool == "erase")   // clic derecho (o borrador): borra; arrastrando borra varias
+        {
+            um->beginNewTransaction (juce::String::fromUTF8 ("Borrar notas")); mode = Mode::erase; if (hit) removeNote (hit, false); return;
+        }
         if (tool == "cut") { if (hit) splitNote (hit, q (xb ((float) e.x))); return; }
-        if (tool == "brush") { edit.getUndoManager().beginNewTransaction (juce::String::fromUTF8 ("Pintar notas")); mode = Mode::paint; if (! hit) paintNote (e.position); return; }
-        if (hit == nullptr && tool == "pencil")
+        if (tool == "brush") { um->beginNewTransaction (juce::String::fromUTF8 ("Pintar notas")); mode = Mode::paint; if (! hit) paintNote (e.position); return; }
+        const bool add = e.mods.isShiftDown() || e.mods.isCtrlDown() || e.mods.isCommandDown();
+        if (hit == nullptr && (tool == "select" || add))   // rectángulo de selección
+        {
+            if (! add) clearSel (); rubBase = selSet; rubA = e.position; rubber = { e.position, e.position }; mode = Mode::rubber; repaint(); return;
+        }
+        if (hit == nullptr)   // lápiz: una nota nueva (conserva la última longitud)
         {
             const double start = std::max (0.0, q (xb ((float) e.x)));
             if (start >= 4096.0) return; growTo (start);
-            auto* um = &edit.getUndoManager(); um->beginNewTransaction (juce::String::fromUTF8 ("Añadir nota"));
-            sel = clip->getSequence().addNote (juce::jlimit (0, 127, yp ((float) e.y)), te::BeatPosition::fromBeats (start), te::BeatDuration::fromBeats (lastLen), lastVel, 0, um);
-            mode = Mode::resize; anchor = start; repaint(); return;
+            um->beginNewTransaction (juce::String::fromUTF8 ("Añadir nota"));
+            auto* made = clip->getSequence().addNote (juce::jlimit (0, 127, yp ((float) e.y)), te::BeatPosition::fromBeats (start), te::BeatDuration::fromBeats (lastLen), lastVel, 0, um);
+            clearSel(); sel = made; addSel (made); if (sel == nullptr) return; mode = Mode::resize; newNote = true; anchor = start; audition (sel->getNoteNumber()); repaint(); return;
         }
-        sel = hit;
-        if (hit)
-        {
-            const float rx = bx (hit->getEndBeat().inBeats());
-            mode = (e.x > rx - 7 && tool != "pencil") ? Mode::resize : Mode::move; anchor = hit->getStartBeat().inBeats();
-            grab = xb ((float) e.x) - anchor; edit.getUndoManager().beginNewTransaction ("Editar nota"); lastLen = hit->getLengthBeats().inBeats();
-        }
+        if (add) { toggleSel (hit); sel = isSel (*hit) ? hit : nullptr; repaint(); return; }
+        if (! isSel (*hit)) { clearSel(); addSel (hit); }
+        sel = hit; audition (hit->getNoteNumber());
+        const float rx = bx (hit->getEndBeat().inBeats());
+        mode = e.x > rx - 7 ? Mode::resize : Mode::move; anchor = hit->getStartBeat().inBeats();
+        grab = xb ((float) e.x) - anchor; um->beginNewTransaction ("Editar nota"); lastLen = hit->getLengthBeats().inBeats();
+        for (auto* n : selNotes()) grp.push_back ({ n->state, n->getStartBeat().inBeats(), n->getLengthBeats().inBeats(), n->getNoteNumber() });
+        anchorPitch = hit->getNoteNumber(); anchorEnd = hit->getEndBeat().inBeats();
         repaint();
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (! clip) return;
+        if (litKey >= 0 && e.getMouseDownX() < kKeyW) { const int k = yp ((float) e.y); if (k != litKey && k >= 0 && k <= 127) { litKey = k; audition (k); repaint(); } return; }
         if (e.mouseWasDraggedSinceMouseDown() && e.y >= gridBottom() && mode == Mode::none) { velocityAt (e); return; }
         auto* um = &edit.getUndoManager();
-        if (mode == Mode::erase) { if (auto* h = noteAt (e.position)) removeNote (h); return; }
+        if (mode == Mode::erase) { if (auto* h = noteAt (e.position)) removeNote (h, false); return; }
         if (mode == Mode::paint) { paintNote (e.position); return; }
+        if (mode == Mode::rubber)
+        {
+            rubber = juce::Rectangle<float> (rubA, e.position); selSet = rubBase;
+            for (auto* n : clip->getSequence().getNotes())
+            {
+                juce::Rectangle<float> r (bx (n->getStartBeat().inBeats()), ny (n->getNoteNumber()), (float) (n->getLengthBeats().inBeats() * ppb), (float) kNoteH);
+                if (r.intersects (rubber) && ! isSel (*n)) selSet.push_back (n->state);
+            }
+            repaint(); return;
+        }
         if (sel == nullptr) return;
         if (mode == Mode::move)
         {
-            const double ns = std::max (0.0, q (xb ((float) e.x) - grab)); const int np = juce::jlimit (0, 127, yp ((float) e.y));
-            if (np != sel->getNoteNumber()) sel->setNoteNumber (np, um);
-            sel->setStartAndLength (te::BeatPosition::fromBeats (ns), sel->getLengthBeats(), um);
+            double dB = std::max (0.0, q (xb ((float) e.x) - grab)) - anchor; int dP = juce::jlimit (0, 127, yp ((float) e.y)) - anchorPitch;
+            for (auto& o : grp) { dB = std::max (dB, -o.start); dP = juce::jlimit (-o.pitch, 127 - o.pitch, dP); }
+            for (auto& o : grp) if (auto* n = noteOf (o.st))
+            {
+                if (n->getNoteNumber() != o.pitch + dP) n->setNoteNumber (o.pitch + dP, um);
+                n->setStartAndLength (te::BeatPosition::fromBeats (o.start + dB), n->getLengthBeats(), um); growTo (o.start + dB + o.len - 0.25);
+            }
+            if (anchorPitch + dP != lastAudPitch) { lastAudPitch = anchorPitch + dP; audition (lastAudPitch); }
         }
         else if (mode == Mode::resize)
         {
-            const double end = std::max (sel->getStartBeat().inBeats() + (snap ? quantum : 0.05), q (xb ((float) e.x)) + (snap ? quantum * 0 : 0));
-            const double len = std::max (snap ? quantum : 0.05, (snap ? std::max (q (xb ((float) e.x)), sel->getStartBeat().inBeats() + quantum) : end) - sel->getStartBeat().inBeats());
-            sel->setStartAndLength (sel->getStartBeat(), te::BeatDuration::fromBeats (len), um); lastLen = len;
+            const double minLen = snap ? quantum : 0.05;
+            if (newNote)
+            {
+                const double s0 = sel->getStartBeat().inBeats(), qe = q (xb ((float) e.x));
+                const double len = (std::abs (e.x - downPos.x) < 4.f) ? lastLen : std::max (minLen, qe - s0);
+                sel->setStartAndLength (sel->getStartBeat(), te::BeatDuration::fromBeats (len), um); lastLen = len; growTo (s0 + len - 0.25);
+            }
+            else
+            {
+                const double dEnd = q (xb ((float) e.x)) - q (anchorEnd);
+                for (auto& o : grp) if (auto* n = noteOf (o.st)) { n->setStartAndLength (n->getStartBeat(), te::BeatDuration::fromBeats (std::max (minLen, o.len + dEnd)), um); growTo (n->getEndBeat().inBeats() - 0.25); }
+                lastLen = std::max (minLen, grp.empty() ? lastLen : grp.front().len + dEnd);
+            }
         }
         repaint();
     }
     void growTo (double beat)   // escribir más allá del final alarga el clip por compases
     {
-        const double need = std::ceil ((beat + 0.25) / 4.0) * 4.0;
+        const double need = std::ceil ((beat + 0.25) / timesig::bar()) * timesig::bar();
         if (clip && need > clipLenBeats() + 1e-6) clip->setEnd (te::TimePosition::fromSeconds (beatsToTime (clipStartBeat() + need)), true);
     }
     void paintNote (juce::Point<float> pos)
@@ -133,8 +178,11 @@ public:
         for (auto* n : clip->getSequence().getNotes()) if (n->getNoteNumber() == pitch && n->getStartBeat().inBeats() < start + len - 1e-6 && n->getEndBeat().inBeats() > start + 1e-6) return;
         sel = clip->getSequence().addNote (pitch, te::BeatPosition::fromBeats (start), te::BeatDuration::fromBeats (len), lastVel, 0, &edit.getUndoManager()); repaint();
     }
-    void mouseUp (const juce::MouseEvent&) override { if (mode != Mode::none && onClipChanged) onClipChanged(); mode = Mode::none; litKey = -1; repaint(); }
-
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        if (mode != Mode::none && mode != Mode::rubber && onClipChanged) onClipChanged();
+        mode = Mode::none; litKey = -1; lastAudPitch = -1; rubber = {}; repaint();
+    }
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
         if (e.mods.isCtrlDown() || e.mods.isCommandDown()) { const double a = xb ((float) e.x); ppb = juce::jlimit (6.0, 400.0, ppb * (1.0 + w.deltaY * .6)); scrollX = juce::jmax (0.0, a * ppb - (e.x - kKeyW - 8)); }
@@ -144,13 +192,77 @@ public:
     }
     bool keyPressed (const juce::KeyPress& k) override
     {
-        if (k == juce::KeyPress ('q')) { quantizeNotes(); return true; }
-        if ((k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) && sel != nullptr) { removeNote (sel); return true; }
+        if (! clip) return false;
+        const bool ctrl = k.getModifiers().isCtrlDown() || k.getModifiers().isCommandDown(), shift = k.getModifiers().isShiftDown(); const int c = k.getKeyCode();
+        if (ctrl && (c == 'A' || c == 'a')) { selSet.clear(); for (auto* n : clip->getSequence().getNotes()) selSet.push_back (n->state); repaint(); return true; }
+        if (ctrl && (c == 'C' || c == 'c')) { copySel(); return true; }
+        if (ctrl && (c == 'X' || c == 'x')) { copySel(); deleteSel(); return true; }
+        if (ctrl && (c == 'V' || c == 'v')) { pasteAt (-1.0); return true; }
+        if (ctrl && (c == 'D' || c == 'd')) { duplicateSel(); return true; }
+        if (c == juce::KeyPress::escapeKey) { clearSel(); repaint(); return true; }
+        if (c == juce::KeyPress::deleteKey || c == juce::KeyPress::backspaceKey) { if (selSet.empty() && sel != nullptr) addSel (sel); deleteSel(); return true; }
+        if (! ctrl && (c == juce::KeyPress::leftKey || c == juce::KeyPress::rightKey || c == juce::KeyPress::upKey || c == juce::KeyPress::downKey) && ! selSet.empty())
+        {
+            auto* um = &edit.getUndoManager(); um->beginNewTransaction ("Mover notas"); const bool horiz = c == juce::KeyPress::leftKey || c == juce::KeyPress::rightKey;
+            const double step = shift ? 1.0 : quantum; const int semis = shift ? 12 : 1; int lastP = -1;
+            for (auto* n : selNotes())
+            {
+                if (horiz) n->setStartAndLength (te::BeatPosition::fromBeats (std::max (0.0, n->getStartBeat().inBeats() + (c == juce::KeyPress::rightKey ? step : -step))), n->getLengthBeats(), um);
+                else { n->setNoteNumber (juce::jlimit (0, 127, n->getNoteNumber() + (c == juce::KeyPress::upKey ? semis : -semis)), um); lastP = n->getNoteNumber(); }
+            }
+            if (lastP >= 0) audition (lastP);
+            if (onClipChanged) onClipChanged(); repaint(); return true;
+        }
+        if (k == juce::KeyPress ('q') && ! audition::typingPiano) { quantizeNotes(); return true; }
         return false;
+    }
+    // --- selección múltiple y portapapeles (públicos para las pruebas)
+    int numSelected() const { return (int) selSet.size(); }
+    void selectAll() { if (! clip) return; selSet.clear(); for (auto* n : clip->getSequence().getNotes()) selSet.push_back (n->state); repaint(); }
+    void deleteSel()
+    {
+        if (! clip) return; auto ns = selNotes(); if (ns.empty()) return; auto* um = &edit.getUndoManager(); um->beginNewTransaction (juce::String::fromUTF8 ("Borrar notas"));
+        sel = nullptr; for (auto* n : ns) clip->getSequence().removeNote (*n, um); selSet.clear(); if (onClipChanged) onClipChanged(); repaint();
+    }
+    void copySel()
+    {
+        auto ns = selNotes(); if (ns.empty()) return; clipboard.clear(); double t0 = 1e9; for (auto* n : ns) t0 = std::min (t0, n->getStartBeat().inBeats());
+        for (auto* n : ns) clipboard.push_back ({ n->getNoteNumber(), n->getStartBeat().inBeats() - t0, n->getLengthBeats().inBeats(), n->getVelocity() });
+        if (onMessage) onMessage (juce::String (clipboard.size()) + " notas copiadas");
+    }
+    // Pega en la posición `beat` del clip (-1 = donde está el cabezal si cae dentro del clip, si no al principio).
+    void pasteAt (double beat)
+    {
+        if (! clip || clipboard.empty()) return;
+        if (beat < 0) { const double hb = timeToBeats (edit.getTransport().getPosition().inSeconds()) - clipStartBeat(); beat = (hb >= 0 && hb < clipLenBeats()) ? q (hb) : 0.0; }
+        auto* um = &edit.getUndoManager(); um->beginNewTransaction ("Pegar notas"); selSet.clear(); double end = 0;
+        for (auto& c : clipboard) { growTo (beat + c.start); if (auto* n = clip->getSequence().addNote (c.pitch, te::BeatPosition::fromBeats (beat + c.start), te::BeatDuration::fromBeats (c.len), c.vel, 0, um)) { selSet.push_back (n->state); sel = n; } end = std::max (end, c.start + c.len); }
+        growTo (beat + end); if (onClipChanged) onClipChanged(); repaint();
+    }
+    void duplicateSel()
+    {
+        auto ns = selNotes(); if (ns.empty()) return; copySel(); double t0 = 1e9, t1 = 0; for (auto* n : ns) { t0 = std::min (t0, n->getStartBeat().inBeats()); t1 = std::max (t1, n->getEndBeat().inBeats()); }
+        pasteAt (t1);
+    }
+    std::vector<te::MidiNote*> selNotes() const
+    {
+        std::vector<te::MidiNote*> out; if (! clip) return out;
+        for (auto* n : clip->getSequence().getNotes()) if (isSel (*n)) out.push_back (n);
+        return out;
     }
 
 private:
-    enum class Mode { none, move, resize, erase, paint };
+    enum class Mode { none, move, resize, erase, paint, rubber };
+    struct Orig { juce::ValueTree st; double start, len; int pitch; };
+    struct ND { int pitch; double start, len; int vel; };
+    std::vector<juce::ValueTree> selSet, rubBase; std::vector<Orig> grp; std::vector<ND> clipboard; juce::Rectangle<float> rubber; juce::Point<float> rubA, downPos;
+    bool newNote = false; int anchorPitch = 0, lastAudPitch = -1; double anchorEnd = 0;
+    bool isSel (const te::MidiNote& n) const { for (auto& v : selSet) if (v == n.state) return true; return false; }
+    void clearSel() { selSet.clear(); sel = nullptr; }
+    void addSel (te::MidiNote* n) { if (n && ! isSel (*n)) selSet.push_back (n->state); }
+    void toggleSel (te::MidiNote* n) { for (size_t i = 0; i < selSet.size(); ++i) if (selSet[i] == n->state) { selSet.erase (selSet.begin() + (long) i); return; } selSet.push_back (n->state); }
+    te::MidiNote* noteOf (const juce::ValueTree& v) const { if (clip) for (auto* n : clip->getSequence().getNotes()) if (n->state == v) return n; return nullptr; }
+    void audition (int pitch) { if (onAudition && clip && pitch >= 0) if (auto* t = dynamic_cast<te::AudioTrack*> (clip->getTrack())) onAudition (t, pitch); }
     te::Edit& edit; te::MidiClip::Ptr clip; te::MidiNote* sel = nullptr; Mode mode = Mode::none;
     double ppb = 50.0, scrollX = 0, scrollY = 0, anchor = 0, grab = 0, lastLen = 0.25; int lastVel = 100, litKey = -1;
 
@@ -163,7 +275,7 @@ private:
     }
     double lastPos = -1.0;
     void seek (int x) { auto b = std::max (0.0, xb ((float) x)) + clipStartBeat(); edit.getTransport().setPosition (te::TimePosition::fromSeconds (beatsToTime (q (b)))); }
-    void removeNote (te::MidiNote* n) { edit.getUndoManager().beginNewTransaction ("Borrar nota"); if (sel == n) sel = nullptr; clip->getSequence().removeNote (*n, &edit.getUndoManager()); if (onClipChanged) onClipChanged(); repaint(); }
+    void removeNote (te::MidiNote* n, bool tx = true) { if (tx) edit.getUndoManager().beginNewTransaction ("Borrar nota"); if (sel == n) sel = nullptr; for (size_t i = 0; i < selSet.size(); ++i) if (selSet[i] == n->state) { selSet.erase (selSet.begin() + (long) i); break; } clip->getSequence().removeNote (*n, &edit.getUndoManager()); if (onClipChanged) onClipChanged(); repaint(); }
 
     te::MidiNote* noteAt (juce::Point<float> p) const
     {
@@ -187,7 +299,7 @@ private:
     void drawNote (juce::Graphics& g, te::MidiNote& n)
     {
         juce::Rectangle<float> r (bx (n.getStartBeat().inBeats()), ny (n.getNoteNumber()) + 1.f, std::max (3.f, (float) (n.getLengthBeats().inBeats() * ppb) - 1.f), (float) kNoteH - 2.f);
-        const bool s = (&n == sel);
+        const bool s = isSel (n);
         g.setColour (s ? juce::Colour (0xffd58cff) : juce::Colour (0xffa044d7)); g.fillRect (r);
         g.setColour (s ? juce::Colours::white : juce::Colour (0xff8a32bd)); g.drawRect (r, 1.f);
     }
@@ -198,7 +310,7 @@ private:
         g.setFont (juce::FontOptions (14.f));
         for (int bar = 0; ; ++bar)
         {
-            const float x = bx (bar * 4.0); if (x > W) break; if (x < kKeyW + 4) continue;
+            const float x = bx (bar * timesig::bar()); if (x > W) break; if (x < kKeyW + 4) continue;
             g.setColour (juce::Colour (0xff4b4b60)); g.fillRect (x, (float) kBarH + 6.f, 1.f, (float) kRulerH - 6.f);
             g.setColour (theme::text); g.drawText (juce::String (bar + 1), juce::Rectangle<float> (x + 6, (float) kBarH + 4.f, 40, 20).toNearestInt(), juce::Justification::centredLeft);
         }
@@ -218,8 +330,8 @@ private:
         for (int p = 0; p <= 127; ++p)
         {
             const float y = ny (p); if (y > gb || y + kNoteH < kTop || ! isBlack (p)) continue;
-            g.setColour (p == litKey ? juce::Colour (0xff9a5cb8) : juce::Colour (0xff2b2b35)); g.fillRoundedRectangle (6.f, y + 1, 58.f, (float) kNoteH - 2.f, 3.f);
-            g.setColour (juce::Colour (0xff45454f)); g.fillRect (10.f, y + 2, 44.f, 1.f);
+            g.setColour (p == litKey ? juce::Colour (0xff9a5cb8) : juce::Colour (0xff0d0d13)); g.fillRoundedRectangle (6.f, y + 1, 58.f, (float) kNoteH - 2.f, 3.f);
+            g.setColour (juce::Colour (0xff5a5a70)); g.drawRoundedRectangle (6.5f, y + 1.5f, 57.f, (float) kNoteH - 3.f, 3.f, 1.f);
         }
         g.restoreState();
     }
@@ -240,7 +352,7 @@ private:
         g.saveState(); g.reduceClipRegion (kKeyW, gb + 1, W - kKeyW, kVelH);
         for (auto* n : clip->getSequence().getNotes())
         {
-            const float x = bx (n->getStartBeat().inBeats()), y = bot - (bot - top) * (float) n->getVelocity() / 127.f; const bool s = (&*n == sel);
+            const float x = bx (n->getStartBeat().inBeats()), y = bot - (bot - top) * (float) n->getVelocity() / 127.f; const bool s = isSel (*n);
             g.setColour (s ? juce::Colour (0xffd58cff) : juce::Colour (0xffb45ee6)); g.fillRect (x - 1.f, y, 3.f, bot - y); g.fillEllipse (x - 4.5f, y - 4.5f, 9.f, 9.f);
         }
         g.restoreState();
@@ -252,7 +364,7 @@ private:
     {
         std::vector<Btn> v; float x = 350.f; const float y = 8.f;
         auto add = [&] (const char* id, const char* tip, icons::Id ic) { v.push_back ({ id, juce::String::fromUTF8 (tip), ic, { x, y, 40, 36 } }); x += 44; };
-        add ("select", "Seleccionar y mover notas", icons::Select); add ("pencil", "Lápiz: dibuja notas", icons::Pencil); add ("brush", "Pincel: arrastra para pintar varias notas", icons::Brush); add ("erase", "Borrador", icons::Eraser); add ("cut", "Cortar una nota en dos", icons::Scissors);
+        add ("pencil", "Lápiz: clic para poner una nota, arrastra para moverla; clic derecho la borra", icons::Pencil); add ("brush", "Pincel: arrastra para pintar varias notas", icons::Brush); add ("select", "Seleccionar: arrastra un rectángulo para elegir varias notas (Ctrl+A todas)", icons::Select); add ("erase", "Borrador", icons::Eraser); add ("cut", "Cortar una nota en dos", icons::Scissors);
         x += 10; v.push_back ({ "quant", juce::String::fromUTF8 ("Cuantización"), icons::Chevron, { x, y, 92, 36 }, }); x += 100;
         v.push_back ({ "scale", "Escala", icons::Chevron, { x, y, 132, 36 } }); x += 148;
         add ("import", "Importar archivo MIDI a este clip", icons::OpenFile); add ("export", "Exportar este clip como archivo MIDI", icons::Export); add ("humanize", "Humanizar: mueve un poco el tiempo y la fuerza de las notas", icons::Sliders); add ("quantize", "Cuantizar: ajusta las notas a la cuadrícula (Q)", icons::Magnet);
@@ -343,7 +455,18 @@ private:
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (r.toNearestInt())), [this] (int c)
         { if (c >= 1 && c <= 4) { quantum = c == 1 ? 1.0 : c == 2 ? .5 : c == 3 ? .25 : .125; snap = true; } else if (c == 5) snap = false; repaint(); });
     }
-    void mouseMove (const juce::MouseEvent& e) override { hover = e.position; if (e.y < kBarH || hoverWas) repaint (0, 0, getWidth(), kBarH); hoverWas = e.y < kBarH; }
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        hover = e.position; if (e.y < kBarH || hoverWas) repaint (0, 0, getWidth(), kBarH); hoverWas = e.y < kBarH;
+        juce::MouseCursor cur = juce::MouseCursor::NormalCursor;
+        if (clip && e.y >= kTop && e.y < gridBottom())
+        {
+            if (e.x < kKeyW) cur = juce::MouseCursor::PointingHandCursor;
+            else if (auto* h = noteAt (e.position)) cur = (tool != "erase" && tool != "cut" && tool != "brush" && e.x > bx (h->getEndBeat().inBeats()) - 7) ? juce::MouseCursor::LeftRightResizeCursor : (tool == "erase" || tool == "cut") ? cursors::forTool (tool) : juce::MouseCursor::NormalCursor;
+            else cur = cursors::forTool (tool);
+        }
+        setMouseCursor (cur);
+    }
     void mouseExit (const juce::MouseEvent&) override { hover = { -1, -1 }; repaint (0, 0, getWidth(), kBarH); }
 public:
     juce::String getTooltip() override { for (auto& b : btns()) if (b.r.contains (hover)) return b.tip; return {}; }
@@ -405,7 +528,7 @@ public:
                 clip->getSequence().addNote (ev->message.getNoteNumber(), te::BeatPosition::fromBeats (s0), te::BeatDuration::fromBeats (l0), ev->message.getVelocity(), 0, um); maxEnd = std::max (maxEnd, s0 + l0); ++count;
             }
         }
-        if (maxEnd > clipLenBeats()) clip->setEnd (te::TimePosition::fromSeconds (beatsToTime (clipStartBeat() + std::ceil (maxEnd / 4.0) * 4.0)), true);
+        if (maxEnd > clipLenBeats()) clip->setEnd (te::TimePosition::fromSeconds (beatsToTime (clipStartBeat() + std::ceil (maxEnd / timesig::bar()) * timesig::bar())), true);
         if (onClipChanged) onClipChanged(); repaint(); if (onMessage) onMessage (juce::String::fromUTF8 ("Importadas ") + juce::String (count) + " notas"); return count;
     }
 private:

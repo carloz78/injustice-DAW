@@ -1,6 +1,7 @@
 #pragma once
 #include <tracktion_engine/tracktion_engine.h>
 #include "SamplePack.h"
+#include "Audition.h"
 
 // Instrumentos incluidos: sintetizador interno (4OSC de Tracktion) con sonidos listos + kit de batería con el paquete propio.
 namespace instruments
@@ -164,6 +165,20 @@ namespace instruments
                                 { 43, "Percusiones/Tom 808 05.wav" }, { 45, "Percusiones/Tom 909 04.wav" }, { 42, "Hats/Hat Hardcore Cerrado 04.wav" }, { 44, "Hats/Hat Pedal 05.wav" },
                                 { 46, "Hats/Hat Hardcore Abierto 03.wav" }, { 49, "Percusiones/Crash 05.wav" }, { 56, "Percusiones/Cowbell 05.wav" }, { 51, "Percusiones/Ride 04.wav" } } } };
         return k;
+    }
+
+    // Notas de muestra para escuchar un instrumento al elegirlo (por nombre de sonido o de kit)
+    inline std::vector<audition::Player::Ev> demo (const juce::String& name)
+    {
+        using E = audition::Player::Ev;
+        for (auto& k : kits()) if (name == k.name) return { E { 36, 0, 200 }, E { 42, 220, 320 }, E { 38, 400, 650 }, E { 42, 560, 660 }, E { 36, 700, 900 }, E { 36, 880, 1080 }, E { 38, 1000, 1300 } };
+        juce::String grp; for (auto& p : list()) if (name == p.name) grp = p.group;
+        if (name == "Campana") return { E { 72, 0, 1400 } };
+        if (grp == "Bajos") return { E { 41, 0, 650 }, E { 44, 750, 1300 } };
+        if (grp == "Pads") return { E { 53, 0, 1600 }, E { 56, 0, 1600 }, E { 60, 0, 1600 } };
+        if (grp == "FX") return { E { 48, 0, 1400 } };
+        if (name == "Stab Hardcore" || name == "Stab Menor" || name == "Stab Rave") return { E { 60, 0, 260 }, E { 60, 450, 710 } };
+        return { E { 65, 0, 450 }, E { 68, 520, 970 }, E { 72, 1050, 1500 } };
     }
 
     // Devuelve nullptr si el paquete todavía se está generando (así la interfaz no se congela).

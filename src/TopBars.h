@@ -1,5 +1,7 @@
 #pragma once
 #include "Icons.h"
+#include "TimeSig.h"
+#include "Ideas.h"
 #include <functional>
 #include <map>
 
@@ -12,6 +14,7 @@ public:
 
     std::function<void (const juce::String&)> onButton;
     std::function<void (double)> onBpm;
+    std::function<void (int, int)> onSig;
     bool metro = false, pianoMode = false, mixerOpen = false, stepsOpen = false, metersOpen = false, browserOpen = true, recArmed = false;
     bool playing = false, looping = false, snap = true;
     juce::String quantLabel = "1/16", tool = "select", view = "playlist", crumb;
@@ -47,7 +50,7 @@ public:
         auto box = [&] (juce::Rectangle<float> r, bool hot) { g.setColour (boxFill); g.fillRoundedRectangle (r, 9.f); g.setColour (hot ? accent : boxLine); g.drawRoundedRectangle (r.reduced (.5f), 9.f, 1.f); };
         box (bpmR, hoverId == "bpm" || dragBpm); box (sigR, false); box (posR, false);
         g.setFont (juce::FontOptions (20.f, juce::Font::bold)); g.setColour (accentHi); g.drawText (juce::String (bpm, 2), bpmR.toNearestInt(), juce::Justification::centred);
-        g.setColour (text); g.drawText ("4/4", sigR.toNearestInt(), juce::Justification::centred);
+        g.setColour (text); g.drawText (juce::String (timesig::num) + "/" + juce::String (timesig::den), sigR.toNearestInt(), juce::Justification::centred);
         g.drawText (posText(), posR.toNearestInt(), juce::Justification::centred);
         for (auto& b : btns) if (b.id == "metro" || b.id == "loop") paintBtn (g, b);
         drawMeters (g);
@@ -71,6 +74,7 @@ public:
         for (auto& m : menus) if (m.r.contains (p)) { showMenu (m.name); return; }
         if (pianoMode && quantR.contains (p)) { pressedId = "quant"; repaint(); if (onButton) onButton ("quant"); return; }
         for (auto& b : btns) if (b.enabled && b.r.contains (p)) { pressedId = b.id; repaint(); if (onButton) onButton (b.id); return; }
+        if (sigR.contains (p)) { showSigMenu(); return; }
         if (posR.contains (p)) { timeMode = ! timeMode; repaint(); return; }
         dragBpm = bpmR.contains (p); lastY = p.y;
     }
@@ -92,6 +96,7 @@ public:
     {
         auto p = getMouseXYRelative().toFloat();
         for (auto& b : btns) if (b.r.contains (p)) return tip (b.id);
+        if (sigR.contains (p)) return juce::String::fromUTF8 ("Comp\xc3\xa1s: clic para cambiarlo (3/4, 6/8, 7/8...)");
         if (bpmR.contains (p)) return juce::String::fromUTF8 ("Tempo: arrastra o usa la rueda (Mayús = fino)");
         if (posR.contains (p)) return juce::String::fromUTF8 ("Posición (clic: compases / minutos)");
         if (pianoMode && quantR.contains (p)) return juce::String::fromUTF8 ("Cuantización (clic para cambiar)");
@@ -101,7 +106,7 @@ public:
     {
         static const std::map<juce::String, const char*> t {
             { "layout", "Mostrar/ocultar el explorador (F8)" }, { "undo", "Deshacer (Ctrl+Z)" }, { "redo", "Rehacer (Ctrl+Y)" },
-            { "play", "Reproducir / pausa (Espacio)" }, { "stop", "Detener y volver al inicio" }, { "rec", "Armar grabaci\xc3\xb3n (pr\xc3\xb3ximamente)" },
+            { "play", "Reproducir / pausa (Espacio)" }, { "stop", "Detener y volver al inicio" }, { "rec", "Grabar en las pistas armadas (c\xc3\xadrculo del Mixer). Ctrl+T: teclado como piano" },
             { "loop", "Repetir en bucle" }, { "audio", "Ajustes de audio" }, { "plugins", "Lista de plugins VST3 (F10)" },
             { "tool:select", "Seleccionar" }, { "tool:pencil", "L\xc3\xa1piz: dibujar" }, { "tool:brush", "Pincel: pinta clips arrastrando (sobre un clip lo copia)" }, { "tool:auto", "Automatizaci\xc3\xb3n: curva de volumen (clic crea punto, clic derecho lo borra)" }, { "tool:cut", "Cortar clips" }, { "tool:trim", "Recortar el borde de un clip" },
             { "tool:erase", "Borrador" }, { "metro", "Metr\xc3\xb3nomo" }, { "snap", "Ajustar a la cuadr\xc3\xad" "cula" },
@@ -199,17 +204,24 @@ private:
         one (ramR, "RAM", juce::String (ramMB / 1024.0, 1), juce::String ("GB / ") + juce::String (juce::roundToInt (ramTotalMB / 1024.0)) + " GB", f);
     }
 
+    void showSigMenu()
+    {
+        juce::PopupMenu m; const std::pair<int, int> sigs[] = { { 4, 4 }, { 3, 4 }, { 2, 4 }, { 5, 4 }, { 6, 4 }, { 7, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 }, { 3, 8 }, { 5, 8 } };
+        int id = 1; for (auto& sg : sigs) m.addItem (id++, juce::String (sg.first) + "/" + juce::String (sg.second), true, sg.first == timesig::num && sg.second == timesig::den);
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withTargetScreenArea (localAreaToGlobal (sigR.toNearestInt())), [this] (int r) { if (r > 0 && onSig) onSig (sigs_[r - 1].first, sigs_[r - 1].second); });
+    }
+    static constexpr std::pair<int, int> sigs_[12] = { { 4, 4 }, { 3, 4 }, { 2, 4 }, { 5, 4 }, { 6, 4 }, { 7, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 }, { 3, 8 }, { 5, 8 } };
     void showMenu (const juce::String& name)
     {
         struct It { juce::String id, label; bool tick = false, en = true; };
         std::vector<It> items;   // id vacío = separador
         auto I = [&] (const char* id, const char* l, bool tick = false) { items.push_back ({ id, juce::String::fromUTF8 (l), tick, true }); };
         auto S = [&] { items.push_back ({}); };
-        if (name == "File") { I ("new", "Proyecto nuevo\tCtrl+N"); I ("open", "Abrir…\tCtrl+O"); I ("save", "Guardar\tCtrl+S"); I ("saveas", "Guardar como…\tCtrl+Mayús+S"); I ("savesamples", "Guardar con los samples…"); S(); I ("importmidi", "Importar MIDI…"); I ("export", "Exportar audio…\tCtrl+E"); S(); I ("quit", "Salir"); }
+        if (name == "File") { I ("new", "Proyecto nuevo\tCtrl+N"); S(); for (int k = 0; k < ideas::kNumStyles; ++k) items.push_back ({ "tpl:" + juce::String (k), juce::String::fromUTF8 ("Plantilla: ") + ideas::styleName (k) + " (" + juce::String ((int) ideas::styleBpm (k)) + " BPM)", false, true }); S(); I ("open", "Abrir…\tCtrl+O"); I ("save", "Guardar\tCtrl+S"); I ("saveas", "Guardar como…\tCtrl+Mayús+S"); I ("savesamples", "Guardar con los samples…"); S(); I ("importmidi", "Importar MIDI…"); I ("export", "Exportar audio…\tCtrl+E"); S(); I ("quit", "Salir"); }
         else if (name == "Edit") { I ("undo", "Deshacer\tCtrl+Z"); I ("redo", "Rehacer\tCtrl+Y"); S(); I ("dup", "Duplicar clip\tCtrl+D"); I ("del", "Eliminar clip\tSupr"); }
         else if (name == "View") { I ("view:playlist", "Playlist\tF5", view == "playlist" && ! pianoMode); I ("view:mixer", "Mixer\tF9", mixerOpen); I ("view:piano", "Piano Roll\tF7", pianoMode); I ("view:steps", "Step Sequencer\tF6", stepsOpen); I ("view:meters", "Medidores\tF11", metersOpen); S(); I ("layout", "Explorador de samples\tF8", browserOpen); }
         else if (name == "Options") { I ("audio", "Ajustes de audio…"); S(); I ("metro", "Metrónomo", metro); I ("loop", "Repetir en bucle", looping); I ("snap", "Ajustar a la cuadrícula", snap); }
-        else if (name == "Tools") { I ("plugins", "Lista de plugins VST3…\tF10"); S(); I ("tool:select", "Herramienta: seleccionar", tool == "select"); I ("tool:pencil", "Herramienta: lápiz", tool == "pencil"); I ("tool:brush", "Herramienta: pincel", tool == "brush"); I ("tool:auto", "Herramienta: automatización", tool == "auto"); I ("tool:cut", "Herramienta: cortar", tool == "cut"); I ("tool:trim", "Herramienta: recortar", tool == "trim"); }
+        else if (name == "Tools") { I ("plugins", "Lista de plugins VST3…\tF10"); I ("ideas", "Generador de ideas…\tCtrl+G"); S(); I ("tool:select", "Herramienta: seleccionar", tool == "select"); I ("tool:pencil", "Herramienta: lápiz", tool == "pencil"); I ("tool:brush", "Herramienta: pincel", tool == "brush"); I ("tool:auto", "Herramienta: automatización", tool == "auto"); I ("tool:cut", "Herramienta: cortar", tool == "cut"); I ("tool:trim", "Herramienta: recortar", tool == "trim"); }
         else if (name == "Help") { I ("help", "Ayuda y atajos\tF1"); I ("about", "Acerca de INJUSTICE DAW"); }
         juce::PopupMenu m; int n = 1;
         for (auto& it : items) { if (it.id.isEmpty()) m.addSeparator(); else m.addItem (n, it.label, it.en, it.tick); ++n; }
