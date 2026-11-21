@@ -9,7 +9,7 @@ namespace samplepack
 {
     inline juce::File packsDir() { return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("INJUSTICE DAW").getChildFile ("Injustice Packs"); }
     inline juce::File packDir (const juce::File& packs) { return packs.getChildFile ("INJUSTICE Core Pack"); }
-    inline bool ready (const juce::File& packs) { return packDir (packs).getChildFile (".pack_v9").existsAsFile(); }
+    inline bool ready (const juce::File& packs) { return packDir (packs).getChildFile (".pack_v10").existsAsFile(); }
 
     inline void save (const juce::File& f, const packdsp::Buf& b)
     {
@@ -23,13 +23,13 @@ namespace samplepack
     inline juce::File ensure (const juce::File& packs)
     {
         static std::mutex m; std::lock_guard<std::mutex> lock (m);
-        auto d = packDir (packs); auto marker = d.getChildFile (".pack_v9");
+        auto d = packDir (packs); auto marker = d.getChildFile (".pack_v10");
         if (marker.existsAsFile()) return d;
         d.deleteRecursively();
         // se genera en una carpeta oculta y se mueve al terminar: el navegador nunca ve un paquete a medias
         auto tmp = d.getSiblingFile (".INJUSTICE Core Pack.tmp"); tmp.deleteRecursively(); tmp.createDirectory();
         packdsp::catalog ([&] (const std::string& rel, packdsp::Buf&& b) { save (tmp.getChildFile (juce::String::fromUTF8 (rel.c_str())), packdsp::finalize (b, packdsp::peakFor (rel))); });
-        tmp.getChildFile (".pack_v9").replaceWithText ("9");
+        tmp.getChildFile (".pack_v10").replaceWithText ("10");
         if (! tmp.moveFileTo (d)) { tmp.copyDirectoryTo (d); tmp.deleteRecursively(); }
         return d;
     }

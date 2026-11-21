@@ -75,6 +75,7 @@ namespace templates
             }
             ++made;
         }
+        if (made >= 7) { for (int k : { 3, 4, 6 }) trackutil::setSidechain (e, *tracks[k], tracks[0], 0.7, 110.0); }
         if (made >= 7) { trackutil::joinGroup (e, *tracks[1], *tracks[0], juce::String::fromUTF8 ("Bater\xc3\xad" "a")); trackutil::joinGroup (e, *tracks[2], *tracks[0]); trackutil::joinGroup (e, *tracks[4], *tracks[3], "Sintes"); trackutil::joinGroup (e, *tracks[5], *tracks[3]); trackutil::joinGroup (e, *tracks[6], *tracks[3]); }
         return made;
     }

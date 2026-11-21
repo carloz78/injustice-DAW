@@ -76,6 +76,7 @@ public:
     te::StepClip* getClip() { ensureClip(); return clip.get(); }
     int numPatterns() { ensureClip(); return patterns().size(); }
     void newPattern() { ensureClip(); addPattern (false); }
+    void runPatternOp (int id) { ensureClip(); patternOp (id); }
     void pickPattern (int i) { ensureClip(); selectPattern (i); }
     void setRowVolume (int r, float db) { setVol (r, db); }
     void setRowPan (int r, float pn) { setPan (r, pn); }
@@ -283,15 +284,34 @@ private:
         }
         if (n) { clip = n; if (onClipChanged) onClipChanged(); } repaint();
     }
+    // desplazar, aleatorizar, invertir, repetir mitad y humanizar sobre el patrón actual (herramientas al estilo FL Studio)
+    void patternOp (int id)
+    {
+        if (! clip) return; auto pat = clip->getPattern (0); const int ns = pat.getNumNotes(), nr = clip->getChannels().size(); juce::Random rnd;
+        edit.getUndoManager().beginNewTransaction ("Patrón");
+        for (int r = 0; r < nr; ++r)
+        {
+            std::vector<char> on ((size_t) ns); std::vector<int> vel ((size_t) ns); for (int k = 0; k < ns; ++k) { on[(size_t) k] = pat.getNote (r, k) ? 1 : 0; vel[(size_t) k] = pat.getVelocity (r, k); }
+            std::vector<char> o2 = on; std::vector<int> v2 = vel;
+            if (id == 4 || id == 5) for (int k = 0; k < ns; ++k) { const int to = ((k + (id == 4 ? -1 : 1)) % ns + ns) % ns; o2[(size_t) to] = on[(size_t) k]; v2[(size_t) to] = vel[(size_t) k]; }
+            else if (id == 6) for (int k = 0; k < ns; ++k) { o2[(size_t) k] = rnd.nextFloat() < (r == 0 ? (k % 4 == 0 ? 0.9f : 0.08f) : (k % 2 == 0 ? 0.3f : 0.18f)) ? 1 : 0; v2[(size_t) k] = 70 + rnd.nextInt (50); }
+            else if (id == 7) for (int k = 0; k < ns; ++k) o2[(size_t) k] = on[(size_t) k] ? 0 : 1;
+            else if (id == 8) for (int k = ns / 2; k < ns; ++k) { o2[(size_t) k] = on[(size_t) (k - ns / 2)]; v2[(size_t) k] = vel[(size_t) (k - ns / 2)]; }
+            else if (id == 9) for (int k = 0; k < ns; ++k) v2[(size_t) k] = juce::jlimit (20, 127, vel[(size_t) k] + rnd.nextInt (31) - 15);
+            for (int k = 0; k < ns; ++k) { pat.setNote (r, k, o2[(size_t) k] != 0); if (o2[(size_t) k] && v2[(size_t) k] >= 4) pat.setVelocity (r, k, juce::jmin (127, v2[(size_t) k])); }
+        }
+        if (onClipChanged) onClipChanged(); repaint();
+    }
     void patternMenu (int i)
     {
-        juce::PopupMenu m; m.addItem (1, juce::String::fromUTF8 ("Duplicar este patrón")); m.addItem (2, juce::String::fromUTF8 ("Eliminar este patrón"), patterns().size() > 1); m.addItem (3, juce::String::fromUTF8 ("Vaciar este patrón (borra todos sus golpes)"));
+        juce::PopupMenu m; m.addItem (1, juce::String::fromUTF8 ("Duplicar este patrón")); m.addItem (2, juce::String::fromUTF8 ("Eliminar este patrón"), patterns().size() > 1); m.addItem (3, juce::String::fromUTF8 ("Vaciar este patrón (borra todos sus golpes)")); m.addSeparator(); m.addItem (4, juce::String::fromUTF8 ("Desplazar a la izquierda")); m.addItem (5, juce::String::fromUTF8 ("Desplazar a la derecha")); m.addItem (6, juce::String::fromUTF8 ("Aleatorizar golpes")); m.addItem (7, juce::String::fromUTF8 ("Invertir golpes")); m.addItem (8, juce::String::fromUTF8 ("Repetir la primera mitad")); m.addItem (9, juce::String::fromUTF8 ("Variar la fuerza (humanizar)"));
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (toLocal (tabR (i)))), [this, i] (int id)
         {
             auto pats = patterns(); if (i >= pats.size()) return; selectPattern (i);
             if (id == 1 && pats.size() < kMaxPat) addPattern (true);
             else if (id == 2 && pats.size() > 1) { te::StepClip::Ptr dead = pats[i]; clip = pats[i == 0 ? 1 : i - 1]; dead->removeFromParent(); if (onClipChanged) onClipChanged(); repaint(); }
             else if (id == 3) { clip->getPattern (0).clear(); repaint(); }
+            else if (id >= 4 && id <= 9) patternOp (id);
         });
     }
     void setVol (int r, float db) { const int i = soundForRow (r); if (i >= 0 && sampler) sampler->setSoundGains (i, juce::jlimit (-40.f, 6.f, db), sampler->getSoundPan (i)); }

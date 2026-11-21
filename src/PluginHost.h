@@ -147,7 +147,15 @@ namespace pluginhost
     };
 
     // ----- Panel "Plugins" -----
-    class ListContent : public juce::Component, private juce::TableListBoxModel
+    // ¿Es uno de los plugins de Injustice Audio? (por fabricante o por nombre)
+inline bool isInjusticePlugin (const juce::PluginDescription& d)
+{
+    const auto m = d.manufacturerName.toLowerCase(), n = d.name.toLowerCase();
+    if (m.contains ("injustice")) return true;
+    for (auto* k : { "injustice", "ravecore", "lowcore", "comp core", "kick forge", "gabber drive" }) if (n.contains (k)) return true;
+    return false;
+}
+class ListContent : public juce::Component, private juce::TableListBoxModel
     {
     public:
         std::function<void (const juce::PluginDescription&)> onAdd;   // agrega a la pista de destino
@@ -203,13 +211,7 @@ namespace pluginhost
         std::unique_ptr<Scanner> scanner; juce::Array<juce::PluginDescription> shown; std::unique_ptr<juce::FileChooser> chooser;
         struct Relay : juce::ChangeListener { ListContent* owner = nullptr; void changeListenerCallback (juce::ChangeBroadcaster*) override { if (owner) owner->refresh(); } } relay;
 
-        static bool isOurs (const juce::PluginDescription& d)
-        {
-            const auto m = d.manufacturerName.toLowerCase(), n = d.name.toLowerCase();
-            if (m.contains ("injustice")) return true;
-            for (auto* k : { "injustice", "ravecore", "lowcore", "comp core", "kick forge", "gabber drive" }) if (n.contains (k)) return true;
-            return false;
-        }
+        static bool isOurs (const juce::PluginDescription& d) { return isInjusticePlugin (d); }
         void refresh()
         {
             shown.clear(); const auto q = search.getText().trim();

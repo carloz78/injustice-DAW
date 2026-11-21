@@ -315,27 +315,55 @@ namespace packdsp
     // ---------- Bucles ----------
     inline void mixInto (Buf& dst, const Buf& src, size_t at, float g) { for (size_t i = 0; i < src.size() && at + i < dst.size(); ++i) dst[at + i] += src[i] * g; }
     inline Buf drumLoop (int kit, int v)
-    {
-        const double beat = 60.0 / 172.0, step = beat / 4.0; auto out = make (beat * 8.0);
-        Buf K, S, C, Hc, Ho, X;
-        if (kit == 0) { K = kick (240 + 10 * v, 50, 0.032, 0.34, 1.6, 0.25, 0.7); S = snare (185, 0.07, 0.17, 1.0, 1200, 1.3); C = clap (0.12, 1100, 3, 0.011, 1.1, 1.3); Hc = hat909 (0.04, 7000, 9000, 1.0); Ho = hat909 (0.26, 6500, 9000, 1.0); X = rim (480, 1700); }
-        else if (kit == 2) { K = kick (400 + 15 * v, 48, 0.035, 0.28, 6, 0.25, 0.6, 1.5); S = snare (200, 0.08, 0.15, 0.85, 800, 3.0); C = clap (0.09, 1000, 3, 0.01, 1.0, 2.0); Hc = hat (0.03, 1.15, 7500, 10000, 0.2, 0.5, 1.5); Ho = hat (0.18, 1.15, 7500, 10000, 0.2, 0.5, 1.5); X = rim (500, 1800); }
-        else          { K = kick (520 + 20 * v, 46, 0.04, 0.38, 9, 0.2, 0.7, 1.8); S = snare (215, 0.09, 0.16, 0.9, 700, 4.0); C = clap (0.1, 900, 4, 0.01, 0.9, 3.0); Hc = hat (0.035, 1.1, 6500, 9000, 0.2); Ho = hat (0.2, 1.1, 6500, 9000, 0.2); X = cowbell (1.0, 0.25); }
+    {   // 2 compases a 172 BPM. Cada bucle cambia de patrón (6 arquetipos), de golpes (2-3 variantes por instrumento) y de relleno; los golpes llevan fuerza distinta
+        const double beat = 60.0 / 172.0, step = beat / 4.0; const size_t N = (size_t) (beat * 8.0 * FS); Rng r (5000u + 131u * kit + 17u * v + 977u * vseed()++);
+        const int arch = v % 6, vv = v / 6;
+        std::vector<Buf> K, S, C, Hc; Buf Ho, X;
+        for (int j = 0; j < 3; ++j)
+        {
+            const double d = (double) j;
+            if (kit == 0) { K.push_back (kick (235 + 9 * v + 6 * d, 50 + d, 0.032 + 0.003 * d, 0.30 + 0.025 * v / 3.0 + 0.02 * d, 1.6 + 0.3 * d, 0.25, 0.7)); S.push_back (snare (180 + 6 * d, 0.06 + 0.01 * d, 0.16 + 0.01 * d, 1.0, 1100, 1.3 + 0.2 * d)); C.push_back (clap (0.12 - 0.01 * d, 1100 + 60 * d, 3, 0.011, 1.1, 1.3)); Hc.push_back (hat909 (0.035 + 0.008 * d, 7000 + 300 * d, 9000, 1.0)); }
+            else if (kit == 2) { K.push_back (kick (380 + 14 * v + 12 * d, 48, 0.035, 0.27 + 0.02 * d, 6 + 1.5 * d, 0.25, 0.6, 1.5, (int) d % 3)); S.push_back (snare (195 + 6 * d, 0.08, 0.15, 0.85, 800, 3.0 + 0.5 * d)); C.push_back (clap (0.09 + 0.01 * d, 1000 + 80 * d, 3, 0.01, 1.0, 2.0)); Hc.push_back (hat (0.03 + 0.006 * d, 1.15, 7500, 10000, 0.2, 0.5, 1.5)); }
+            else { K.push_back (kick (500 + 18 * v + 14 * d, 46, 0.04, 0.34 + 0.025 * d, 9 + 2 * d, 0.2, 0.7, 1.8, (int) d % 4)); S.push_back (snare (210 + 5 * d, 0.09, 0.16, 0.9, 700, 4.0 + 0.5 * d)); C.push_back (clap (0.1 + 0.01 * d, 900 + 70 * d, 4, 0.01, 0.9, 3.0)); Hc.push_back (hat (0.034 + 0.006 * d, 1.1, 6500, 9000, 0.2)); }
+        }
+        const double oh = 0.16 + 0.04 * (vv % 3);
+        if (kit == 0) { Ho = hat909 (0.26, 6500, 9000, 1.0); X = rim (480, 1700); } else if (kit == 2) { Ho = hat (oh, 1.15, 7500, 10000, 0.2, 0.5, 1.5); X = rim (500, 1800); } else { Ho = hat (oh + 0.02, 1.1, 6500, 9000, 0.2); X = cowbell (1.0, 0.25); }
+        Buf kk (N, 0.f), rest (N, 0.f); std::vector<size_t> kickAt;
+        auto at = [&] (int s) { return (size_t) (s * step * FS); };
+        auto hitK = [&] (int s, float g) { mixInto (kk, K[(size_t) (r.next() * 0.5 + 0.5) * 3 % 3], at (s), g); kickAt.push_back (at (s)); };
+        auto vel = [&] (float base, float spread) { return base * (1.f + spread * (float) r.next()); };
         for (int s = 0; s < 32; ++s)
         {
-            const size_t at = (size_t) (s * step * FS);
-            if (s % 4 == 0) mixInto (out, K, at, 1.0f);
-            if (s % 16 == 4 || s % 16 == 12) { mixInto (out, C, at, 0.8f); if (v % 3 == 0) mixInto (out, S, at, 0.5f); }
-            if (s % 4 == 2) mixInto (out, Ho, at, 0.5f);
-            if (v & 2) { if (s % 4 == 1 || s % 4 == 3) mixInto (out, Hc, at, 0.25f); } else if (s % 2 == 1) mixInto (out, Hc, at, 0.3f);
-            if ((v & 4) && s >= 28) mixInto (out, K, at, 0.8f);
-            if ((v & 8) && s % 16 == 10) mixInto (out, X, at, 0.4f);
-            if ((v & 1) && s % 8 == 7) mixInto (out, K, at, 0.7f);
+            const int sb = s % 16, bar = s / 16; const bool fillBar = bar == 1;
+            // bombo según el arquetipo
+            bool kk4 = sb % 4 == 0;
+            if (arch == 4) kk4 = sb == 0 || sb == 6 || sb == 10;   // medio tiempo con caja en 8
+            if (kk4 && ! (fillBar && sb >= 12 && (arch == 5 || (v & 1)))) hitK (s, sb == 0 ? 1.0f : vel (0.92f, 0.06f));
+            if (arch == 1 && sb == 14 && ! fillBar) hitK (s, 0.6f);
+            if (arch == 2 && (sb == 6 || sb == 14)) hitK (s, 0.62f);
+            if (arch == 3 && sb == 10) hitK (s, 0.75f);
+            if (arch == 5 && fillBar && sb >= 12) hitK (s, 0.7f + 0.08f * (sb - 12));
+            if (arch == 0 && (v & 8) && sb == 7) hitK (s, 0.6f);
+            // caja / clap
+            const bool backbeat = arch == 4 ? sb == 8 : (sb == 4 || sb == 12);
+            if (backbeat) { mixInto (rest, C[(size_t) (s / 4) % 3], at (s), vel (0.78f, 0.1f)); if (v % 3 == 0 || kit == 2) mixInto (rest, S[(size_t) (s / 4) % 3], at (s), vel (0.5f, 0.1f)); }
+            if (fillBar && sb >= 12 && (v % 2 == 1) && (sb % 2 == 0 || vv % 2)) mixInto (rest, S[(size_t) sb % 3], at (s), 0.35f + 0.1f * (sb - 12));
+            if (v % 4 == 1 && sb == 15 && bar == 0) mixInto (rest, S[1], at (s), 0.3f);   // nota fantasma
+            // hats
+            if (sb % 4 == 2) mixInto (rest, Ho, at (s), vel (0.5f, 0.1f));
+            static const float acc[4] { 0.0f, 0.32f, 0.0f, 0.24f };
+            if (vv % 2 == 0) { if (sb % 2 == 1) mixInto (rest, Hc[(size_t) s % 3], at (s), vel (0.3f, 0.2f)); }
+            else if (sb % 4 != 2) { const float g = sb % 4 == 0 ? 0.36f : acc[sb % 4]; if (g > 0 && (r.next() * 0.5 + 0.5) > 0.12) mixInto (rest, Hc[(size_t) s % 3], at (s), vel (g, 0.25f)); }
+            if ((v & 8) == 0 && (v % 5 == 2) && sb == 10) mixInto (rest, X, at (s), 0.4f);
+            if ((v & 8) && sb == 10) mixInto (rest, X, at (s), 0.4f);
         }
-        float pk = 0; for (auto x : out) pk = std::max (pk, std::abs (x)); if (pk > 1e-6f) for (auto& x : out) x = std::tanh (x / pk * 1.1f);
+        // bombeo: todo lo que no es bombo baja un poco cuando entra el bombo (se oye más limpio y con más empuje)
+        std::vector<float> duck (N, 1.f);
+        for (auto a : kickAt) for (size_t i = 0; i < (size_t) (0.14 * FS) && a + i < N; ++i) { const float d = 1.f - 0.45f * (float) std::exp (-(double) i / (0.045 * FS)); duck[a + i] = std::min (duck[a + i], d); }
+        Buf out (N); for (size_t i = 0; i < N; ++i) out[i] = kk[i] + rest[i] * duck[i];
+        float pk = 0; for (auto x : out) pk = std::max (pk, std::abs (x)); if (pk > 1e-6f) for (auto& x : out) x = std::tanh (x / pk * 1.15f);
         return out;
     }
-
 
     // ---------- Bucles extra (172 BPM, 2 compases) ----------
     inline Buf gated (const Buf& src, double secs)
@@ -582,9 +610,9 @@ namespace packdsp
         for (int i = 0; i < 14; ++i) out ("FX/FX Whoosh " + num (i + 1) + ".wav", sweepNoise (0.7 + 0.25 * (i % 6) + 0.1 * (i / 6), i % 2 == 1, 700 + i, 500, 12000));
         for (int i = 0; i < 12; ++i) out ("FX/FX Sirena " + num (i + 1) + ".wav", siren (1.5 + 0.4 * (i % 6) + 0.3 * (i / 6), mx (400, 700, V (i, 311)), mx (1200, 2200, V (i, 312)), mx (1.0, 3.0, V (i, 313))));
         // Bucles de batería 172 BPM (36)
-        for (int i = 0; i < 15; ++i) out ("Loops/Loop 909 172 BPM " + num (i + 1) + ".wav", drumLoop (0, i));
-        for (int i = 0; i < 15; ++i) out ("Loops/Loop Gabber 172 BPM " + num (i + 1) + ".wav", drumLoop (1, i));
-        for (int i = 0; i < 18; ++i) out ("Loops/Loop Hardcore 172 BPM " + num (i + 1) + ".wav", drumLoop (2, i));
+        for (int i = 0; i < 18; ++i) out ("Loops/Loop 909 172 BPM " + num (i + 1) + ".wav", drumLoop (0, i));
+        for (int i = 0; i < 18; ++i) out ("Loops/Loop Gabber 172 BPM " + num (i + 1) + ".wav", drumLoop (1, i));
+        for (int i = 0; i < 24; ++i) out ("Loops/Loop Hardcore 172 BPM " + num (i + 1) + ".wav", drumLoop (2, i));
         // Bucles extra (58)
         for (int i = 0; i < 12; ++i) out ("Loops/Hat Loop 909 172 BPM " + num (i + 1) + ".wav", hatLoop (0, i));
         for (int i = 0; i < 6; ++i) out ("Loops/Hat Loop Hardcore 172 BPM " + num (i + 1) + ".wav", hatLoop (1, i));

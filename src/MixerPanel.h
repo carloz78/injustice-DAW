@@ -49,8 +49,8 @@ protected:
     {
         using namespace theme;
         auto tracks = te::getAudioTracks (edit);
-        for (int i = 0; i < kN; ++i) drawStrip (g, stripR (i), i + first, i + first < tracks.size() ? tracks[i + first] : nullptr, clients[(size_t) i].l, clients[(size_t) i].r, false);
-        drawStrip (g, masterR(), -1, nullptr, masterClient.l, masterClient.r, true);
+        for (int i = 0; i < kN; ++i) drawStrip (g, stripR (i), i + first, i + first < tracks.size() ? tracks[i + first] : nullptr, clients[(size_t) i].l, clients[(size_t) i].r, false, clients[(size_t) i].pl, clients[(size_t) i].pr);
+        drawStrip (g, masterR(), -1, nullptr, masterClient.l, masterClient.r, true, masterClient.pl, masterClient.pr);
         // fila inferior: agregar canal + barra de desplazamiento
         auto pr = plusR(); g.setColour (panelHi); g.fillRoundedRectangle (pr, 7.f); icons::draw (g, icons::Plus, pr, text);
         auto sb = scrollR(); g.setColour (boxFill); g.fillRoundedRectangle (sb, 6.f);
@@ -142,7 +142,7 @@ protected:
 
 private:
     struct Hit { enum Kind { None, Fader, MasterFader, Pan, MasterPan } kind = None; int idx = -1; } active;
-    struct Client { te::LevelMeterPlugin* meter = nullptr; te::LevelMeasurer::Client client; float l = -100, r = -100; };
+    struct Client { te::LevelMeterPlugin* meter = nullptr; te::LevelMeasurer::Client client; float l = -100, r = -100, pl = -100, pr = -100; int hl = 0, hr = 0; };   // pl/pr: marca de pico que se queda un momento y luego cae
     te::Edit& edit; float lastY = 0; std::array<Client, kN> clients; Client masterClient; te::LevelMeterPlugin* masterMeter = nullptr;
     bool masterMuted = false; float preMute = 0.f, masterPeak = -100.f;
     te::Plugin* findLimiter() { for (auto* p : edit.getMasterPluginList().getPlugins()) if (dynamic_cast<InjLimiter*> (p)) return p; return nullptr; }
@@ -255,25 +255,31 @@ private:
         }
         if (masterMeter) { const float fall = 26.f / 30.f; masterPeak = std::max (masterPeak, std::max (masterClient.l, masterClient.r)); masterClient.l = std::max (masterClient.client.getAndClearAudioLevel (0).dB, masterClient.l - fall); masterClient.r = std::max (masterClient.client.getAndClearAudioLevel (1).dB, masterClient.r - fall); }
     }
+    static void holdPeak (float& pk, int& hold, float level)
+    {   // el pico se queda ~1 s y después cae despacio
+        if (level >= pk) { pk = level; hold = 30; } else if (hold > 0) --hold; else pk = std::max (level, pk - 14.f / 30.f);
+        if (pk < -90.f) pk = -100.f;
+    }
     void timerCallback() override
     {
         if (! isVisible()) return;
         const float fall = 26.f / 30.f;
         bool changed = false;
-        for (auto& c : clients) { if (! c.meter) continue; const float ol = c.l, orr = c.r; c.l = std::max (c.client.getAndClearAudioLevel (0).dB, c.l - fall); c.r = std::max (c.client.getAndClearAudioLevel (1).dB, c.r - fall); c.l = juce::jmax (c.l, -100.f); c.r = juce::jmax (c.r, -100.f); if (c.l != ol || c.r != orr) changed = true; }
-        const float ml0 = masterClient.l, mr0 = masterClient.r; pollMaster(); masterClient.l = juce::jmax (masterClient.l, -100.f); masterClient.r = juce::jmax (masterClient.r, -100.f); if (ml0 != masterClient.l || mr0 != masterClient.r) changed = true;
+        for (auto& c : clients) { if (! c.meter) continue; const float ol = c.l, orr = c.r; c.l = std::max (c.client.getAndClearAudioLevel (0).dB, c.l - fall); c.r = std::max (c.client.getAndClearAudioLevel (1).dB, c.r - fall); c.l = juce::jmax (c.l, -100.f); c.r = juce::jmax (c.r, -100.f); const float opl = c.pl, opr = c.pr; holdPeak (c.pl, c.hl, c.l); holdPeak (c.pr, c.hr, c.r); if (c.l != ol || c.r != orr || c.pl != opl || c.pr != opr) changed = true; }
+        const float ml0 = masterClient.l, mr0 = masterClient.r; pollMaster(); masterClient.l = juce::jmax (masterClient.l, -100.f); masterClient.r = juce::jmax (masterClient.r, -100.f); const float mpl = masterClient.pl, mpr = masterClient.pr; holdPeak (masterClient.pl, masterClient.hl, masterClient.l); holdPeak (masterClient.pr, masterClient.hr, masterClient.r); if (ml0 != masterClient.l || mr0 != masterClient.r || mpl != masterClient.pl || mpr != masterClient.pr) changed = true;
         if (changed) repaint();   // sin sonido no hay nada que redibujar
     }
 
     //---- dibujo plano y pastel (sin brillos decorativos)
-    void ledMeter (juce::Graphics& g, juce::Rectangle<float> r, float db)
+    void ledMeter (juce::Graphics& g, juce::Rectangle<float> r, float db, float pkDb = -100.f)
     {
         constexpr int nSeg = 28; const float h = (r.getHeight() - (nSeg - 1) * 2.f) / nSeg; const float pos = db <= -90 ? 0.f : dbToPos (db);
         for (int s = 0; s < nSeg; ++s)
         {
             const float y = r.getBottom() - (s + 1) * h - s * 2.f, segDb = posToDb ((float) s / nSeg); const bool lit = pos > (float) (s + 1) / nSeg - .5f / nSeg;
             juce::Colour on = segDb > -1.5f ? juce::Colour (0xffff6b6b) : (segDb > -9.f ? juce::Colour (0xffe6e052) : juce::Colour (0xff85f855));
-            g.setColour (lit ? on : juce::Colour (0xff282934)); g.fillRect (r.getX(), y, r.getWidth(), h);
+            const bool isPk = pkDb > -60.f && std::abs (dbToPos (pkDb) * (float) nSeg - ((float) s + .5f)) < .5f && ! lit;   // marca de pico (como en FL Studio)
+            g.setColour (lit ? on : (isPk ? on.withAlpha (.9f) : juce::Colour (0xff282934))); g.fillRect (r.getX(), y, r.getWidth(), h);
         }
     }
     // Tapa del fader (muestreada de la referencia): bulbo redondeado y claro arriba, línea guía oscura al centro,
@@ -316,7 +322,7 @@ private:
         using namespace theme; g.setColour (on ? (solo ? juce::Colour (0xfff2ecf9) : accent) : juce::Colour (0xff464352)); g.fillRoundedRectangle (r, 5.f);
         g.setColour (on ? (solo ? juce::Colour (0xff3b2c4b) : juce::Colours::white) : juce::Colour (0xffe4e4e9)); g.setFont (juce::FontOptions (14.f, juce::Font::bold)); g.drawText (label, r.toNearestInt(), juce::Justification::centred);
     }
-    void drawStrip (juce::Graphics& g, juce::Rectangle<float> s, int index, te::AudioTrack* t, float lvL, float lvR, bool master)
+    void drawStrip (juce::Graphics& g, juce::Rectangle<float> s, int index, te::AudioTrack* t, float lvL, float lvR, bool master, float pkL = -100.f, float pkR = -100.f)
     {
         using namespace theme;
         const bool empty = ! master && t == nullptr;
@@ -339,7 +345,7 @@ private:
         else { g.setColour (sig ? accentHi : juce::Colour (0xff637171)); g.fillEllipse (s.getCentreX() - 4.f, knobOf (s).getBottom() + 10.f, 8.f, 8.f); }
         auto fa = faderOf (s); faderTrack (g, fa);
         auto mr = meterOf (s); g.setColour (juce::Colour (0xff1b1b23)); g.fillRoundedRectangle (mr.expanded (3, 3), 3.f);
-        ledMeter (g, { mr.getX(), mr.getY(), 12, mr.getHeight() }, lvL); ledMeter (g, { mr.getX() + 16, mr.getY(), 12, mr.getHeight() }, lvR);
+        ledMeter (g, { mr.getX(), mr.getY(), 12, mr.getHeight() }, lvL, pkL); ledMeter (g, { mr.getX() + 16, mr.getY(), 12, mr.getHeight() }, lvR, pkR);
         const float pos = vp ? dbToPos (master && masterMuted ? preMute : vp->getVolumeDb()) : dbToPos (0.f);
         cap (g, fa.getCentreX(), fa.getBottom() - kCapH * .5f - (fa.getHeight() - kCapH) * pos, ! master && index == selected && ! empty);
         if (! master && ! empty && t)

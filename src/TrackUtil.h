@@ -154,4 +154,36 @@ namespace trackutil
         te::mergeInMidiSequence (*clip, conv, te::TimeDuration::fromSeconds (start.inSeconds()), te::MidiList::NoteAutomationType::none);
         return clip.get();
     }
+
+    // ---- Sidechain real: un compresor interno baja esta pista cada vez que suena otra (típico: el bombo baja el bajo) ----
+    inline te::CompressorPlugin* sidechainPlugin (te::AudioTrack& t)
+    {
+        for (auto* p : t.pluginList.getPlugins()) if (auto* c = dynamic_cast<te::CompressorPlugin*> (p)) if ((bool) c->state.getProperty ("injSidechain", false)) return c;
+        return nullptr;
+    }
+    inline te::AudioTrack* sidechainSource (te::Edit& e, te::AudioTrack& t)
+    {
+        if (auto* c = sidechainPlugin (t)) { const auto id = c->getSidechainSourceID(); for (auto* o : te::getAudioTracks (e)) if (o->itemID == id) return o; }
+        return nullptr;
+    }
+    inline double sidechainAmount (te::AudioTrack& t) { if (auto* c = sidechainPlugin (t)) return (double) c->state.getProperty ("injSCAmount", 0.7); return 0.0; }
+    inline double sidechainRelease (te::AudioTrack& t) { if (auto* c = sidechainPlugin (t)) return (double) c->state.getProperty ("injSCRelease", 120.0); return 0.0; }
+    inline void removeSidechain (te::AudioTrack& t) { if (auto* c = sidechainPlugin (t)) c->deleteFromParent(); }
+    // amount 0..1 = cuánto baja (1 = casi silencio); releaseMs = qué tan rápido vuelve el volumen
+    inline bool setSidechain (te::Edit& e, te::AudioTrack& dest, te::AudioTrack* src, double amount = 0.7, double releaseMs = 120.0)
+    {
+        if (src == nullptr || src == &dest) return false;
+        auto* c = sidechainPlugin (dest);
+        if (c == nullptr)
+        {
+            auto p = e.getPluginCache().createNewPlugin (te::CompressorPlugin::xmlTypeName, {}); c = dynamic_cast<te::CompressorPlugin*> (p.get()); if (c == nullptr) return false;
+            int at = 0; auto pl = dest.pluginList.getPlugins(); for (int k = 0; k < pl.size(); ++k) if (dynamic_cast<te::SamplerPlugin*> (pl[k].get()) || dynamic_cast<te::FourOscPlugin*> (pl[k].get()) || dynamic_cast<te::ExternalPlugin*> (pl[k].get())) at = k + 1;
+            dest.pluginList.insertPlugin (p, at, nullptr); c->state.setProperty ("injSidechain", true, nullptr);
+        }
+        amount = juce::jlimit (0.0, 1.0, amount); releaseMs = juce::jlimit (10.0, 300.0, releaseMs);
+        c->useSidechainTrigger = true; c->setSidechainSourceID (src->itemID); c->setThreshold (0.02f); c->setRatio ((float) (1.0 - 0.95 * amount));
+        c->attackMs.setParameter (0.5f, juce::sendNotification); c->releaseMs.setParameter ((float) releaseMs, juce::sendNotification); c->outputDb.setParameter (0.f, juce::sendNotification);
+        c->state.setProperty ("injSCAmount", amount, nullptr); c->state.setProperty ("injSCRelease", releaseMs, nullptr);
+        return true;
+    }
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include "SampleAnalysis.h"
 #include "Icons.h"
 #include <functional>
 #include <set>
@@ -328,8 +329,10 @@ private:
     void itemMenu (const juce::File& f, bool isDir, bool isRoot, int extra)
     {
         juce::PopupMenu m; const auto dir = isDir ? f : f.getParentDirectory();
+        const bool isAudio = ! isDir && (f.hasFileExtension ("wav;mp3;flac;ogg;aif;aiff"));
+        if (isAudio) { m.addItem (6, juce::String::fromUTF8 ("Detectar tempo y tono")); m.addSeparator(); }
         m.addItem (1, juce::String::fromUTF8 ("Importar samples aquí…")); m.addItem (2, juce::String::fromUTF8 ("Nueva subcarpeta…")); m.addSeparator(); m.addItem (3, juce::String::fromUTF8 ("Mostrar en el Explorador")); if (isRoot && extra < 0) m.addItem (4, juce::String::fromUTF8 ("Cambiar carpeta principal…")); if (isRoot && extra >= 0) m.addItem (5, juce::String::fromUTF8 ("Quitar de la lista (no borra nada)"));
-        m.showMenuAsync ({}, [this, f, dir, isRoot, extra] (int id) { if (id == 5 && extra >= 0 && extra < (int) extras.size()) { extras.erase (extras.begin() + extra); saveExtras(); rebuild(); return; } if (id == 1) importDialog (dir); else if (id == 2) newFolder (dir); else if (id == 3) f.revealToUser(); else if (id == 4 && isRoot) chooseRoot(); });
+        m.showMenuAsync ({}, [this, f, dir, isRoot, extra] (int id) { if (id == 6) { if (onMessage) onMessage (f.getFileNameWithoutExtension() + ": " + sampleanalysis::describe (sampleanalysis::analyse (f))); return; } if (id == 5 && extra >= 0 && extra < (int) extras.size()) { extras.erase (extras.begin() + extra); saveExtras(); rebuild(); return; } if (id == 1) importDialog (dir); else if (id == 2) newFolder (dir); else if (id == 3) f.revealToUser(); else if (id == 4 && isRoot) chooseRoot(); });
     }
     void addFolderDialog()
     {

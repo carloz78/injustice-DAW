@@ -7,7 +7,7 @@
 
 // Barra superior única: logo, menús, transporte, tempo/compás/posición, metrónomo, CPU/RAM (fila 1)
 // y vistas + herramientas (fila 2). Un solo componente con lista de zonas pulsables.
-class TopBars : public juce::Component, public juce::TooltipClient
+class TopBars : public juce::Component, public juce::TooltipClient, private juce::Timer
 {
 public:
     struct Btn { juce::String id; icons::Id icon; juce::String label; juce::Rectangle<float> r; bool enabled = true; };
@@ -15,7 +15,7 @@ public:
     std::function<void (const juce::String&)> onButton;
     std::function<void (double)> onBpm;
     std::function<void (int, int)> onSig;
-    bool metro = false, pianoMode = false, mixerOpen = false, stepsOpen = false, metersOpen = false, browserOpen = true, recArmed = false;
+    bool metro = false, pianoMode = false, mixerOpen = false, stepsOpen = false, metersOpen = false, perfOpen = false, browserOpen = true, recArmed = false;
     bool playing = false, looping = false, snap = true;
     juce::String quantLabel = "1/16", tool = "select", view = "playlist", crumb;
     bool timeMode = false; double bpm = 172.0, posBeats = 0.0, cpu = 0.0, ramMB = 0.0, ramTotalMB = 0.0;
@@ -23,6 +23,16 @@ public:
     static constexpr int kRow1 = 56, kRow2 = 46, kHeight = kRow1 + kRow2;
 
     TopBars() { setOpaque (true); }
+    // fundido de brillo al pasar el mouse sobre un botón (sube rápido, baja un poco más lento)
+    std::map<juce::String, float> hAmt;
+    float hoverAmt (const juce::String& id) const { auto it = hAmt.find (id); return it == hAmt.end() ? 0.f : it->second; }
+    void timerCallback() override
+    {
+        bool moving = false;
+        for (auto it = hAmt.begin(); it != hAmt.end();) { const float t = it->first == hoverId ? 1.f : 0.f, d = t - it->second; if (std::abs (d) < .02f) { it->second = t; if (t == 0.f) { it = hAmt.erase (it); continue; } } else { it->second += d * (d > 0 ? .4f : .22f); moving = true; } ++it; }
+        if (! hoverId.isEmpty() && hAmt.find (hoverId) == hAmt.end()) hAmt[hoverId] = 0.f;
+        if (moving) repaint(); else stopTimer();
+    }
     void resized() override { build(); repaint(); }
 
     //==============================================================================
@@ -135,7 +145,7 @@ private:
         if (bpmR.contains (p)) return "bpm";
         return {};
     }
-    void setHover (const juce::String& id) { if (id != hoverId) { hoverId = id; repaint(); } }
+    void setHover (const juce::String& id) { if (id != hoverId) { hoverId = id; if (! id.isEmpty() && hAmt.find (id) == hAmt.end()) hAmt[id] = 0.f; startTimerHz (60); repaint(); } }
 
     bool isOn (const Btn& b) const
     {
@@ -148,6 +158,7 @@ private:
         if (b.id == "view:mixer") return mixerOpen;
         if (b.id == "view:steps") return stepsOpen;
         if (b.id == "view:meters") return metersOpen;
+        if (b.id == "view:perf") return perfOpen;
         if (b.id == "layout") return browserOpen;
         if (b.id.startsWith ("view:")) return b.id.substring (5) == view;
         return false;
@@ -162,7 +173,7 @@ private:
         if (isRec) { if (on) fill = record.withAlpha (down ? .42f : .30f); else if (down) fill = juce::Colours::white.withAlpha (.18f); else if (hot) fill = juce::Colours::white.withAlpha (.09f); }
         else if (on) fill = down ? accent.darker (.25f) : (hot ? accent.brighter (.12f) : accent);
         else if (down) fill = juce::Colours::white.withAlpha (.20f);
-        else if (hot) fill = juce::Colours::white.withAlpha (.10f);
+        else if (hoverAmt (b.id) > .01f && b.enabled) fill = juce::Colours::white.withAlpha (.10f * hoverAmt (b.id));
         if (! fill.isTransparent()) { g.setColour (fill); g.fillRoundedRectangle (r.reduced (1.f), 8.f); }
         if (isRec && on) { g.setColour (record.withAlpha (.9f)); g.drawRoundedRectangle (r.reduced (1.5f), 8.f, 1.5f); }
 
@@ -219,7 +230,7 @@ private:
         auto S = [&] { items.push_back ({}); };
         if (name == "File") { I ("new", "Proyecto nuevo\tCtrl+N"); S(); for (int k = 0; k < ideas::kNumStyles; ++k) items.push_back ({ "tpl:" + juce::String (k), juce::String::fromUTF8 ("Plantilla: ") + ideas::styleName (k) + " (" + juce::String ((int) ideas::styleBpm (k)) + " BPM)", false, true }); S(); I ("open", "Abrir…\tCtrl+O"); I ("save", "Guardar\tCtrl+S"); I ("saveas", "Guardar como…\tCtrl+Mayús+S"); I ("savesamples", "Guardar con los samples…"); S(); I ("importmidi", "Importar MIDI…"); I ("export", "Exportar audio…\tCtrl+E"); S(); I ("quit", "Salir"); }
         else if (name == "Edit") { I ("undo", "Deshacer\tCtrl+Z"); I ("redo", "Rehacer\tCtrl+Y"); S(); I ("dup", "Duplicar clip\tCtrl+D"); I ("del", "Eliminar clip\tSupr"); }
-        else if (name == "View") { I ("view:playlist", "Playlist\tF5", view == "playlist" && ! pianoMode); I ("view:mixer", "Mixer\tF9", mixerOpen); I ("view:piano", "Piano Roll\tF7", pianoMode); I ("view:steps", "Step Sequencer\tF6", stepsOpen); I ("view:meters", "Medidores\tF11", metersOpen); S(); I ("layout", "Explorador de samples\tF8", browserOpen); }
+        else if (name == "View") { I ("view:playlist", "Playlist\tF5", view == "playlist" && ! pianoMode); I ("view:mixer", "Mixer\tF9", mixerOpen); I ("view:piano", "Piano Roll\tF7", pianoMode); I ("view:steps", "Step Sequencer\tF6", stepsOpen); I ("view:meters", "Medidores\tF11", metersOpen); I ("view:perf", "Modo ensayo\tF12", perfOpen); S(); I ("layout", "Explorador de samples\tF8", browserOpen); }
         else if (name == "Options") { I ("audio", "Ajustes de audio…"); S(); I ("metro", "Metrónomo", metro); I ("loop", "Repetir en bucle", looping); I ("snap", "Ajustar a la cuadrícula", snap); }
         else if (name == "Tools") { I ("plugins", "Lista de plugins VST3…\tF10"); I ("ideas", "Generador de ideas…\tCtrl+G"); S(); I ("tool:select", "Herramienta: seleccionar", tool == "select"); I ("tool:pencil", "Herramienta: lápiz", tool == "pencil"); I ("tool:brush", "Herramienta: pincel", tool == "brush"); I ("tool:auto", "Herramienta: automatización", tool == "auto"); I ("tool:cut", "Herramienta: cortar", tool == "cut"); I ("tool:trim", "Herramienta: recortar", tool == "trim"); }
         else if (name == "Help") { I ("help", "Ayuda y atajos\tF1"); I ("about", "Acerca de INJUSTICE DAW"); }

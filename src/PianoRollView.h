@@ -11,11 +11,12 @@ namespace te = tracktion;
 class PianoRollView : public juce::Component, public juce::TooltipClient, private juce::Timer
 {
 public:
-    static constexpr int kKeyW = 96, kBarH = 52, kRulerH = 32, kTop = kBarH + kRulerH, kVelH = 132, kNoteH = 20;
+    static constexpr int kKeyW = 96, kBarH = 52, kRulerH = 32, kTop = kBarH + kRulerH;
+    int kVelH = 132, kNoteH = 20;   // alto del carril de velocity y de cada nota (se cambian con el zoom vertical)
     juce::String tool = "pencil"; double quantum = 0.25; bool snap = true;   // 0.25 beats = 1/16
     std::function<void()> onClipChanged; std::function<void (const juce::String&)> onMessage; std::function<void (te::AudioTrack*, int)> onAudition;   // suena la nota en la pista del clip
 
-    explicit PianoRollView (te::Edit& e) : edit (e) { setWantsKeyboardFocus (true); setOpaque (true); startTimerHz (30); scrollY = (127 - 76) * kNoteH; }
+    explicit PianoRollView (te::Edit& e) : edit (e) { setWantsKeyboardFocus (true); setOpaque (true); startTimerHz (60); scrollY = (127 - 76) * kNoteH; }
 
     void setClip (te::MidiClip* c) { clip = c; sel = nullptr; selSet.clear(); scrollX = 0; if (clip) { auto n = clip->getSequence().getNotes(); scrollY = n.size() ? (127 - n[0]->getNoteNumber() - 5) * (double) kNoteH : (127 - 76) * (double) kNoteH; } repaint(); }
     te::MidiClip* getClip() const { return clip.get(); }
@@ -64,10 +65,16 @@ public:
             g.setColour (pink.withAlpha (.16f)); g.fillRect (r); g.setColour (pink.withAlpha (.4f)); g.drawRect (r, 1.f);
         }
         for (auto* n : clip->getSequence().getNotes()) drawNote (g, *n);
-        if (mode == Mode::rubber && ! rubber.isEmpty()) { g.setColour (accent.withAlpha (.18f)); g.fillRect (rubber); g.setColour (accentHi.withAlpha (.9f)); g.drawRect (rubber, 1.f); }
+        if (cutShown && tool == "cut" && cutGX >= kKeyW)
+        {
+            const juce::Colour blue (0xff3da5ff); const float x = cutGX, w = 1.4f + juce::jmin (2.5f, std::abs (cutGV) / 500.f), y0 = (float) kTop, hh = (float) (gb - kTop);
+            if (std::abs (cutGV) > 30.f) { const float tail = juce::jlimit (-60.f, 60.f, -cutGV * .045f); g.setColour (blue.withAlpha (.16f)); g.fillRect (std::min (x, x + tail), y0, std::abs (tail), hh); }
+            g.setColour (blue.withAlpha (.2f)); g.fillRect (x - w * 3.f, y0, w * 6.f, hh); g.setColour (blue.withAlpha (.45f)); g.fillRect (x - w * 1.5f, y0, w * 3.f, hh); g.setColour (juce::Colours::white); g.fillRect (x - w * .5f, y0, w, hh);
+        }
+        if (mode == Mode::rubber && ! rubber.isEmpty()) { g.setColour (juce::Colour (0xffff3b45).withAlpha (.16f)); g.fillRect (rubber); g.setColour (juce::Colour (0xffff3b45)); g.drawRect (rubber, 1.5f); }
         g.restoreState();
 
-        drawRuler (g, W); drawKeyboard (g, gb); drawVelocity (g, W, H, gb);
+        drawRuler (g, W); drawKeyboard (g, gb); if (kVelH > 0) drawVelocity (g, W, H, gb);
 
         const double hb = timeToBeats (edit.getTransport().getPosition().inSeconds()) - clipStartBeat();
         const float px = bx (hb);
@@ -185,14 +192,25 @@ public:
     }
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
+        if (e.mods.isAltDown() || e.x < kKeyW) { zoomV (e.y, w.deltaY); repaint(); return; }
+        if (e.y >= kBarH && e.y < kTop) { zoomH ((float) e.x, w.deltaY); repaint(); return; }   // rueda sobre la regla = zoom horizontal
         if (e.mods.isCtrlDown() || e.mods.isCommandDown()) { const double a = xb ((float) e.x); ppb = juce::jlimit (6.0, 400.0, ppb * (1.0 + w.deltaY * .6)); scrollX = juce::jmax (0.0, a * ppb - (e.x - kKeyW - 8)); }
         else if (e.mods.isShiftDown() || std::abs (w.deltaX) > std::abs (w.deltaY)) scrollX = juce::jmax (0.0, scrollX - (w.deltaX != 0 ? w.deltaX : w.deltaY) * 600.0);
         else scrollY = juce::jlimit (0.0, (double) (128 * kNoteH - (gridBottom() - kTop)), scrollY - w.deltaY * 400.0);
         repaint();
     }
+    void zoomH (float x, double d) { const double base = ppbTarget > 0.f ? (double) ppbTarget : ppb; ppbTarget = (float) juce::jlimit (6.0, 400.0, base * (1.0 + d * .6)); ppbAnchor = x; }
+    void zoomV (float y, double d)
+    {
+        const double a = (y - kTop + scrollY) / kNoteH; kNoteH = juce::jlimit (8, 48, (int) std::lround (kNoteH * (1.0 + d * .5) + (d > 0 ? 1 : -1)));
+        scrollY = juce::jlimit (0.0, (double) std::max (0, 128 * kNoteH - (gridBottom() - kTop)), a * kNoteH - (y - kTop));
+    }
     bool keyPressed (const juce::KeyPress& k) override
     {
         if (! clip) return false;
+        { const int kc = k.getKeyCode(); const bool ctl = k.getModifiers().isCtrlDown() || k.getModifiers().isCommandDown();
+          if (ctl && (kc == '+' || kc == '=' || kc == '-' || kc == '_')) { const double d = (kc == '+' || kc == '=') ? .25 : -.25; if (k.getModifiers().isAltDown()) zoomV ((float) (kTop + (gridBottom() - kTop) / 2), d); else zoomH ((float) (kKeyW + (getWidth() - kKeyW) / 2), d); repaint(); return true; }
+          if (! ctl && ! audition::typingPiano && (kc == 'L' || kc == 'l')) { kVelH = kVelH > 0 ? 0 : 132; repaint(); return true; } }
         const bool ctrl = k.getModifiers().isCtrlDown() || k.getModifiers().isCommandDown(), shift = k.getModifiers().isShiftDown(); const int c = k.getKeyCode();
         if (ctrl && (c == 'A' || c == 'a')) { selSet.clear(); for (auto* n : clip->getSequence().getNotes()) selSet.push_back (n->state); repaint(); return true; }
         if (ctrl && (c == 'C' || c == 'c')) { copySel(); return true; }
@@ -264,6 +282,7 @@ private:
     te::MidiNote* noteOf (const juce::ValueTree& v) const { if (clip) for (auto* n : clip->getSequence().getNotes()) if (n->state == v) return n; return nullptr; }
     void audition (int pitch) { if (onAudition && clip && pitch >= 0) if (auto* t = dynamic_cast<te::AudioTrack*> (clip->getTrack())) onAudition (t, pitch); }
     te::Edit& edit; te::MidiClip::Ptr clip; te::MidiNote* sel = nullptr; Mode mode = Mode::none;
+    float cutGX = -1.f, cutGV = 0.f, cutTarget = -1.f, ppbTarget = -1.f, ppbAnchor = 0.f; bool cutShown = false;
     double ppb = 50.0, scrollX = 0, scrollY = 0, anchor = 0, grab = 0, lastLen = 0.25; int lastVel = 100, litKey = -1;
 
     static bool isBlack (int p) { switch (p % 12) { case 1: case 3: case 6: case 8: case 10: return true; default: return false; } }
@@ -271,7 +290,17 @@ private:
     {
         if (! isVisible()) return;
         const double pos = edit.getTransport().getPosition().inSeconds();
-        if (pos != lastPos) { lastPos = pos; repaint(); }   // el cabezal solo se mueve con la reproducci\xc3\xb3n o al hacer seek
+        if (pos != lastPos) { lastPos = pos; repaint(); }
+        if (cutShown && tool == "cut" && cutTarget >= 0.f)   // la guía de corte es un resorte: se desliza y se asienta
+        {
+            if (cutGX < 0.f) { cutGX = cutTarget; cutGV = 0.f; }
+            else { const float dt = 1.f / 60.f, k = 520.f, c = 2.f * std::sqrt (k) * 0.55f; cutGV += (k * (cutTarget - cutGX) - c * cutGV) * dt; cutGX += cutGV * dt; if (std::abs (cutTarget - cutGX) < .25f && std::abs (cutGV) < 4.f) { cutGX = cutTarget; cutGV = 0.f; } else repaint(); }
+        }
+        if (ppbTarget > 0.f)   // zoom horizontal suave
+        {
+            const double a = xb (ppbAnchor); ppb += (ppbTarget - ppb) * .32; if (std::abs (ppb - ppbTarget) < .05) { ppb = ppbTarget; ppbTarget = -1.f; }
+            scrollX = juce::jmax (0.0, a * ppb - (ppbAnchor - kKeyW - 8)); repaint();
+        }   // el cabezal solo se mueve con la reproducci\xc3\xb3n o al hacer seek
     }
     double lastPos = -1.0;
     void seek (int x) { auto b = std::max (0.0, xb ((float) x)) + clipStartBeat(); edit.getTransport().setPosition (te::TimePosition::fromSeconds (beatsToTime (q (b)))); }
@@ -300,8 +329,8 @@ private:
     {
         juce::Rectangle<float> r (bx (n.getStartBeat().inBeats()), ny (n.getNoteNumber()) + 1.f, std::max (3.f, (float) (n.getLengthBeats().inBeats() * ppb) - 1.f), (float) kNoteH - 2.f);
         const bool s = isSel (n);
-        g.setColour (s ? juce::Colour (0xffd58cff) : juce::Colour (0xffa044d7)); g.fillRect (r);
-        g.setColour (s ? juce::Colours::white : juce::Colour (0xff8a32bd)); g.drawRect (r, 1.f);
+        g.setColour (s ? juce::Colour (0xffff6b73) : juce::Colour (0xffa044d7)); g.fillRect (r);
+        g.setColour (s ? juce::Colour (0xffff3b45) : juce::Colour (0xff8a32bd)); g.drawRect (r, s ? 2.f : 1.f);
     }
     void drawRuler (juce::Graphics& g, int W)
     {
@@ -367,7 +396,7 @@ private:
         add ("pencil", "Lápiz: clic para poner una nota, arrastra para moverla; clic derecho la borra", icons::Pencil); add ("brush", "Pincel: arrastra para pintar varias notas", icons::Brush); add ("select", "Seleccionar: arrastra un rectángulo para elegir varias notas (Ctrl+A todas)", icons::Select); add ("erase", "Borrador", icons::Eraser); add ("cut", "Cortar una nota en dos", icons::Scissors);
         x += 10; v.push_back ({ "quant", juce::String::fromUTF8 ("Cuantización"), icons::Chevron, { x, y, 92, 36 }, }); x += 100;
         v.push_back ({ "scale", "Escala", icons::Chevron, { x, y, 132, 36 } }); x += 148;
-        add ("import", "Importar archivo MIDI a este clip", icons::OpenFile); add ("export", "Exportar este clip como archivo MIDI", icons::Export); add ("humanize", "Humanizar: mueve un poco el tiempo y la fuerza de las notas", icons::Sliders); add ("quantize", "Cuantizar: ajusta las notas a la cuadrícula (Q)", icons::Magnet);
+        add ("import", "Importar archivo MIDI a este clip", icons::OpenFile); add ("export", "Exportar este clip como archivo MIDI", icons::Export); add ("humanize", "Humanizar: mueve un poco el tiempo y la fuerza de las notas", icons::Sliders); add ("quantize", "Cuantizar: ajusta las notas a la cuadrícula (Q)", icons::Magnet); add ("tools", "Herramientas de notas: acordes, arpegio, legato, voltear, cortar en partes...", icons::Stretch);
         return v;
     }
     juce::String quantLabel() const { return snap ? (quantum >= 1.0 ? "1/4" : quantum >= .5 ? "1/8" : quantum >= .25 ? "1/16" : "1/32") : juce::String ("Libre"); }
@@ -395,7 +424,7 @@ private:
         {
             if (b.id == "select" || b.id == "pencil" || b.id == "brush" || b.id == "erase" || b.id == "cut") { tool = b.id; repaint(); }
             else if (b.id == "quant") quantMenu (b.r); else if (b.id == "scale") scaleMenu (b.r);
-            else if (b.id == "import") importMidi(); else if (b.id == "export") exportMidi(); else if (b.id == "humanize") humanize(); else if (b.id == "quantize") quantizeNotes();
+            else if (b.id == "import") importMidi(); else if (b.id == "export") exportMidi(); else if (b.id == "humanize") humanize(); else if (b.id == "quantize") quantizeNotes(); else if (b.id == "tools") toolsMenu (b.r);
             return;
         }
     }
@@ -458,6 +487,7 @@ private:
     void mouseMove (const juce::MouseEvent& e) override
     {
         hover = e.position; if (e.y < kBarH || hoverWas) repaint (0, 0, getWidth(), kBarH); hoverWas = e.y < kBarH;
+        cutShown = clip != nullptr && tool == "cut" && e.x >= kKeyW && e.y >= kTop && e.y < gridBottom(); if (cutShown) { cutTarget = bx (q (xb ((float) e.x))); repaint(); }
         juce::MouseCursor cur = juce::MouseCursor::NormalCursor;
         if (clip && e.y >= kTop && e.y < gridBottom())
         {
@@ -467,7 +497,7 @@ private:
         }
         setMouseCursor (cur);
     }
-    void mouseExit (const juce::MouseEvent&) override { hover = { -1, -1 }; repaint (0, 0, getWidth(), kBarH); }
+    void mouseExit (const juce::MouseEvent&) override { hover = { -1, -1 }; if (cutShown) { cutShown = false; cutGX = -1.f; repaint(); } else repaint (0, 0, getWidth(), kBarH); }
 public:
     juce::String getTooltip() override { for (auto& b : btns()) if (b.r.contains (hover)) return b.tip; return {}; }
     // --- acciones sobre el clip (públicas para las pruebas)
@@ -479,6 +509,98 @@ public:
         clip->getSequence().addNote (pitch, te::BeatPosition::fromBeats (at), te::BeatDuration::fromBeats (s0 + l0 - at), vel, 0, um); if (onClipChanged) onClipChanged(); repaint();
     }
     // Ajusta el inicio de cada nota a la rejilla actual (la longitud se conserva). Devuelve cuántas notas se movieron.
+    // ---- herramientas de notas al estilo FL Studio: actúan sobre las notas elegidas (o todas si no hay ninguna) ----
+    struct NoteData { int pitch; double start, len; int vel; };
+    std::vector<NoteData> targetNotes (std::vector<te::MidiNote*>& ptrs) const
+    {
+        ptrs = selNotes(); if (ptrs.empty()) for (auto* n : clip->getSequence().getNotes()) ptrs.push_back (n);
+        std::vector<NoteData> d; for (auto* n : ptrs) d.push_back ({ n->getNoteNumber(), n->getStartBeat().inBeats(), n->getLengthBeats().inBeats(), n->getVelocity() });
+        std::sort (d.begin(), d.end(), [] (const NoteData& a, const NoteData& b) { return a.start < b.start || (a.start == b.start && a.pitch < b.pitch); });
+        return d;
+    }
+    // op: chord:<intervalos separados por coma> arp:up|down|updown|random strum legato staccato chop:N flipH flipV oct:+12 oct:-12 velrand crescendo decrescendo glue
+    int noteTool (const juce::String& op)
+    {
+        if (! clip) return 0; std::vector<te::MidiNote*> ptrs; auto d = targetNotes (ptrs); if (d.empty()) { if (onMessage) onMessage ("No hay notas"); return 0; }
+        auto* um = &edit.getUndoManager(); um->beginNewTransaction (juce::String::fromUTF8 ("Herramienta de notas")); juce::Random rnd (42);
+        std::vector<NoteData> out; const double q = quantum;
+        if (op.startsWith ("chord:"))
+        {
+            juce::StringArray iv; iv.addTokens (op.fromFirstOccurrenceOf (":", false, false), ",", ""); out = d;
+            for (auto& n : d) for (auto& t : iv) { const int st = t.getIntValue(); if (st != 0) out.push_back ({ juce::jlimit (0, 127, n.pitch + st), n.start, n.len, n.vel }); }
+        }
+        else if (op.startsWith ("arp:"))
+        {   // agrupa por inicio, cada grupo de 2+ notas se reparte en pasos de la cuadrícula dentro de su duración
+            const auto mode = op.substring (4); size_t i = 0;
+            while (i < d.size())
+            {
+                size_t j = i; while (j < d.size() && std::abs (d[j].start - d[i].start) < 1e-3) ++j;
+                std::vector<NoteData> grp (d.begin() + (long) i, d.begin() + (long) j); i = j;
+                if (grp.size() < 2) { out.push_back (grp[0]); continue; }
+                std::vector<int> order; for (size_t k = 0; k < grp.size(); ++k) order.push_back ((int) k);
+                if (mode == "down") std::reverse (order.begin(), order.end());
+                else if (mode == "updown") for (int k = (int) grp.size() - 2; k >= 1; --k) order.push_back (k);
+                else if (mode == "random") for (int k = (int) order.size() - 1; k > 0; --k) std::swap (order[(size_t) k], order[(size_t) rnd.nextInt (k + 1)]);
+                const double total = std::max (q, grp[0].len); const int steps = std::max (1, (int) std::lround (total / q));
+                for (int k = 0; k < steps; ++k) { const auto& src = grp[(size_t) order[(size_t) k % order.size()]]; out.push_back ({ src.pitch, grp[0].start + k * q, q * 0.95, src.vel }); }
+            }
+        }
+        else if (op == "strum")
+        {   // las notas simultáneas entran escalonadas
+            size_t i = 0; while (i < d.size()) { size_t j = i; while (j < d.size() && std::abs (d[j].start - d[i].start) < 1e-3) ++j;
+                for (size_t k = i; k < j; ++k) { auto n = d[k]; const double off = (double) (k - i) * std::min (0.125, q * 0.5); n.start += off; n.len = std::max (0.05, n.len - off); out.push_back (n); } i = j; }
+        }
+        else if (op == "legato")
+        {
+            out = d; for (size_t a = 0; a < out.size(); ++a) { double nxt = -1; for (size_t b = 0; b < out.size(); ++b) if (out[b].start > out[a].start + 1e-4 && (nxt < 0 || out[b].start < nxt)) nxt = out[b].start; if (nxt > 0) out[a].len = nxt - out[a].start; }
+        }
+        else if (op == "staccato") { out = d; for (auto& n : out) n.len = std::max (0.03, n.len * 0.5); }
+        else if (op.startsWith ("chop:")) { const int parts = std::max (2, op.fromFirstOccurrenceOf (":", false, false).getIntValue()); for (auto& n : d) for (int k = 0; k < parts; ++k) out.push_back ({ n.pitch, n.start + n.len * k / parts, n.len / parts * 0.95, n.vel }); }
+        else if (op == "flipH") { double t0 = 1e9, t1 = 0; for (auto& n : d) { t0 = std::min (t0, n.start); t1 = std::max (t1, n.start + n.len); } out = d; for (auto& n : out) n.start = t0 + t1 - (n.start + n.len); }
+        else if (op == "flipV") { int lo = 127, hi = 0; for (auto& n : d) { lo = std::min (lo, n.pitch); hi = std::max (hi, n.pitch); } out = d; for (auto& n : out) n.pitch = lo + hi - n.pitch; }
+        else if (op.startsWith ("oct:")) { const int st = op.fromFirstOccurrenceOf (":", false, false).getIntValue(); out = d; for (auto& n : out) n.pitch = juce::jlimit (0, 127, n.pitch + st); }
+        else if (op == "randpitch")
+        {   // cambia el tono de cada nota a otro de la escala marcada (o de la menor natural si no hay escala), cerca del original
+            const int rt = scaleRoot() >= 0 ? scaleRoot() : 0; out = d;
+            for (auto& n : out) { for (int tries = 0; tries < 30; ++tries) { const int p2 = juce::jlimit (0, 127, n.pitch + rnd.nextInt (13) - 6); if (scaleRoot() >= 0 ? scaleKind (p2) != 0 : (((p2 - rt) % 12 + 12) % 12 == 0 || ((p2 - rt) % 12 + 12) % 12 == 2 || ((p2 - rt) % 12 + 12) % 12 == 3 || ((p2 - rt) % 12 + 12) % 12 == 5 || ((p2 - rt) % 12 + 12) % 12 == 7 || ((p2 - rt) % 12 + 12) % 12 == 8 || ((p2 - rt) % 12 + 12) % 12 == 10)) { n.pitch = p2; break; } } }
+        }
+        else if (op == "toscale")
+        {   // lleva las notas que quedan fuera de la escala al tono permitido más cercano
+            out = d; if (scaleRoot() < 0) { if (onMessage) onMessage ("Elige primero una escala"); return 0; }
+            for (auto& n : out) for (int dd = 0; dd < 7; ++dd) { if (scaleKind (n.pitch + dd) != 0 && n.pitch + dd <= 127) { n.pitch += dd; break; } if (scaleKind (n.pitch - dd) != 0 && n.pitch - dd >= 0) { n.pitch -= dd; break; } }
+        }
+        else if (op == "invert") { out = d; auto lo = std::min_element (out.begin(), out.end(), [] (const NoteData& a, const NoteData& b) { return a.pitch < b.pitch; }); lo->pitch = std::min (127, lo->pitch + 12); }
+        else if (op.startsWith ("stretch:")) { const double f = op.fromFirstOccurrenceOf (":", false, false).getDoubleValue(); double t0 = 1e9; for (auto& n : d) t0 = std::min (t0, n.start); out = d; for (auto& n : out) { n.start = t0 + (n.start - t0) * f; n.len = std::max (0.03, n.len * f); } }
+        else if (op == "velrand") { out = d; for (auto& n : out) n.vel = 50 + rnd.nextInt (78); }
+        else if (op == "crescendo" || op == "decrescendo") { out = d; const double t0 = d.front().start, t1 = std::max (t0 + 1e-3, d.back().start); for (auto& n : out) { double f = (n.start - t0) / (t1 - t0); if (op == "decrescendo") f = 1.0 - f; n.vel = (int) std::lround (40 + 87 * f); } }
+        else if (op == "glue")
+        {   // une notas del mismo tono que se tocan o se solapan
+            std::sort (d.begin(), d.end(), [] (const NoteData& a, const NoteData& b) { return a.pitch < b.pitch || (a.pitch == b.pitch && a.start < b.start); });
+            for (auto& n : d) { if (! out.empty() && out.back().pitch == n.pitch && n.start <= out.back().start + out.back().len + 1e-3) out.back().len = std::max (out.back().len, n.start + n.len - out.back().start); else out.push_back (n); }
+        }
+        else return 0;
+        sel = nullptr; selSet.clear(); for (auto* n : ptrs) clip->getSequence().removeNote (*n, um);
+        for (auto& n : out) { auto* nn = clip->getSequence().addNote (n.pitch, te::BeatPosition::fromBeats (n.start), te::BeatDuration::fromBeats (n.len), juce::jlimit (1, 127, n.vel), 0, um); if (nn != nullptr) selSet.push_back (nn->state); }
+        if (onClipChanged) onClipChanged(); repaint(); if (onMessage) onMessage (juce::String (out.size()) + " notas"); return (int) out.size();
+    }
+    void toolsMenu (juce::Rectangle<float> r)
+    {
+        juce::PopupMenu m, chords, arps; struct C { const char* n; const char* iv; };
+        static const C cs[] { { "Mayor", "0,4,7" }, { "Menor", "0,3,7" }, { "Quinta (power)", "0,7" }, { "Octava", "0,12" }, { "Séptima", "0,4,7,10" }, { "Menor 7", "0,3,7,10" }, { "Mayor 7", "0,4,7,11" }, { "sus2", "0,2,7" }, { "sus4", "0,5,7" }, { "Disminuido", "0,3,6" }, { "Aumentado", "0,4,8" } };
+        for (int i = 0; i < (int) std::size (cs); ++i) chords.addItem (100 + i, juce::String::fromUTF8 (cs[i].n));
+        arps.addItem (200, "Arriba"); arps.addItem (201, "Abajo"); arps.addItem (202, "Arriba y abajo"); arps.addItem (203, "Aleatorio");
+        m.addSubMenu (juce::String::fromUTF8 ("Estampar acorde"), chords); m.addSubMenu ("Arpegiar", arps); m.addItem (3, "Strum (escalonar acorde)"); m.addSeparator();
+        m.addItem (4, "Legato"); m.addItem (5, "Staccato"); m.addItem (6, "Unir notas iguales"); m.addItem (7, "Cortar en 2"); m.addItem (8, "Cortar en 4"); m.addItem (9, "Cortar en 8"); m.addSeparator();
+        m.addItem (10, "Voltear en el tiempo"); m.addItem (11, "Voltear de agudo a grave"); m.addItem (12, "Octava arriba"); m.addItem (13, "Octava abajo"); m.addSeparator();
+        m.addItem (14, "Velocidad aleatoria"); m.addItem (15, "Crescendo"); m.addItem (16, "Decrescendo"); m.addSeparator();
+        m.addItem (17, "Tonos aleatorios (en la escala)"); m.addItem (18, "Ajustar notas a la escala"); m.addItem (19, "Invertir el acorde"); m.addItem (20, "Estirar x2 (m\xc3\xa1s lento)"); m.addItem (21, "Encoger x0.5 (m\xc3\xa1s r\xc3\xa1pido)");
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (r.toNearestInt())), [this] (int c)
+        {
+            static const char* iv[] { "0,4,7", "0,3,7", "0,7", "0,12", "0,4,7,10", "0,3,7,10", "0,4,7,11", "0,2,7", "0,5,7", "0,3,6", "0,4,8" };
+            static const char* ar[] { "up", "down", "updown", "random" }; static const char* op[] { "", "", "", "strum", "legato", "staccato", "glue", "chop:2", "chop:4", "chop:8", "flipH", "flipV", "oct:12", "oct:-12", "velrand", "crescendo", "decrescendo", "randpitch", "toscale", "invert", "stretch:2", "stretch:0.5" };
+            if (c >= 100 && c < 100 + 11) noteTool (juce::String ("chord:") + iv[c - 100]); else if (c >= 200 && c < 204) noteTool (juce::String ("arp:") + ar[c - 200]); else if (c >= 3 && c <= 21) noteTool (op[c]);
+        });
+    }
     int quantizeNotes()
     {
         if (! clip) return 0; auto* um = &edit.getUndoManager(); um->beginNewTransaction ("Cuantizar"); const double q = quantum; int moved = 0;
