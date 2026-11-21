@@ -8,7 +8,7 @@ namespace cursors
     {
         constexpr int N = 40; juce::Image img (juce::Image::ARGB, N, N, true); juce::Graphics g (img);
         const float s = N * 0.62f, b0 = (N - s) * 0.5f; const juce::Rectangle<float> r (0.f, 0.f, (float) N, (float) N);
-        for (int dx = -1; dx <= 1; ++dx) for (int dy = -1; dy <= 1; ++dy) if (dx != 0 || dy != 0) icons::draw (g, id, r.translated ((float) dx * 1.2f, (float) dy * 1.2f), juce::Colour (0xff101018));
+        for (int dx = -1; dx <= 1; ++dx) for (int dy = -1; dy <= 1; ++dy) if (dx != 0 || dy != 0) icons::draw (g, id, r.translated ((float) dx * 1.2f, (float) dy * 1.2f), juce::Colour (0xff141414));
         icons::draw (g, id, r, juce::Colours::white);
         return juce::MouseCursor (img, juce::roundToInt (b0 + hx * s), juce::roundToInt (b0 + hy * s));
     }

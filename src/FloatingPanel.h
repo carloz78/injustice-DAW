@@ -74,12 +74,13 @@ public:
         using namespace theme;
         g.addTransform (juce::AffineTransform::scale (scale));
         auto r = juce::Rectangle<float> (0, 0, (float) designW, (float) designH).reduced (1);
-        g.setColour (juce::Colour (0xff17181f)); g.fillRoundedRectangle (r.translated (0, 3), 12.f);
-        g.setColour (juce::Colour (0xff252731)); g.fillRoundedRectangle (r, 10.f);
-        g.setColour (barLine); g.drawRoundedRectangle (r, 10.f, 1.2f);
+        g.setColour (juce::Colour (0xff1b1b1b)); 
+        g.setColour (juce::Colour (0xff2b2b2b)); g.fillRoundedRectangle (r, 3.f);
+        g.setColour (barLine); g.drawRoundedRectangle (r, 3.f, 1.2f);
+        g.setColour (juce::Colour (0xff232428)); g.fillRect (r.getX(), r.getY(), r.getWidth(), (float) kHead); g.setColour (juce::Colour (0xff17181b)); g.fillRect (r.getX(), (float) kHead, r.getWidth(), 1.f);
         icons::draw (g, icon, { 14.f, 4.f, 40.f, 40.f }, text);
-        g.setColour (text); g.setFont (juce::FontOptions (19.f, juce::Font::bold)); g.drawText (title, 62, 0, 400, kHead, juce::Justification::centredLeft);
-        const auto mx = maxR(), cx = closeR(); g.setColour (text);
+        g.setColour (text); g.setFont (juce::FontOptions (15.f, juce::Font::bold)); g.drawText (title, 62, 0, 400, kHead, juce::Justification::centredLeft);
+        const auto mx = maxR(), cx = closeR(); g.setColour (textDim.brighter (.3f));
         g.drawRect (mx.getCentreX() - 8.f, mx.getCentreY() - 8.f, 16.f, 16.f, 1.8f);
         g.drawLine (cx.getCentreX() - 8, cx.getCentreY() - 8, cx.getCentreX() + 8, cx.getCentreY() + 8, 1.8f); g.drawLine (cx.getCentreX() + 8, cx.getCentreY() - 8, cx.getCentreX() - 8, cx.getCentreY() + 8, 1.8f);
         paintBody (g);
@@ -131,10 +132,11 @@ public:
     // utilidades de dibujo compartidas
     static void screw (juce::Graphics& g, juce::Point<float> c)
     {
-        g.setColour (juce::Colour (0xff0d0c10)); g.fillEllipse (c.x - 5, c.y - 5, 10, 10);
-        g.setColour (juce::Colour (0xff3a3841)); g.fillEllipse (c.x - 3.5f, c.y - 3.5f, 7, 7);
+        g.setColour (juce::Colour (0xff101010)); g.fillEllipse (c.x - 5, c.y - 5, 10, 10);
+        g.setColour (juce::Colour (0xff3d3d3d)); g.fillEllipse (c.x - 3.5f, c.y - 3.5f, 7, 7);
     }
-    static void screws (juce::Graphics& g, juce::Rectangle<float> r) { for (auto p : { r.getTopLeft() + juce::Point<float> (10, 10), r.getTopRight() + juce::Point<float> (-10, 10), r.getBottomLeft() + juce::Point<float> (10, -10), r.getBottomRight() + juce::Point<float> (-10, -10) }) screw (g, p); }
+    static void screws (juce::Graphics&, juce::Rectangle<float>) { return; }
+    static void screwsOld (juce::Graphics& g, juce::Rectangle<float> r) { for (auto p : { r.getTopLeft() + juce::Point<float> (10, 10), r.getTopRight() + juce::Point<float> (-10, 10), r.getBottomLeft() + juce::Point<float> (10, -10), r.getBottomRight() + juce::Point<float> (-10, -10) }) screw (g, p); }
 
 protected:
     virtual void paintBody (juce::Graphics&) = 0;

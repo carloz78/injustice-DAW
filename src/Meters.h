@@ -160,7 +160,7 @@ protected:
     void paintBody (juce::Graphics& g) override
     {
         using namespace theme;
-        const auto sp = specR(); g.setColour (boxFill); g.fillRoundedRectangle (sp, 6.f); g.setColour (boxLine); g.drawRoundedRectangle (sp, 6.f, 1.f);
+        const auto sp = specR(); g.setColour (boxFill); g.fillRoundedRectangle (sp, 3.f); g.setColour (boxLine); g.drawRoundedRectangle (sp, 3.f, 1.f);
         // rejilla
         g.setFont (juce::FontOptions (11.f)); const float fmin = 20.f, fmax = 20000.f;
         auto fx = [&] (float f) { return sp.getX() + sp.getWidth() * std::log (f / fmin) / std::log (fmax / fmin); };
@@ -194,7 +194,7 @@ protected:
             g.setColour (accentHi); g.strokePath (p, juce::PathStrokeType (1.4f));
         }
         // vectorscopio
-        const auto vs = scopeR(); g.setColour (boxFill); g.fillRoundedRectangle (vs, 6.f); g.setColour (boxLine); g.drawRoundedRectangle (vs, 6.f, 1.f);
+        const auto vs = scopeR(); g.setColour (boxFill); g.fillRoundedRectangle (vs, 3.f); g.setColour (boxLine); g.drawRoundedRectangle (vs, 3.f, 1.f);
         const auto c = vs.getCentre(); const float rad = vs.getWidth() * .5f - 10.f;
         g.setColour (gridLine); g.drawLine (c.x, vs.getY() + 6, c.x, vs.getBottom() - 6); g.drawLine (vs.getX() + 6, c.y, vs.getRight() - 6, c.y);
         g.drawEllipse (c.x - rad, c.y - rad, rad * 2, rad * 2, 1.f);
@@ -205,7 +205,7 @@ protected:
             g.setColour (pink.withAlpha (.12f + .5f * (float) i / (float) pts.size())); g.fillRect (c.x + x * rad * 1.1f - 1.f, c.y - y * rad * 1.1f - 1.f, 2.f, 2.f);
         }
         // fase
-        const auto cr = corrR(); g.setColour (boxFill); g.fillRoundedRectangle (cr, 5.f); g.setColour (boxLine); g.drawRoundedRectangle (cr, 5.f, 1.f);
+        const auto cr = corrR(); g.setColour (boxFill); g.fillRoundedRectangle (cr, 3.f); g.setColour (boxLine); g.drawRoundedRectangle (cr, 3.f, 1.f);
         const float cv = engine.correlation(), cx = cr.getCentreX() + cv * (cr.getWidth() * .5f - 4.f);
         g.setColour (gridLine); g.drawVerticalLine ((int) cr.getCentreX(), cr.getY() + 2, cr.getBottom() - 2);
         g.setColour (cv < 0.f ? record : accentHi); g.fillRoundedRectangle (cx - 3.f, cr.getY() + 2.f, 6.f, cr.getHeight() - 4.f, 2.f);
@@ -215,7 +215,7 @@ protected:
         const char* names[] { "M", "S", "I", "Pico" }; const float vals[] { engine.momentary(), engine.shortTerm(), engine.integrated(), engine.peakDb() };
         for (int i = 0; i < 4; ++i)
         {
-            auto row = rowR (i); g.setColour (i == 2 ? panelHi : boxFill); g.fillRoundedRectangle (row, 5.f);
+            auto row = rowR (i); g.setColour (i == 2 ? panelHi : boxFill); g.fillRoundedRectangle (row, 3.f);
             g.setColour (textDim); g.setFont (juce::FontOptions (13.f)); g.drawText (names[i], row.withTrimmedLeft (10), juce::Justification::centredLeft);
             const bool hot = i == 3 && vals[i] > -0.1f;
             g.setColour (hot ? record : text); g.setFont (juce::FontOptions (20.f, juce::Font::bold)); g.drawText (num (vals[i]), row.withTrimmedRight (58), juce::Justification::centredRight);

@@ -172,7 +172,7 @@ class ListContent : public juce::Component, private juce::TableListBoxModel
             addAndMakeVisible (table); table.setModel (this); table.setRowHeight (30); table.setColour (juce::ListBox::backgroundColourId, theme::bgBar);
             auto& h = table.getHeader(); h.addColumn ("Nombre", 1, 300); h.addColumn ("Fabricante", 2, 200); h.addColumn ("Tipo", 3, 110); h.addColumn ("Formato", 4, 90); h.setStretchToFitActive (true);
             table.setMultipleSelectionEnabled (false);
-            h.setColour (juce::TableHeaderComponent::backgroundColourId, juce::Colour (0xff1d1b23)); h.setColour (juce::TableHeaderComponent::textColourId, theme::text); h.setColour (juce::TableHeaderComponent::outlineColourId, juce::Colour (0xff2e2c34)); h.setColour (juce::TableHeaderComponent::highlightColourId, theme::accent.withAlpha (.4f));
+            h.setColour (juce::TableHeaderComponent::backgroundColourId, juce::Colour (0xff202020)); h.setColour (juce::TableHeaderComponent::textColourId, theme::text); h.setColour (juce::TableHeaderComponent::outlineColourId, juce::Colour (0xff313131)); h.setColour (juce::TableHeaderComponent::highlightColourId, theme::accent.withAlpha (.4f));
             engine.getPluginManager().knownPluginList.addChangeListener (&relay); relay.owner = this;
             refresh();
         }
@@ -222,7 +222,8 @@ class ListContent : public juce::Component, private juce::TableListBoxModel
         }
         void updateAddLabel()
         {
-            const int r = table.getSelectedRow(); const bool ok = r >= 0 && r < shown.size();
+            const int r = table.getSelectedRow(); bool ok = r >= 0 && r < shown.size();
+            if (targetTrack == -2) { ok = ok && ! shown[r].isInstrument; addBtn.setEnabled (ok); addBtn.setButtonText (juce::String::fromUTF8 ("Agregar al Master como efecto")); return; }
             addBtn.setEnabled (ok); addBtn.setButtonText (juce::String::fromUTF8 ("Agregar a la pista ") + juce::String (targetTrack + 1) + (ok ? (shown[r].isInstrument ? juce::String::fromUTF8 (" como instrumento") : juce::String::fromUTF8 (" como efecto")) : juce::String()));
         }
         void addSelected() { const int r = table.getSelectedRow(); if (r >= 0 && r < shown.size() && onAdd) onAdd (shown[r]); }
@@ -242,9 +243,9 @@ class ListContent : public juce::Component, private juce::TableListBoxModel
         void paintRowBackground (juce::Graphics& g, int row, int w, int h, bool sel) override
         {
             const bool ours = row < shown.size() && isOurs (shown.getReference (row));
-            g.fillAll (sel ? theme::accent : ours ? juce::Colour (0xff231a33) : (row % 2 ? juce::Colour (0xff141218) : theme::bgBar));
+            g.fillAll (sel ? theme::accent : ours ? juce::Colour (0xff232323) : (row % 2 ? juce::Colour (0xff161616) : theme::bgBar));
             if (ours && ! sel) { g.setColour (theme::accentHi); g.fillRect (0, 0, 3, h); }
-            if (ours && (row + 1 >= shown.size() || ! isOurs (shown.getReference (row + 1)))) { g.setColour (juce::Colour (0xff4a3a6e)); g.fillRect (0, h - 1, w, 1); }
+            if (ours && (row + 1 >= shown.size() || ! isOurs (shown.getReference (row + 1)))) { g.setColour (juce::Colour (0xff484848)); g.fillRect (0, h - 1, w, 1); }
         }
         void paintCell (juce::Graphics& g, int row, int col, int w, int h, bool) override
         {

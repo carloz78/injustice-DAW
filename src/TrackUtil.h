@@ -114,6 +114,7 @@ namespace trackutil
             auto& dev = inst->getInputDevice(); const auto type = dev.getDeviceType();
             const bool midi = type != te::InputDevice::waveDevice; if (midi != wantMidi) continue;
             if (! midi && waveDone && arm) continue;
+            if (! midi && arm) { const auto want = t.state.getProperty ("injInput", "").toString(); if (want.isNotEmpty() && dev.getName() != want) continue; }   // entrada elegida en el menu del canal
             if (arm)
             {
                 if (! dev.isEnabled()) dev.setEnabled (true);

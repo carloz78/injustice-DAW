@@ -99,32 +99,32 @@ protected:
     {
         using namespace theme;
         const auto tr = te::getAudioTracks (edit); const float t = (float) juce::Time::getMillisecondCounter() * 0.001f;
-        auto btn = [&] (juce::Rectangle<float> r, const juce::String& s, bool hot) { g.setColour (hot ? panelHi : boxFill); g.fillRoundedRectangle (r, 8.f); g.setColour (boxLine); g.drawRoundedRectangle (r.reduced (.5f), 8.f, 1.f); g.setColour (text); g.setFont (juce::FontOptions (15.f)); g.drawText (s, r.toNearestInt(), juce::Justification::centred); };
+        auto btn = [&] (juce::Rectangle<float> r, const juce::String& s, bool hot) { g.setColour (hot ? panelHi : boxFill); g.fillRoundedRectangle (r, 3.f); g.setColour (boxLine); g.drawRoundedRectangle (r.reduced (.5f), 3.f, 1.f); g.setColour (text); g.setFont (juce::FontOptions (15.f)); g.drawText (s, r.toNearestInt(), juce::Justification::centred); };
         btn (stopR(), "Detener todo", hoverPos.x >= 0 && stopR().contains (hoverPos)); btn (quantR(), juce::String::fromUTF8 ("Entra en: ") + quantName(), hoverPos.x >= 0 && quantR().contains (hoverPos));
         btn (prevR(), "<", hoverPos.x >= 0 && prevR().contains (hoverPos)); btn (nextR(), ">", hoverPos.x >= 0 && nextR().contains (hoverPos));
         for (int c = 0; c < kCols; ++c)
         {
             auto h = juce::Rectangle<float> ((float) cellX (c), (float) (kGridY - 30), (float) kCellW, 24.f); const int ti = firstTrack + c;
-            if (ti < tr.size()) { g.setColour (trackutil::colourOf (tr[ti], ti)); g.fillRoundedRectangle (h, 6.f); g.setColour (juce::Colour (0xff1a1522)); g.setFont (juce::FontOptions (13.f, juce::Font::bold)); g.drawText (tr[ti]->getName() == "Track" ? juce::String::fromUTF8 ("Pista ") + juce::String (ti + 1) : tr[ti]->getName(), h.reduced (6, 0).toNearestInt(), juce::Justification::centredLeft); }
+            if (ti < tr.size()) { g.setColour (trackutil::colourOf (tr[ti], ti)); g.fillRoundedRectangle (h, 3.f); g.setColour (juce::Colour (0xff1b1b1b)); g.setFont (juce::FontOptions (13.f, juce::Font::bold)); g.drawText (tr[ti]->getName() == "Track" ? juce::String::fromUTF8 ("Pista ") + juce::String (ti + 1) : tr[ti]->getName(), h.reduced (6, 0).toNearestInt(), juce::Justification::centredLeft); }
         }
         for (int r = 0; r < kRows; ++r)
         {
             auto sb = juce::Rectangle<float> (14.f, (float) cellY (r), (float) kGridX - 26.f, (float) kCellH); const bool hot = hoverPos.x >= 0 && sb.contains (hoverPos);
-            g.setColour (hot ? accent : boxFill); g.fillRoundedRectangle (sb, 8.f); g.setColour (boxLine); g.drawRoundedRectangle (sb.reduced (.5f), 8.f, 1.f);
+            g.setColour (hot ? accent : boxFill); g.fillRoundedRectangle (sb, 3.f); g.setColour (boxLine); g.drawRoundedRectangle (sb.reduced (.5f), 3.f, 1.f);
             juce::Path tri; const float cx = sb.getX() + 20.f, cy = sb.getCentreY(); tri.addTriangle (cx - 6.f, cy - 8.f, cx - 6.f, cy + 8.f, cx + 8.f, cy); g.setColour (hot ? juce::Colours::white : iconIdle); g.fillPath (tri);
             g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText (juce::String (r + 1), sb.withTrimmedLeft (34.f).toNearestInt(), juce::Justification::centredLeft);
             for (int c = 0; c < kCols; ++c)
             {
                 auto cell = juce::Rectangle<float> ((float) cellX (c), (float) cellY (r), (float) kCellW, (float) kCellH); const int st = stateAt (c, r); const bool exists = trackAt (c) != nullptr;
-                if (! exists) { g.setColour (juce::Colour (0xff1d1e26)); g.fillRoundedRectangle (cell, 7.f); continue; }
+                if (! exists) { g.setColour (juce::Colour (0xff222222)); g.fillRoundedRectangle (cell, 3.f); continue; }
                 const auto col = trackutil::colourOf (trackAt (c), firstTrack + c);
-                if (st == 0) { g.setColour (juce::Colour (0xff1b1c24)); g.fillRoundedRectangle (cell, 7.f); g.setColour (juce::Colour (0xff2c2d38)); g.drawRoundedRectangle (cell.reduced (.5f), 7.f, 1.f); g.setColour (juce::Colour (0xff3a3b48)); g.drawLine (cell.getCentreX() - 6, cell.getCentreY(), cell.getCentreX() + 6, cell.getCentreY(), 1.6f); g.drawLine (cell.getCentreX(), cell.getCentreY() - 6, cell.getCentreX(), cell.getCentreY() + 6, 1.6f); continue; }
+                if (st == 0) { g.setColour (juce::Colour (0xff202020)); g.fillRoundedRectangle (cell, 3.f); g.setColour (juce::Colour (0xff313131)); g.drawRoundedRectangle (cell.reduced (.5f), 3.f, 1.f); g.setColour (juce::Colour (0xff3f3f3f)); g.drawLine (cell.getCentreX() - 6, cell.getCentreY(), cell.getCentreX() + 6, cell.getCentreY(), 1.6f); g.drawLine (cell.getCentreX(), cell.getCentreY() - 6, cell.getCentreX(), cell.getCentreY() + 6, 1.6f); continue; }
                 const float pulse = st == 2 ? 0.5f + 0.5f * std::sin (t * 7.f) : (st == 3 || st == 4 ? (std::fmod (t, 0.5f) < 0.25f ? 1.f : 0.f) : 0.f);
-                g.setColour (col.withAlpha (st == 1 ? 0.45f : 0.85f)); g.fillRoundedRectangle (cell, 7.f);
-                if (st != 1) { g.setColour (juce::Colours::white.withAlpha (0.10f + 0.18f * pulse)); g.fillRoundedRectangle (cell, 7.f); g.setColour (juce::Colours::white.withAlpha (0.6f + 0.4f * pulse)); g.drawRoundedRectangle (cell.reduced (1.f), 7.f, 2.f); }
+                g.setColour (col.withAlpha (st == 1 ? 0.45f : 0.85f)); g.fillRoundedRectangle (cell, 3.f);
+                if (st != 1) { g.setColour (juce::Colours::white.withAlpha (0.10f + 0.18f * pulse)); g.fillRoundedRectangle (cell, 3.f); g.setColour (juce::Colours::white.withAlpha (0.6f + 0.4f * pulse)); g.drawRoundedRectangle (cell.reduced (1.f), 3.f, 2.f); }
                 juce::Path tri; const float cx = cell.getX() + 14.f, cy = cell.getCentreY(); const bool playing = st == 2 || st == 4;
-                if (playing) { g.setColour (juce::Colour (0xff1a1522)); g.fillRect (cx - 6.f, cy - 6.f, 12.f, 12.f); } else { tri.addTriangle (cx - 5.f, cy - 7.f, cx - 5.f, cy + 7.f, cx + 7.f, cy); g.setColour (juce::Colour (0xff1a1522)); g.fillPath (tri); }
-                g.setColour (juce::Colour (0xff1a1522)); g.setFont (juce::FontOptions (12.5f, juce::Font::bold)); auto* cl = clipAt (c, r); g.drawText (cl ? cl->getName() : juce::String(), cell.withTrimmedLeft (28.f).reduced (3, 0).toNearestInt(), juce::Justification::centredLeft, true);
+                if (playing) { g.setColour (juce::Colour (0xff1b1b1b)); g.fillRect (cx - 6.f, cy - 6.f, 12.f, 12.f); } else { tri.addTriangle (cx - 5.f, cy - 7.f, cx - 5.f, cy + 7.f, cx + 7.f, cy); g.setColour (juce::Colour (0xff1b1b1b)); g.fillPath (tri); }
+                g.setColour (juce::Colour (0xff1b1b1b)); g.setFont (juce::FontOptions (12.5f, juce::Font::bold)); auto* cl = clipAt (c, r); g.drawText (cl ? cl->getName() : juce::String(), cell.withTrimmedLeft (28.f).reduced (3, 0).toNearestInt(), juce::Justification::centredLeft, true);
             }
         }
     }

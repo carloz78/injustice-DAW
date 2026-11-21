@@ -31,7 +31,7 @@ public:
         if (extrasFile.existsAsFile()) { juce::StringArray ls; ls.addLines (extrasFile.loadFileAsString()); for (auto& l : ls) if (l.trim().isNotEmpty() && juce::File (l.trim()).isDirectory()) extras.push_back (juce::File (l.trim())); }
         curDir = root; startTimerHz (20);
         addAndMakeVisible (search); search.setColour (juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack); search.setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-        search.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack); search.setColour (juce::TextEditor::textColourId, juce::Colours::white); search.setColour (juce::CaretComponent::caretColourId, juce::Colour (0xffb79bff));
+        search.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack); search.setColour (juce::TextEditor::textColourId, juce::Colours::white); search.setColour (juce::CaretComponent::caretColourId, juce::Colour (0xffffbb74));
         search.setFont (juce::FontOptions (15.f)); search.setBorder ({ 0, 0, 0, 30 }); search.setIndents (36, 0); search.setJustification (juce::Justification::centredLeft); search.setTextToShowWhenEmpty (juce::String::fromUTF8 ("Buscar kicks, hats, bajos…"), textDimC()); search.onTextChange = [this] { scroll = 0; rebuild(); };
         rebuild();
     }
@@ -57,7 +57,7 @@ public:
         extras.push_back (f); saveExtras(); rebuild(); return true;
     }
     static juce::File defaultRoot() { return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("INJUSTICE DAW").getChildFile ("Samples"); }
-    static juce::Colour textDimC() { return juce::Colour (0xff9c9bad); }
+    static juce::Colour textDimC() { return juce::Colour (0xff9d9d9d); }
     void resized() override { search.setBounds (10, kHead + 2, getWidth() - 20, 30); }
     juce::Rectangle<float> clearR() const { return { (float) getWidth() - 10.f - 26.f, (float) kHead + 4.f, 22.f, 22.f }; }
     juce::File getRoot() const { return root; }
@@ -108,33 +108,33 @@ public:
     {
         using namespace theme;
         auto r = getLocalBounds().toFloat().reduced (1);
-        g.setColour (juce::Colour (0xff17161b)); g.fillRoundedRectangle (r, 12.f); g.setColour (juce::Colour (0xff2c2a33)); g.drawRoundedRectangle (r, 12.f, 1.5f);
+        g.setColour (juce::Colour (0xff1a1a1a)); g.fillRoundedRectangle (r, 3.f); g.setColour (juce::Colour (0xff2f2f2f)); g.drawRoundedRectangle (r, 3.f, 1.5f);
         icons::draw (g, icons::OpenFile, { 12.f, 8.f, 40.f, 40.f }, text);
-        g.setColour (text); g.setFont (juce::FontOptions (19.f, juce::Font::bold)); g.drawText ("Browser", 56, 0, 160, kHead, juce::Justification::centredLeft);
-        g.setColour (juce::Colour (0xff222027)); g.fillRoundedRectangle (collapseR(), 6.f); g.fillRoundedRectangle (closeR(), 6.f);
+        g.setColour (text); g.setFont (juce::FontOptions (16.f, juce::Font::bold)); g.drawText ("Browser", 52, 0, 110, kHead, juce::Justification::centredLeft);
+        g.setColour (juce::Colour (0xff242424)); g.fillRoundedRectangle (collapseR(), 3.f); g.fillRoundedRectangle (closeR(), 3.f);
         g.setColour (text); drawChevrons (g, collapseR()); drawX (g, closeR());
 
         { auto sr = juce::Rectangle<float> (10.f, (float) kHead + 2.f, (float) getWidth() - 20.f, 30.f); const bool foc = search.hasKeyboardFocus (true);
-          g.setColour (juce::Colour (foc ? 0xff262233 : 0xff201f26)); g.fillRoundedRectangle (sr, 15.f);
-          g.setColour (foc ? accentHi : juce::Colour (0xff34313d)); g.drawRoundedRectangle (sr.reduced (.5f), 15.f, foc ? 1.6f : 1.f);
+          g.setColour (juce::Colour (foc ? 0xff282828 : 0xff232323)); g.fillRoundedRectangle (sr, 3.f);
+          g.setColour (foc ? accentHi : juce::Colour (0xff363636)); g.drawRoundedRectangle (sr.reduced (.5f), 3.f, foc ? 1.6f : 1.f);
           const auto mc = foc || searching() ? accentHi : textDim; g.setColour (mc); const float cx0 = sr.getX() + 17.f, cy0 = sr.getCentreY() - 1.f;
           g.drawEllipse (cx0 - 5.f, cy0 - 5.f, 10.f, 10.f, 1.8f); juce::Path hd; hd.startNewSubPath (cx0 + 3.6f, cy0 + 3.6f); hd.lineTo (cx0 + 8.f, cy0 + 8.f); g.strokePath (hd, juce::PathStrokeType (2.f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-          if (searching()) { auto cr = clearR(); g.setColour (cr.contains (hover) ? juce::Colour (0xff4a4458) : juce::Colour (0xff35313f)); g.fillEllipse (cr); g.setColour (text); auto c = cr.getCentre();
+          if (searching()) { auto cr = clearR(); g.setColour (cr.contains (hover) ? juce::Colour (0xff4b4b4b) : juce::Colour (0xff373737)); g.fillEllipse (cr); g.setColour (text); auto c = cr.getCentre();
             g.drawLine (c.x - 3.5f, c.y - 3.5f, c.x + 3.5f, c.y + 3.5f, 1.6f); g.drawLine (c.x - 3.5f, c.y + 3.5f, c.x + 3.5f, c.y - 3.5f, 1.6f); } }
-        { const float w = ((float) getWidth() - 20.f) / 3.f; auto all = juce::Rectangle<float> (10.f, (float) kHead + 36.f, w * 3.f, 30.f); g.setColour (juce::Colour (0xff222027)); g.fillRoundedRectangle (all, 8.f);
+        { const float w = ((float) getWidth() - 20.f) / 3.f; auto all = juce::Rectangle<float> (10.f, (float) kHead + 36.f, w * 3.f, 30.f); g.setColour (juce::Colour (0xff242424)); g.fillRoundedRectangle (all, 3.f);
           static const char* nm[] { "Instrumentos", "Packs", "Mis samples" };
-          for (int i = 0; i < 3; ++i) { auto r = tabR (i); const bool on = ! searching() && tab == i; if (on) { g.setColour (accent); g.fillRoundedRectangle (r.reduced (2.f), 6.f); } g.setColour (on ? juce::Colours::white : (r.contains (hover) ? text : textDim)); g.setFont (juce::FontOptions (14.f)); g.drawText (nm[i], r.toNearestInt(), juce::Justification::centred); } }
+          for (int i = 0; i < 3; ++i) { auto r = tabR (i); const bool on = ! searching() && tab == i; if (on) { g.setColour (accent); g.fillRoundedRectangle (r.reduced (2.f), 3.f); } g.setColour (on ? juce::Colour (0xff1a1a1a) : (r.contains (hover) ? text : textDim)); g.setFont (juce::FontOptions (12.f)); g.drawText (nm[i], r.toNearestInt(), juce::Justification::centred); } }
         if (effTab() == 2) {
         for (int b = 0; b < 4; ++b)
         {
-            auto r = toolR (b); g.setColour (b == 0 ? accent : (r.contains (hover) ? panelHi : juce::Colour (0xff222027))); g.fillRoundedRectangle (r, 6.f); g.setColour (b == 0 ? juce::Colours::white : text); g.setFont (juce::FontOptions (14.f));
+            auto r = toolR (b); g.setColour (b == 0 ? accent : (r.contains (hover) ? panelHi : juce::Colour (0xff242424))); g.fillRoundedRectangle (r, 3.f); g.setColour (b == 0 ? juce::Colour (0xff1a1a1a) : text); g.setFont (juce::FontOptions (14.f));
             g.drawText (b == 0 ? juce::String::fromUTF8 ("Importar samples") : b == 1 ? juce::String::fromUTF8 ("Nueva carpeta") : b == 2 ? juce::String::fromUTF8 ("Agregar carpeta…") : juce::String::fromUTF8 ("Abrir carpeta"), r.toNearestInt().reduced (6, 0), juce::Justification::centred, true);
         }
         if (searching()) { g.setColour (textDim); g.setFont (juce::FontOptions (13.f)); g.drawText (juce::String (found) + juce::String::fromUTF8 (found == 1 ? " sample encontrado en tus carpetas" : " samples encontrados en tus carpetas") + (found > 400 ? juce::String::fromUTF8 (" (se muestran 400)") : juce::String()), 12, kHead + 142, getWidth() - 24, 18, juce::Justification::centredLeft, true); }
         else { const juce::String dest = curDir == root ? juce::String::fromUTF8 ("Muestras (carpeta principal)") : curDir.getFileName(); g.setColour (textDim); g.setFont (juce::FontOptions (13.f));
           g.drawText (juce::String::fromUTF8 ("Se guardan en: ") + dest, 12, kHead + 142, getWidth() - 200, 18, juce::Justification::centredLeft, true); }
-        { auto sg = segR(); g.setColour (juce::Colour (0xff222027)); g.fillRoundedRectangle (sg, 6.f); auto half = sg.withWidth (sg.getWidth() * .5f); if (catMode) half = half.translated (sg.getWidth() * .5f, 0);
-          g.setColour (accent); g.fillRoundedRectangle (half.reduced (1.5f), 5.f); g.setFont (juce::FontOptions (12.f)); g.setColour (juce::Colours::white);
+        { auto sg = segR(); g.setColour (juce::Colour (0xff242424)); g.fillRoundedRectangle (sg, 3.f); auto half = sg.withWidth (sg.getWidth() * .5f); if (catMode) half = half.translated (sg.getWidth() * .5f, 0);
+          g.setColour (accent); g.fillRoundedRectangle (half.reduced (1.5f), 3.f); g.setFont (juce::FontOptions (12.f)); g.setColour (juce::Colour (0xff1a1a1a));
           g.drawText ("Carpetas", sg.withWidth (sg.getWidth() * .5f).toNearestInt(), juce::Justification::centred); g.drawText (juce::String::fromUTF8 ("Categorías"), sg.withTrimmedLeft (sg.getWidth() * .5f).toNearestInt(), juce::Justification::centred); }
         }
         g.saveState(); g.reduceClipRegion (6, kHead + topH(), getWidth() - 12, getHeight() - kHead - topH() - prevH());
@@ -142,21 +142,21 @@ public:
         for (size_t i = 0; i < items.size(); ++i, y += kRow)
         {
             auto& it = items[i]; if (y + kRow < kHead + topH() || y > getHeight()) continue;
-            if (it.kind == 1) { const bool op = ! collapsedZones.count (it.label); g.setColour (textDim); g.saveState(); if (! op) g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, 24.f, y + kRow - 11.f)); icons::draw (g, icons::Chevron, { 12.f, y + kRow - 23.f, 24.f, 24.f }, textDim); g.restoreState(); g.setFont (juce::FontOptions (12.f, juce::Font::bold)); g.drawText (it.label, 38, (int) y, getWidth() - 52, kRow, juce::Justification::bottomLeft); g.setColour (juce::Colour (0xff2c2a33)); g.fillRect (14.f, y + kRow - 1.f, (float) getWidth() - 28.f, 1.f); continue; }
-            if (it.kind == 2) { const bool hv = juce::Rectangle<float> (8.f, y, (float) getWidth() - 16.f, (float) kRow).contains (hover); if (hv) { g.setColour (juce::Colour (0xff2c2640)); g.fillRoundedRectangle (juce::Rectangle<float> (8.f, y, (float) getWidth() - 16.f, (float) kRow), 5.f); }
-                icons::draw (g, icons::Audio, { 20.f, y, 26.f, (float) kRow }, accent); g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText (it.label, 54, (int) y, getWidth() - 70, kRow, juce::Justification::centredLeft, true); continue; }
+            if (it.kind == 1) { const bool op = ! collapsedZones.count (it.label); g.setColour (textDim); g.saveState(); if (! op) g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, 24.f, y + kRow - 11.f)); icons::draw (g, icons::Chevron, { 12.f, y + kRow - 23.f, 24.f, 24.f }, textDim); g.restoreState(); g.setFont (juce::FontOptions (12.f, juce::Font::bold)); g.drawText (it.label, 38, (int) y, getWidth() - 52, kRow, juce::Justification::bottomLeft); g.setColour (juce::Colour (0xff2f2f2f)); g.fillRect (14.f, y + kRow - 1.f, (float) getWidth() - 28.f, 1.f); continue; }
+            if (it.kind == 2) { const bool hv = juce::Rectangle<float> (8.f, y, (float) getWidth() - 16.f, (float) kRow).contains (hover); if (hv) { g.setColour (juce::Colour (0xff2e2e2e)); g.fillRoundedRectangle (juce::Rectangle<float> (8.f, y, (float) getWidth() - 16.f, (float) kRow), 3.f); }
+                icons::draw (g, icons::Audio, { 20.f, y, 26.f, (float) kRow }, juce::Colour (0xffb9bac2)); g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText (it.label, 54, (int) y, getWidth() - 70, kRow, juce::Justification::centredLeft, true); continue; }
             const bool sel = it.file == selected;
-            if (it.isDir && it.file == curDir && ! searching()) { g.setColour (juce::Colour (0xff2c2640)); g.fillRoundedRectangle (juce::Rectangle<float> (8, y, (float) getWidth() - 16, (float) kRow), 5.f); g.setColour (accentHi); g.drawRoundedRectangle (juce::Rectangle<float> (8.5f, y + .5f, (float) getWidth() - 17, (float) kRow - 1), 5.f, 1.2f); }
-            if (sel) { g.setColour (juce::Colour (0xff3b2a5e)); g.fillRoundedRectangle (juce::Rectangle<float> (8, y, (float) getWidth() - 16, (float) kRow), 5.f); }
+            if (it.isDir && it.file == curDir && ! searching()) { g.setColour (juce::Colour (0xff2e2e2e)); g.fillRoundedRectangle (juce::Rectangle<float> (8, y, (float) getWidth() - 16, (float) kRow), 3.f); g.setColour (accentHi); g.drawRoundedRectangle (juce::Rectangle<float> (8.5f, y + .5f, (float) getWidth() - 17, (float) kRow - 1), 3.f, 1.2f); }
+            if (sel) { g.setColour (juce::Colour (0xff383838)); g.fillRoundedRectangle (juce::Rectangle<float> (8, y, (float) getWidth() - 16, (float) kRow), 3.f); }
             const float x = 14.f + it.depth * 18.f; g.setColour (text); g.setFont (juce::FontOptions (14.f));
             if (it.isDir) { const bool open = it.label.isNotEmpty() ? ! collapsedCats.count (it.label.upToLastOccurrenceOf ("  (", false, false)) : (it.isRoot ? ! collapsedRoots.count (it.file.getFullPathName()) : (searching() || expanded.count (it.file.getFullPathName()) > 0));
-                g.saveState(); if (! open) g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, x + 12.f, y + kRow * .5f)); icons::draw (g, icons::Chevron, { x, y, 24.f, (float) kRow }, textDim); g.restoreState(); icons::draw (g, icons::OpenFile, { x + 22, y, 26.f, (float) kRow }, accent.brighter (.2f)); }
-            else icons::draw (g, icons::Audio, { x + 22, y, 26.f, (float) kRow }, accentHi);
+                g.saveState(); if (! open) g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, x + 12.f, y + kRow * .5f)); icons::draw (g, icons::Chevron, { x, y, 24.f, (float) kRow }, textDim); g.restoreState(); icons::draw (g, icons::OpenFile, { x + 22, y, 26.f, (float) kRow }, juce::Colour (0xffb9bac2)); }
+            else icons::draw (g, icons::Audio, { x + 22, y, 26.f, (float) kRow }, juce::Colour (0xff9fa0a8));
             if (searching() && ! it.isDir && it.label.isEmpty())
             {
                 const auto par = it.file.getParentDirectory().getFileName(); const int tx = (int) x + 54, tw = getWidth() - (int) x - 62; g.setFont (juce::FontOptions (14.f));
                 const int pw = juce::jmin (tw / 3, (int) g.getCurrentFont().getStringWidthFloat (par) + 14); g.setColour (textDim.withAlpha (.8f)); g.drawText (par, tx, (int) y, pw - 8, kRow, juce::Justification::centredLeft, true);
-                g.setColour (juce::Colour (0xff3a3646)); g.fillRect ((float) (tx + pw - 7), y + 8.f, 1.f, (float) kRow - 16.f);
+                g.setColour (juce::Colour (0xff3c3c3c)); g.fillRect ((float) (tx + pw - 7), y + 8.f, 1.f, (float) kRow - 16.f);
                 g.setColour (text); g.drawText (it.file.getFileNameWithoutExtension(), tx + pw, (int) y, tw - pw, kRow, juce::Justification::centredLeft, true); continue;
             }
             g.setColour (it.isDir ? text : text.withAlpha (.92f)); g.drawText (it.label.isNotEmpty() ? it.label : it.isRoot ? (it.extra == -2 ? juce::String ("Injustice Packs") : it.extra < 0 ? juce::String ("Muestras") : it.file.getFileName()) : (searching() ? it.file.getParentDirectory().getFileName() + "  /  " + it.file.getFileName() : it.file.getFileName()), (int) x + 54, (int) y, getWidth() - (int) x - 62, kRow, juce::Justification::centredLeft);
@@ -241,8 +241,8 @@ private:
     juce::Rectangle<float> segR() const { return { (float) getWidth() - 184.f, (float) kHead + 141.f, 174.f, 20.f }; }
     juce::Rectangle<float> toolR (int b) const { const float w = ((float) getWidth() - 28.f) * .5f; return { 10.f + (b % 2) * (w + 8.f), (float) kHead + 72.f + (b / 2) * 34.f, w, 30.f }; }
 
-    juce::Rectangle<float> closeR() const { return { (float) getWidth() - 52.f, 10.f, 36.f, 36.f }; }
-    juce::Rectangle<float> collapseR() const { return { (float) getWidth() - 94.f, 10.f, 36.f, 36.f }; }
+    juce::Rectangle<float> closeR() const { return { (float) getWidth() - 44.f, 13.f, 30.f, 30.f }; }
+    juce::Rectangle<float> collapseR() const { return { (float) getWidth() - 78.f, 13.f, 30.f, 30.f }; }
     static void drawX (juce::Graphics& g, juce::Rectangle<float> r) { auto c = r.getCentre(); g.drawLine (c.x - 6, c.y - 6, c.x + 6, c.y + 6, 1.8f); g.drawLine (c.x + 6, c.y - 6, c.x - 6, c.y + 6, 1.8f); }
     static void drawChevrons (juce::Graphics& g, juce::Rectangle<float> r) { auto c = r.getCentre(); for (float o : { -3.f, 4.f }) { juce::Path p; p.startNewSubPath (c.x + o + 3, c.y - 6); p.lineTo (c.x + o - 3, c.y); p.lineTo (c.x + o + 3, c.y + 6); g.strokePath (p, juce::PathStrokeType (1.8f)); } }
     int itemAt (int y) const { float yy = (float) kHead + topH() + 6 - (float) scroll; if (y < kHead + topH() || y > getHeight() - prevH()) return -1; const int i = (int) std::floor ((y - yy) / kRow); return (i >= 0 && i < (int) items.size()) ? i : -1; }
@@ -349,7 +349,7 @@ private:
     void drawPreview (juce::Graphics& g)
     {
         using namespace theme; auto b = juce::Rectangle<float> (8, (float) getHeight() - prevH(), (float) getWidth() - 16, prevH() - 8.f);
-        g.setColour (juce::Colour (0xff111015)); g.fillRoundedRectangle (b, 8.f);
+        g.setColour (juce::Colour (0xff141414)); g.fillRoundedRectangle (b, 3.f);
         if (! selected.existsAsFile()) { g.setColour (textDim); g.setFont (juce::FontOptions (13.f)); g.drawText ("Selecciona un sample para ver su forma de onda", b.toNearestInt(), juce::Justification::centred); return; }
         if (! thumb) { thumb = std::make_unique<juce::AudioThumbnail> (128, fm, thumbCache); thumb->setSource (new juce::FileInputSource (selected)); }
         g.setColour (accentHi); thumb->drawChannel (g, b.reduced (8, 8).withTrimmedBottom (22).toNearestInt(), 0.0, thumb->getTotalLength(), 0, 1.f);

@@ -1,7 +1,7 @@
 [Setup]
 AppId={{7C3B1E52-94A6-4D0F-8E21-5B6A0C9D3F47}
 AppName=INJUSTICE DAW
-AppVersion=0.1.0
+AppVersion=0.9.36
 AppPublisher=Injustice Audio
 DefaultDirName={autopf}\INJUSTICE DAW
 DefaultGroupName=INJUSTICE DAW

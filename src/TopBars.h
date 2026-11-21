@@ -10,12 +10,13 @@
 class TopBars : public juce::Component, public juce::TooltipClient, private juce::Timer
 {
 public:
+    void openMenuForTest (const juce::String& n) { showMenu (n); }
     struct Btn { juce::String id; icons::Id icon; juce::String label; juce::Rectangle<float> r; bool enabled = true; };
 
     std::function<void (const juce::String&)> onButton;
     std::function<void (double)> onBpm;
     std::function<void (int, int)> onSig;
-    bool metro = false, pianoMode = false, mixerOpen = false, stepsOpen = false, metersOpen = false, perfOpen = false, browserOpen = true, recArmed = false;
+    int countIn = 0; bool metro = false, pianoMode = false, mixerOpen = false, stepsOpen = false, metersOpen = false, perfOpen = false, followOn = false, abOn = false, clickRec = false, browserOpen = true, recArmed = false;
     bool playing = false, looping = false, snap = true;
     juce::String quantLabel = "1/16", tool = "select", view = "playlist", crumb;
     bool timeMode = false; double bpm = 172.0, posBeats = 0.0, cpu = 0.0, ramMB = 0.0, ramTotalMB = 0.0;
@@ -52,18 +53,18 @@ public:
         for (auto& m : menus)
         {
             const bool hot = openMenu == m.name || (hoverId == "menu:" + m.name);
-            if (hot) { g.setColour (juce::Colours::white.withAlpha (openMenu == m.name ? .16f : .08f)); g.fillRoundedRectangle (m.r, 6.f); }
+            if (hot) { g.setColour (juce::Colours::white.withAlpha (openMenu == m.name ? .16f : .08f)); g.fillRoundedRectangle (m.r, 3.f); }
             g.setColour (text); g.drawText (m.name, m.r.toNearestInt(), juce::Justification::centred);
         }
         // grupo de transporte
-        g.setColour (boxFill); g.fillRoundedRectangle (transportR, 9.f); g.setColour (boxLine); g.drawRoundedRectangle (transportR.reduced (.5f), 9.f, 1.f);
+        g.setColour (boxFill); g.fillRoundedRectangle (transportR, 3.f); g.setColour (boxLine); g.drawRoundedRectangle (transportR.reduced (.5f), 3.f, 1.f);
         for (auto& b : btns) if (isTransport (b.id)) paintBtn (g, b);
         // cajas de BPM, compás y posición
-        auto box = [&] (juce::Rectangle<float> r, bool hot) { g.setColour (boxFill); g.fillRoundedRectangle (r, 9.f); g.setColour (hot ? accent : boxLine); g.drawRoundedRectangle (r.reduced (.5f), 9.f, 1.f); };
-        if (pulse > 0.f && playing) { g.setColour (accent.withAlpha (pulse * .55f)); g.drawRoundedRectangle (bpmR.expanded (pulse * 3.f), 11.f, 1.5f + pulse * 1.5f); }
+        auto box = [&] (juce::Rectangle<float> r, bool hot) { g.setColour (boxFill); g.fillRoundedRectangle (r, 3.f); g.setColour (hot ? accent : boxLine); g.drawRoundedRectangle (r.reduced (.5f), 3.f, 1.f); };
+        if (pulse > 0.f && playing) { g.setColour (accent.withAlpha (pulse * .55f)); g.drawRoundedRectangle (bpmR.expanded (pulse * 3.f), 3.f, 1.5f + pulse * 1.5f); }
         box (bpmR, hoverId == "bpm" || dragBpm);
-        if (pulse > 0.f && playing) { g.setColour (accent.withAlpha (pulse * .22f)); g.fillRoundedRectangle (bpmR.reduced (1.f), 9.f); } box (sigR, false); box (posR, false);
-        g.setFont (juce::FontOptions (20.f, juce::Font::bold)); g.setColour (accentHi); g.drawText (juce::String (bpm, 2), bpmR.toNearestInt(), juce::Justification::centred);
+        if (pulse > 0.f && playing) { g.setColour (accent.withAlpha (pulse * .22f)); g.fillRoundedRectangle (bpmR.reduced (1.f), 3.f); } box (sigR, false); box (posR, false);
+        g.setFont (juce::FontOptions (17.f, juce::Font::bold)); g.setColour (accentHi); g.drawText (juce::String (bpm, 2), bpmR.toNearestInt(), juce::Justification::centred);
         g.setColour (text); g.drawText (juce::String (timesig::num) + "/" + juce::String (timesig::den), sigR.toNearestInt(), juce::Justification::centred);
         g.drawText (posText(), posR.toNearestInt(), juce::Justification::centred);
         for (auto& b : btns) if (b.id == "metro" || b.id == "loop") paintBtn (g, b);
@@ -75,16 +76,19 @@ public:
         if (pianoMode)
         {
             const bool hot = hoverId == "quant" || pressedId == "quant";
-            g.setColour (hot ? panelHi : boxFill); g.fillRoundedRectangle (quantR, 8.f); g.setColour (boxLine); g.drawRoundedRectangle (quantR.reduced (.5f), 8.f, 1.f);
+            g.setColour (hot ? panelHi : boxFill); g.fillRoundedRectangle (quantR, 3.f); g.setColour (boxLine); g.drawRoundedRectangle (quantR.reduced (.5f), 3.f, 1.f);
             g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText (quantLabel, quantR.withTrimmedRight (20).toNearestInt(), juce::Justification::centred);
             icons::draw (g, icons::Chevron, { quantR.getRight() - 28.f, quantR.getY(), 26.f, quantR.getHeight() }, textDim);
         }
     }
 
     //==============================================================================
+    juce::StringArray recents, myTemplates;   // proyectos recientes y plantillas propias (las llena la ventana principal)
+    std::function<void()> onTap;   // tap tempo (clic derecho sobre el BPM)
     void mouseDown (const juce::MouseEvent& e) override
     {
         const auto p = e.position; pressedId = {};
+        if (e.mods.isPopupMenu() && bpmR.contains (p)) { if (onTap) onTap(); beatPulse(); return; }
         for (auto& m : menus) if (m.r.contains (p)) { showMenu (m.name); return; }
         if (pianoMode && quantR.contains (p)) { pressedId = "quant"; repaint(); if (onButton) onButton ("quant"); return; }
         for (auto& b : btns) if (b.enabled && b.r.contains (p)) { pressedId = b.id; repaint(); if (onButton) onButton (b.id); return; }
@@ -175,15 +179,16 @@ private:
         auto r = b.r; const bool isRec = b.id == "rec", isPlay = b.id == "play";
         juce::Colour fill = juce::Colours::transparentBlack;
         if (isRec) { if (on) fill = record.withAlpha (down ? .42f : .30f); else if (down) fill = juce::Colours::white.withAlpha (.18f); else if (hot) fill = juce::Colours::white.withAlpha (.09f); }
+        else if (on && isPlay) fill = juce::Colour (0xff6ee06c).withAlpha (.18f);
         else if (on) fill = down ? accent.darker (.25f) : (hot ? accent.brighter (.12f) : accent);
         else if (down) fill = juce::Colours::white.withAlpha (.20f);
         else if (hoverAmt (b.id) > .01f && b.enabled) fill = juce::Colours::white.withAlpha (.10f * hoverAmt (b.id));
-        if (! fill.isTransparent()) { g.setColour (fill); g.fillRoundedRectangle (r.reduced (1.f), 8.f); }
-        if (isRec && on) { g.setColour (record.withAlpha (.9f)); g.drawRoundedRectangle (r.reduced (1.5f), 8.f, 1.5f); }
+        if (! fill.isTransparent()) { g.setColour (fill); g.fillRoundedRectangle (r.reduced (1.f), 3.f); }
+        if (isRec && on) { g.setColour (record.withAlpha (.9f)); g.drawRoundedRectangle (r.reduced (1.5f), 3.f, 1.5f); }
 
-        auto col = (on && ! isRec) ? juce::Colours::white : iconIdle;
+        auto col = (on && ! isRec && ! isPlay) ? juce::Colour (0xff1a1a1a) : iconIdle;
         if (isRec) col = on ? record.brighter (.25f) : record;
-        if (isPlay && ! on) col = juce::Colour (0xffd5d3e0);
+        if (isPlay) col = juce::Colour (0xff6ee06c);
         if (! b.enabled) col = col.withAlpha (.3f);
         if (b.label.isEmpty()) { icons::draw (g, b.icon, r, col); return; }
         icons::draw (g, b.icon, { r.getX() + 6.f, r.getY(), 30.f, r.getHeight() }, col);
@@ -193,8 +198,8 @@ private:
     void drawLogo (juce::Graphics& g)
     {
         using namespace theme; const float x0 = 16.f, y0 = 14.f, c = 8.f, gap = 2.f;
-        static const juce::uint32 cols[9] { 0xff40403f, 0xff828282, 0xffbbbbba, 0xff676767, 0xfffefefe, 0xffa19fa0, 0xff1c1c1b, 0xff383939, 0xff7d7d7d };   // logo nuevo: 3x3 en grises, centro blanco
-        g.setColour (juce::Colours::black); g.fillRoundedRectangle (x0 - 5.f, y0 - 5.f, 3 * c + 2 * gap + 10.f, 3 * c + 2 * gap + 10.f, 6.f);
+        static const juce::uint32 cols[9] { 0xff434343, 0xff828282, 0xffbbbbbb, 0xff6a6a6a, 0xfffefefe, 0xffa0a0a0, 0xff1f1f1f, 0xff3c3c3c, 0xff7d7d7d };   // logo nuevo: 3x3 en grises, centro blanco
+        g.setColour (juce::Colours::black); g.fillRoundedRectangle (x0 - 5.f, y0 - 5.f, 3 * c + 2 * gap + 10.f, 3 * c + 2 * gap + 10.f, 3.f);
         for (int i = 0; i < 9; ++i) { g.setColour (juce::Colour (cols[i])); g.fillRoundedRectangle (x0 + (i % 3) * (c + gap), y0 + (i / 3) * (c + gap), c, c, 2.6f); }
         juce::Font f1 (juce::FontOptions (19.f, juce::Font::bold)); juce::GlyphArrangement ga; ga.addLineOfText (f1, "INJUSTICE", 0, 0);
         const int w1 = (int) std::ceil (ga.getBoundingBox (0, -1, true).getWidth());
@@ -232,14 +237,14 @@ private:
         std::vector<It> items;   // id vacío = separador
         auto I = [&] (const char* id, const char* l, bool tick = false) { items.push_back ({ id, juce::String::fromUTF8 (l), tick, true }); };
         auto S = [&] { items.push_back ({}); };
-        if (name == "File") { I ("new", "Proyecto nuevo\tCtrl+N"); S(); for (int k = 0; k < ideas::kNumStyles; ++k) items.push_back ({ "tpl:" + juce::String (k), juce::String::fromUTF8 ("Plantilla: ") + ideas::styleName (k) + " (" + juce::String ((int) ideas::styleBpm (k)) + " BPM)", false, true }); S(); I ("open", "Abrir…\tCtrl+O"); I ("save", "Guardar\tCtrl+S"); I ("saveas", "Guardar como…\tCtrl+Mayús+S"); I ("savesamples", "Guardar con los samples…"); S(); I ("importmidi", "Importar MIDI…"); I ("export", "Exportar audio…\tCtrl+E"); S(); I ("quit", "Salir"); }
-        else if (name == "Edit") { I ("undo", "Deshacer\tCtrl+Z"); I ("redo", "Rehacer\tCtrl+Y"); S(); I ("dup", "Duplicar clip\tCtrl+D"); I ("del", "Eliminar clip\tSupr"); }
-        else if (name == "View") { I ("view:playlist", "Playlist\tF5", view == "playlist" && ! pianoMode); I ("view:mixer", "Mixer\tF9", mixerOpen); I ("view:piano", "Piano Roll\tF7", pianoMode); I ("view:steps", "Step Sequencer\tF6", stepsOpen); I ("view:meters", "Medidores\tF11", metersOpen); I ("view:perf", "Modo ensayo\tF12", perfOpen); S(); I ("layout", "Explorador de samples\tF8", browserOpen); }
-        else if (name == "Options") { I ("audio", "Ajustes de audio…"); S(); I ("metro", "Metrónomo", metro); I ("loop", "Repetir en bucle", looping); I ("snap", "Ajustar a la cuadrícula", snap); }
-        else if (name == "Tools") { I ("plugins", "Lista de plugins VST3…\tF10"); I ("ideas", "Generador de ideas…\tCtrl+G"); S(); I ("tool:select", "Herramienta: seleccionar", tool == "select"); I ("tool:pencil", "Herramienta: lápiz", tool == "pencil"); I ("tool:brush", "Herramienta: pincel", tool == "brush"); I ("tool:auto", "Herramienta: automatización", tool == "auto"); I ("tool:cut", "Herramienta: cortar", tool == "cut"); I ("tool:trim", "Herramienta: recortar", tool == "trim"); }
+        if (name == "File") { I ("new", "Proyecto nuevo\tCtrl+N"); S(); for (int k = 0; k < ideas::kNumStyles; ++k) items.push_back ({ "tpl:" + juce::String (k), juce::String::fromUTF8 ("Plantilla: ") + ideas::styleName (k) + " (" + juce::String ((int) ideas::styleBpm (k)) + " BPM)", false, true }); S(); I ("savetpl", "Guardar como plantilla…"); for (int k = 0; k < myTemplates.size(); ++k) items.push_back ({ "mytpl:" + juce::String (k), juce::String::fromUTF8 ("Mi plantilla: ") + myTemplates[k], false, true }); S(); I ("open", "Abrir…\tCtrl+O"); for (int k = 0; k < recents.size(); ++k) items.push_back ({ "recent:" + juce::String (k), juce::String::fromUTF8 ("Reciente: ") + juce::File (recents[k]).getFileNameWithoutExtension(), false, true }); S(); I ("save", "Guardar\tCtrl+S"); I ("saveas", "Guardar como…\tCtrl+Mayús+S"); I ("savesamples", "Guardar con los samples…"); S(); I ("importmidi", "Importar MIDI…"); I ("export", "Exportar audio…\tCtrl+E"); S(); I ("quit", "Salir"); }
+        else if (name == "Edit") { I ("undo", "Deshacer\tCtrl+Z"); I ("redo", "Rehacer\tCtrl+Y"); S(); I ("history", "Historial de cambios…"); S(); I ("dup", "Duplicar clip\tCtrl+D"); I ("del", "Eliminar clip\tSupr"); S(); I ("clearsolo", "Quitar todos los solos y silencios"); }
+        else if (name == "View") { I ("view:playlist", "Playlist\tF5", view == "playlist" && ! pianoMode); I ("view:mixer", "Mixer\tF9", mixerOpen); I ("view:piano", "Piano Roll\tF7", pianoMode); I ("view:steps", "Step Sequencer\tF6", stepsOpen); I ("view:meters", "Medidores\tF11", metersOpen); I ("view:perf", "Modo ensayo\tF12", perfOpen); S(); S(); I ("follow", "Seguir el cabezal\tF4", followOn); I ("zoomall", "Ver todo el proyecto\tCtrl+0"); I ("zoomsel", "Ver lo elegido\tCtrl+Mayús+0"); S(); I ("layout", "Explorador de samples\tF8", browserOpen); }
+        else if (name == "Options") { I ("audio", "Ajustes de audio…"); S(); I ("metro", "Metrónomo", metro); I ("loop", "Repetir en bucle", looping); I ("snap", "Ajustar a la cuadrícula", snap); I ("clickrec", "Metrónomo solo al grabar", clickRec); S(); { const char* nm[] = { "Sin cuenta regresiva", "Cuenta regresiva: 1 compás", "Cuenta regresiva: 2 compases", "Cuenta regresiva: 2 tiempos", "Cuenta regresiva: 1 tiempo" }; for (int k = 0; k < 5; ++k) items.push_back ({ "countin:" + juce::String (k), juce::String::fromUTF8 (nm[k]), countIn == k, true }); } S(); I ("tap", "Tap tempo  (clic derecho en el BPM)"); }
+        else if (name == "Tools") { I ("loadref", "Referencia: cargar canción…"); I ("ab", "Comparar con la referencia (A/B)\tF3", abOn); S(); I ("plugins", "Lista de plugins VST3…\tF10"); I ("ideas", "Generador de ideas…\tCtrl+G"); S(); I ("tool:select", "Herramienta: seleccionar", tool == "select"); I ("tool:pencil", "Herramienta: lápiz", tool == "pencil"); I ("tool:brush", "Herramienta: pincel", tool == "brush"); I ("tool:auto", "Herramienta: automatización", tool == "auto"); I ("tool:cut", "Herramienta: cortar", tool == "cut"); I ("tool:trim", "Herramienta: recortar", tool == "trim"); }
         else if (name == "Help") { I ("help", "Ayuda y atajos\tF1"); I ("about", "Acerca de INJUSTICE DAW"); }
         juce::PopupMenu m; int n = 1;
-        for (auto& it : items) { if (it.id.isEmpty()) m.addSeparator(); else m.addItem (n, it.label, it.en, it.tick); ++n; }
+        for (auto& it : items) { if (it.id.isEmpty()) m.addSeparator(); else { juce::PopupMenu::Item pi (it.label.upToFirstOccurrenceOf ("\t", false, false)); pi.itemID = n; pi.isEnabled = it.en; pi.isTicked = it.tick; if (it.label.contains ("\t")) pi.shortcutKeyDescription = it.label.fromFirstOccurrenceOf ("\t", false, false); m.addItem (pi); } ++n; }
         openMenu = name; repaint(); juce::Rectangle<float> tr;
         for (auto& mm : menus) if (mm.name == name) tr = mm.r;
         auto ids = std::make_shared<std::vector<juce::String>>(); for (auto& it : items) ids->push_back (it.id);

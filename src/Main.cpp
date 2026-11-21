@@ -29,8 +29,8 @@ public:
     {
         const float a = juce::jmin (1.f, life * 3.f);
         auto r = getLocalBounds().toFloat().reduced (1);
-        g.setColour (juce::Colour (0xff17141c).withAlpha (.96f * a)); g.fillRoundedRectangle (r, 8.f);
-        g.setColour (theme::accent.withAlpha (a)); g.drawRoundedRectangle (r, 8.f, 1.5f);
+        g.setColour (juce::Colour (0xff191919).withAlpha (.96f * a)); g.fillRoundedRectangle (r, 3.f);
+        g.setColour (juce::Colour (0xff3b3c42).withAlpha (a)); g.drawRoundedRectangle (r, 3.f, 1.f);
         g.setColour (juce::Colours::white.withAlpha (a)); g.setFont (juce::FontOptions (14.f)); g.drawFittedText (msg, getLocalBounds().reduced (14, 4), juce::Justification::centred, 2);
     }
     void place (juce::Rectangle<int> parent) { const int w = juce::jmin (640, parent.getWidth() - 40); setBounds (parent.getCentreX() - w / 2, parent.getBottom() - 64, w, 44); }
@@ -43,7 +43,7 @@ private:
 class HelpContent : public juce::Component
 {
 public:
-    HelpContent() { setSize (620, 860); }
+    HelpContent() { setSize (620, 2100); }
     void paint (juce::Graphics& g) override
     {
         using namespace theme; g.fillAll (bgBar2);
@@ -63,12 +63,18 @@ public:
             { "Automatización + clic", "Punto de volumen; arrastra para moverlo, clic derecho para borrar" },
             { "Pincel + arrastrar", "Pinta clips de 1 compás; sobre un clip, copia lo que ya hiciste" },
             { "Ctrl+rueda / Alt+rueda", "Zoom horizontal / alto de las pistas" },
+            { "Flechas ← → / Mayús", "Mover los clips elegidos un paso / un compás" }, { "S", "Dividir los clips elegidos en el cursor" }, { "Cuadritos arriba de un clip de audio", "Arrastrar: fundido de entrada / salida (doble clic lo quita)" }, { "Rombo y línea punteada del clip", "Arrastrar: ganancia del clip (Mayús = fino, doble clic = 0 dB)" }, { "Alt al arrastrar", "Mover sin imán de cuadrícula" }, { "Fin  /  Mayús+Espacio", "Ir al final / parar y volver de donde empezó" },
+            { "F4", "Seguir el cabezal (la vista avanza sola)" }, { "F3", "Comparar A/B con la canción de referencia (Tools > Referencia)" }, { "Ctrl+0  /  Ctrl+Mayús+0", "Ver todo el proyecto / ver lo elegido" }, { "Clic derecho en el BPM", "Tap tempo (toca al ritmo)" },
+            { "Piano Roll: [  ]  /  G  /  Ctrl+0", "Acortar o alargar notas / notas fantasma / ajustar la vista" }, { "Step Sequencer: carril de abajo", "Fuerza, Probabilidad y Largo de cada paso de la fila elegida; Mayús + arrastrar = rampa" }, { "Step Sequencer: Swing", "Barra de arriba = todas las filas; la de abajo = solo la fila elegida" }, { "Step Sequencer: S", "Escuchar solo esa fila" }, { "Step Sequencer: arrastrar el nombre de una fila", "Mover la fila de lugar (también en su menú ▾)" }, { "Step Sequencer: menú de la fila", "Copiar y pegar fila, largo propio (polirritmia), cortar el sample con el largo del paso" }, { "Step Sequencer: 1/32 o tresillo", "Cambia la duración de cada paso (rolls y ritmo de 3)" },
+            { "Piano Roll: M", "Silenciar o activar las notas elegidas" }, { "Piano Roll: título del carril de abajo", "Cambiar entre Velocity, Modulación (CC1) y Pitch bend; dibuja con el lápiz, clic derecho borra" }, { "Piano Roll: menú ⋮ → Slide", "La nota se desliza desde el tono de la nota anterior (pon el rango de bend de tu instrumento en el carril)" }, { "Piano Roll: menú ⋮ → Ratchet / Velocidad ±10 % / Tocar la selección en bucle", "Repetir una nota, subir o bajar la fuerza, y escuchar solo lo elegido en bucle" },
+            { "Step Sequencer: Mayús o Alt + clic", "Paso fuerte (127) o suave" },
             { nullptr, "Mixer" },
-            { "Doble clic en un fader", "Volver a 0 dB" }, { "Doble clic en el nombre de un canal", "Renombrar" }, { "Rueda sobre un fader / perilla", "Ajuste fino" } };
+            { "Doble clic en un fader", "Volver a 0 dB" }, { "Ctrl+clic en S / clic derecho en un canal", "Solo exclusivo / reiniciar niveles y quitar solos" }, { "Doble clic en el nombre de un canal", "Renombrar" }, { "Rueda sobre un fader / perilla", "Ajuste fino" },
+            { "Arrastrar la cabecera de un canal", "Mover el canal a otro lugar (también en el menú ▾ → Mover)" }, { "Menú ▾ → Enlazar", "Enlaza canales: volumen, pan y estéreo se mueven juntos (marca LINK)" }, { "Botón SC", "Sidechain: elegir qué canal lo hace bajar, fuerza y recuperación" }, { "Clic en Master", "Ver y editar el ecualizador del Master (y su barra de estéreo)" }, { "Ecualizador (abajo a la derecha)", "Arrastra los 4 puntos: izquierda/derecha = frecuencia, arriba/abajo = ganancia; rueda = Q; doble clic = reiniciar; Ø = invertir fase" }, { "Barra bajo el pan", "Separación estéreo: izquierda = mono, centro = normal, derecha = más ancho (doble clic = 100 %)" }, { "Flecha ▾ del canal → Salida", "Mandar el canal a Master o a otro canal (bus)" }, { "Flecha ▾ → Nuevo bus", "Crea un bus y le manda este canal (o todo su grupo)" }, { "Flecha ▾ → Envíos", "Enviar a cualquier canal con nivel propio, antes o después del fader" }, { "Botón A / ● Escribir aut.", "A muestra el carril de automatización en la Playlist; Escribir graba tus movimientos de fader y pan al reproducir" }, { "Perilla junto al slot", "Mezcla seca/húmeda del plugin" }, { "Flecha ▾ → Cadenas", "Guardar o cargar la cadena de efectos del canal" }, { "Flecha ▾ → Color / Icono / Entrada", "Color, icono y entrada de audio del canal" }, { "Botón Compacta", "Canales más angostos para ver 15 a la vez" } };
         int y = 80; for (auto& r : rows)
         {
             if (r.k == nullptr) { y += 6; g.setColour (textDim); g.setFont (juce::FontOptions (12.f, juce::Font::bold)); g.drawText (juce::String::fromUTF8 (r.d), 24, y, 400, 18, juce::Justification::centredLeft); y += 20; continue; }
-            g.setColour (juce::Colour (0xff231f2b)); g.fillRoundedRectangle (20.f, (float) y, 580.f, 22.f, 5.f);
+            g.setColour (juce::Colour (0xff252525)); g.fillRoundedRectangle (20.f, (float) y, 580.f, 22.f, 3.f);
             g.setColour (accentHi); g.setFont (juce::FontOptions (13.f, juce::Font::bold)); g.drawText (juce::String::fromUTF8 (r.k), 30, y, 250, 22, juce::Justification::centredLeft);
             g.setColour (text); g.setFont (juce::FontOptions (13.f)); g.drawText (juce::String::fromUTF8 (r.d), 270, y, 330, 22, juce::Justification::centredLeft); y += 25;
         }
@@ -76,6 +82,23 @@ public:
 };
 
 // Guardado automático: copia del proyecto en una carpeta de recuperación. Se borra al cerrar bien o al guardar.
+namespace userdata
+{
+    inline juce::File dataDir() { auto d = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("INJUSTICE DAW"); d.createDirectory(); return d; }
+    inline juce::File templatesDir() { auto d = dataDir().getChildFile ("Plantillas"); d.createDirectory(); return d; }
+    inline juce::File recentFile() { return dataDir().getChildFile ("recientes.txt"); }
+    inline juce::StringArray recents()
+    {
+        juce::StringArray all, ok; all.addLines (recentFile().loadFileAsString()); for (auto& l : all) if (l.isNotEmpty() && juce::File (l).existsAsFile()) ok.add (l);
+        return ok;
+    }
+    inline void addRecent (const juce::File& f)
+    {
+        auto r = recents(); r.removeString (f.getFullPathName()); r.insert (0, f.getFullPathName()); while (r.size() > 6) r.remove (r.size() - 1);
+        recentFile().replaceWithText (r.joinIntoString ("\n"));
+    }
+    inline juce::StringArray templateNames() { juce::StringArray n; for (auto& f : templatesDir().findChildFiles (juce::File::findFiles, false, "*.injdaw")) n.add (f.getFileNameWithoutExtension()); n.sort (true); return n; }
+}
 namespace autosave
 {
     inline juce::File dir() { auto d = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("INJUSTICE DAW").getChildFile ("Recuperacion"); d.createDirectory(); return d; }
@@ -182,17 +205,30 @@ public:
         piano.onAudition = [this] (te::AudioTrack* t, int pitch) { auditioner.note (t, pitch, 380); };
         steps.onAudition = [this] (te::AudioTrack* t, int pitch) { auditioner.note (t, pitch, 600); };
         playlist.onOpenMidi = [this] (te::MidiClip* c) { piano.setClip (c); showView ("piano"); };
-        bars.bpm = edit.tempoSequence.getTempo (0)->getBpm();
+        bars.bpm = edit.tempoSequence.getTempo (0)->getBpm(); refreshMenuData();
         bars.onSig = [this] (int n, int d) { edit.tempoSequence.getTimeSigAt (te::TimePosition()).setStringTimeSig (juce::String (n) + "/" + juce::String (d)); syncTimeSig(); note ("Comp\xc3\xa1s " + juce::String (n) + "/" + juce::String (d)); };
         bars.onBpm = [this] (double b) { edit.tempoSequence.getTempo (0)->setBpm (b); };
         bars.onButton = [this] (const juce::String& id)
         {
             auto& tc = edit.getTransport();
-            if (id == "play") { if (tc.isPlaying()) tc.stop (false, false); else { steps.endPattern(); browser.stopPreview(); tc.play (false); } }
+            if (id == "play") { if (tc.isPlaying()) tc.stop (false, false); else { steps.endPattern(); browser.stopPreview(); playStart = tc.getPosition(); tc.play (false); } }
             else if (id == "stop") { tc.stop (false, false); tc.setPosition (te::TimePosition()); }
             else if (id == "loop") { tc.looping = ! tc.looping; }
             else if (id == "undo") { undoRedo (true); }
             else if (id == "redo") { undoRedo (false); }
+            else if (id == "savetpl") saveTemplate();
+            else if (id.startsWith ("mytpl:")) { const auto nm = bars.myTemplates[id.substring (6).getIntValue()]; confirmThen ([this, nm] { if (onReplace) onReplace (userdata::templatesDir().getChildFile (nm + ".injdaw")); }); }
+            else if (id.startsWith ("recent:")) { const juce::File rf (bars.recents[id.substring (7).getIntValue()]); confirmThen ([this, rf] { if (rf.existsAsFile() && onReplace) onReplace (rf); }); }
+            else if (id == "history") showHistory();
+            else if (id == "loadref") loadReference();
+            else if (id == "ab") toggleAB();
+            else if (id == "follow") { playlist.follow = ! playlist.follow; bars.followOn = playlist.follow; bars.repaint(); }
+            else if (id == "zoomall") playlist.zoomFit (false);
+            else if (id == "zoomsel") playlist.zoomFit (true);
+            else if (id == "tap") tapTempo();
+            else if (id == "clickrec") { edit.clickTrackRecordingOnly = ! edit.clickTrackRecordingOnly.get(); bars.clickRec = edit.clickTrackRecordingOnly.get(); bars.repaint(); }
+            else if (id.startsWith ("countin:")) { setCountIn (id.fromFirstOccurrenceOf (":", false, false).getIntValue()); note (bars.countIn == 0 ? "Sin cuenta regresiva" : "Cuenta regresiva activada: sonar\xc3\xa1 el metr\xc3\xb3nomo antes de grabar"); }
+            else if (id == "clearsolo") { edit.getUndoManager().beginNewTransaction(); for (auto* t : te::getAudioTracks (edit)) { t->setSolo (false); t->setMute (false); } mixer.repaint(); playlist.repaint(); }
             else if (id == "snap") { playlist.snap = ! playlist.snap; piano.snap = playlist.snap; bars.snap = playlist.snap; }
             else if (id == "tool:auto" && bars.tool == "auto") { bars.tool = "select"; playlist.tool = "select"; piano.tool = "select"; playlist.hideAllAutomation(); }
             else if (id.startsWith ("tool:")) { const bool wasAuto = bars.tool == "auto"; bars.tool = id.substring (5); playlist.tool = bars.tool; piano.tool = bars.tool; if (wasAuto && bars.tool != "auto") playlist.hideAllAutomation(); if (bars.tool == "auto") playlist.showAutomationLanes (mixer.selected); }
@@ -238,7 +274,13 @@ public:
         if (auto* th = std::getenv ("INJ_TRACKH")) playlist.setAllHeights (juce::String (th).getIntValue());
         if (std::getenv ("INJ_AUTO")) { bars.tool = "auto"; playlist.tool = "auto"; const double bs = 60.0 / 172.0; for (auto [b, v] : { std::pair<double, float> { 0, .85f }, { 8, .85f }, { 12, .3f }, { 16, .85f }, { 24, .55f } }) playlist.addAutoPoint (0, b * bs, v); }
         if (auto* zz = std::getenv ("INJ_ZOOM")) playlist.setZoom (juce::String (zz).getDoubleValue());
+        if (auto* ln = std::getenv ("INJ_LANE")) if (auto* pc = firstMidiClip()) {   // solo capturas: carril de control con una curva, una nota silenciada y un slide
+            piano.setClip (pc); const int l = std::atoi (ln); piano.showLane (l); const int ty = l == 2 ? (int) te::MidiControllerEvent::pitchWheelType : 1;
+            for (double b = 0.0; b < 6.0; b += 0.0625) piano.setCurvePoint (ty, b, l == 2 ? 8192 + (int) (std::sin (b * 1.6) * 6000) : (int) (64 + std::sin (b * 1.2) * 60));
+            auto ns = pc->getSequence().getNotes(); if (ns.size() > 2) { ns[1]->setMute (true, nullptr); ns[2]->state.setProperty ("injSlide", true, nullptr); }
+        }
         if (auto* v = std::getenv ("INJ_VIEW")) if (juce::String (v) == "piano") { piano.setClip (firstMidiClip()); showView ("piano"); }
+        if (std::getenv ("INJ_STEPTEST")) juce::Timer::callAfterDelay (500, [this] { setSteps (true); steps.setTopLeftPosition (0, 60); steps.ensureClip(); int f = 0; stepFeatureTests (f, steps.getClip() ? dynamic_cast<te::AudioTrack*> (steps.getClip()->getTrack()) : nullptr); std::printf (f == 0 ? "TODO OK\n" : "%d FALLOS\n", f); std::fflush (stdout); std::_Exit (0); });
         if (std::getenv ("INJ_SELFTEST")) juce::Timer::callAfterDelay (500, [this] { const int f = runSelfTest(); std::fflush (stdout); if (f >= 0) std::_Exit (f == 0 ? 0 : 1); });
         startTimerHz (30);
     }
@@ -296,7 +338,7 @@ public:
             {
                 juce::AudioBuffer<float> b ((int) rd->numChannels, (int) rd->lengthInSamples); rd->read (&b, 0, b.getNumSamples(), 0, true, true);
                 auto peak = [&] (double t0, double t1) { float p = 0; for (int c = 0; c < b.getNumChannels(); ++c) for (int i = (int) (t0 * rd->sampleRate); i < std::min (b.getNumSamples(), (int) (t1 * rd->sampleRate)); ++i) p = std::max (p, std::abs (b.getSample (c, i))); return p; };
-                const double step = 60.0 / 172.0 / 4.0;
+                const double step = 60.0 / edit.tempoSequence.getTempo (0)->getBpm() / 4.0;
                 for (int s : { 0, 4, 8, 12 }) chk (peak (s * step, s * step + 0.04) > 0.05f, ("step: suena el kick en el paso " + juce::String (s + 1)).toRawUTF8());
                 chk (peak (0.11, 0.2) > 0.05f, "step: el sample suena completo (no se corta al terminar el paso)");
                 for (int s : { 2, 6, 10 }) chk (peak (s * step + 0.02, s * step + 0.06) < peak (s * step - 0.06, s * step - 0.02), ("step: sin golpe nuevo en el paso " + juce::String (s + 1) + " (solo la cola del anterior)").toRawUTF8());
@@ -310,6 +352,25 @@ public:
                 const int n = trackutil::armTrack (edit, *host, true);
                 if (n > 0) { chk (trackutil::isArmed (*host) && trackutil::anyArmed (edit), "grabar: armar una pista con instrumento asigna la entrada MIDI"); trackutil::armTrack (edit, *host, false); chk (! trackutil::isArmed (*host), "grabar: desarmar la pista"); }
                 else { chk (! trackutil::isArmed (*host), "grabar: sin entradas disponibles la pista no queda armada (en esta maquina no hay teclado MIDI)"); }
+            }
+        }
+        {   // mover y enlazar canales
+            trackutil::ensureTracks (edit, 3); auto tl = te::getAudioTracks (edit); chk (tl.size() >= 3, "mixer: hay al menos 3 canales para probar mover y enlazar"); if (tl.size() >= 3)
+            {
+                te::AudioTrack::Ptr a (tl[0]), b (tl[1]); mixer.moveChannelTo (0, 1); auto t2 = te::getAudioTracks (edit);
+                chk (t2[0] == b.get() && t2[1] == a.get(), "mixer: mover un canal a la derecha intercambia el orden");
+                mixer.moveChannelTo (1, 0); t2 = te::getAudioTracks (edit); chk (t2[0] == a.get() && t2[1] == b.get(), "mixer: se puede devolver al lugar original");
+                a->getVolumePlugin()->setVolumeDb (0.f); b->getVolumePlugin()->setVolumeDb (-6.f); mixer.linkChannels (*a, *b); mixer.setLinkedVolume (*a, -4.f);
+                chk (std::abs (b->getVolumePlugin()->getVolumeDb() + 10.f) < 0.05f, ("mixer: un canal enlazado se mueve junto con el otro (" + juce::String (b->getVolumePlugin()->getVolumeDb(), 1) + " dB)").toRawUTF8());
+                mixer.unlinkChannel (*a); mixer.setLinkedVolume (*a, 0.f); chk (std::abs (b->getVolumePlugin()->getVolumeDb() + 10.f) < 0.05f && MixerPanel::linkOf (*b).isEmpty(), "mixer: al quitar el enlace ya no se mueven juntos");
+                a->getVolumePlugin()->setVolumeDb (0.f); b->getVolumePlugin()->setVolumeDb (0.f);
+                mixer.selectMaster (false); mixer.selected = 0; mixer.toggleSendTo (*a, *b); chk (mixer.sendKnobShown (1) && ! mixer.sendKnobShown (2), "mixer: el canal destino de un envio muestra la perilla de nivel");
+                mixer.toggleSendTo (*a, *b); chk (! mixer.sendKnobShown (1), "mixer: sin envio no hay perilla");
+                { auto cd = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_chain_test"); cd.createDirectory(); mixer.setEqMid (*a, 700.f, 9.f); mixer.setWidthOfTrack (*a, 0.3f);
+                  const bool saved = mixer.saveChain (*a, "prueba", cd); mixer.clearChain (*b); chk (saved && mixer.eqMidGainOf (*b) < -90.f, "cadena: se guarda la cadena de un canal");
+                  const bool loaded = mixer.loadChain (*b, cd.getChildFile ("prueba.injchain")); chk (loaded && std::abs (mixer.eqMidGainOf (*b) - 9.f) < 0.1f && std::abs (mixer.widthOfTrack (*b) - 0.3f) < 0.01f, ("cadena: al cargarla en otro canal vuelven el ecualizador y el estereo (" + juce::String (mixer.eqMidGainOf (*b), 1) + " dB)").toRawUTF8());
+                  mixer.clearChain (*a); mixer.clearChain (*b); cd.deleteRecursively(); }
+                { auto& am = edit.getAutomationRecordManager(); const bool w0 = am.isWritingAutomation(); am.setWritingAutomation (true); const bool on = am.isWritingAutomation(); am.setWritingAutomation (w0); chk (on, "automatizacion: se puede activar el modo escribir"); }
             }
         }
         {   // envíos y retornos
@@ -404,7 +465,7 @@ public:
                                     const float s2 = render ("inj_a3.wav"); const bool ok3 = s2 < normal * 0.05f; std::printf ("%s  automatizacion: la curva de un parametro de plugin cambia el sonido (sin=%.3f con=%.3f)\n", ok3 ? "OK  " : "FALLO", (double) normal, (double) s2); if (! ok3) ++fails;
                                     ep->getCurve().clear(); PlaylistView::setAutoParam (*host, "vol");
                                     { const bool tapOk = meters.getTap() != nullptr && meters.getTap()->written() > 0; std::printf ("%s  medidores: la toma del Master recibe el audio\n", tapOk ? "OK  " : "FALLO"); if (! tapOk) ++fails; }
-                                    runToneTest (fails);
+                                    stepAudioTests (fails);
                                 });
                             });
                         });
@@ -415,6 +476,93 @@ public:
             return -1;
         }
         std::printf (fails == 0 ? "TODO OK\n" : "%d FALLOS\n", fails); return fails;
+    }
+    void stepFeatureTests (int& fails, te::AudioTrack* host)
+    {
+        auto chk = [&] (bool ok, const char* what) { std::printf ("%s  %s\n", ok ? "OK  " : "FALLO", what); if (! ok) ++fails; };
+                    const int origSteps = steps.stepsCount(); steps.setStepCount (16);
+                    { setCountIn (1); chk (edit.getNumCountInBeats() == 4 && bars.countIn == 1, "grabar: cuenta regresiva de 1 compás = 4 tiempos");
+                      setCountIn (4); chk (edit.getNumCountInBeats() == 1, "grabar: cuenta regresiva de 1 tiempo"); setCountIn (0); chk (edit.getNumCountInBeats() == 0, "grabar: sin cuenta regresiva"); }
+                    if (auto* sf = std::getenv ("INJ_SAMPLE_FILE"))
+                    {
+                        const int r0 = steps.rowCount(); const auto c1 = steps.stepCentre (1, 3);   // en medio de una fila (no en el nombre)
+                        steps.dropForTest (juce::StringArray (sf), (int) (c1.x * steps.scale), (int) (c1.y * steps.scale));
+                        chk (steps.hasRowSample (1) && steps.rowCount() == r0, "step: soltar audio sobre una fila se lo asigna a esa fila");
+                        steps.dropForTest (juce::StringArray (sf, sf), 5, 5);
+                        chk (steps.rowCount() == std::min (8, r0 + 2) && steps.hasRowSample (steps.rowCount() - 1), "step: soltar dos audios fuera de las filas crea dos filas nuevas");
+                    }
+                    bool saved[4][16]; for (int r = 0; r < 4; ++r) for (int k = 0; k < 16; ++k) saved[r][k] = steps.getStep (r, k);
+                    const int hi = te::getAllTracks (edit).indexOf (host); const double bpm = edit.tempoSequence.getTempos()[0]->getBpm();
+                    auto src2 = juce::Desktop::getInstance().getMainMouseSource(); const auto LL = juce::ModifierKeys::leftButtonModifier;
+                    auto sv = [&] (juce::Point<float> p, juce::ModifierKeys mk) { return juce::MouseEvent (src2, p, mk, 1.f, 0.f, 0.f, 0.f, 0.f, &steps, &steps, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+                    auto scr = [&] (juce::Point<float> p) { return juce::Point<float> (p.x * steps.scale, p.y * steps.scale); };
+                    auto clearAll = [&] { for (int r = 0; r < 4; ++r) for (int k = 0; k < 16; ++k) steps.setStep (r, k, false); };
+                    // lectura de audio de la pista
+                    auto rd = [&] (const char* nm, double secs) { auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (nm); renderWav (f, secs, {}, hi); juce::AudioFormatManager fm; fm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f)); juce::AudioBuffer<float> b (2, 0); if (r) { b.setSize (2, (int) r->lengthInSamples); r->read (&b, 0, (int) r->lengthInSamples, 0, true, true); } return std::make_pair (b, r ? r->sampleRate : 44100.0); };
+                    auto onset = [&] (const char* nm) { auto [b, sr] = rd (nm, 1.5); for (int i = 0; i < b.getNumSamples(); ++i) if (std::abs (b.getSample (0, i)) > 0.02f) return (double) i / sr; return -1.0; };
+                    auto energy = [&] (const char* nm) { auto [b, sr] = rd (nm, 1.2); juce::ignoreUnused (sr); return b.getNumSamples() > 0 ? (double) b.getRMSLevel (0, 0, b.getNumSamples()) : -1.0; };
+                    // estructura
+                    steps.setStepGate (0, 0, 0.5); steps.setStepProb (0, 0, 0.5f); chk (std::abs (steps.getStepGate (0, 0) - 0.5) < 1e-6 && std::abs (steps.getStepProb (0, 0) - 0.5f) < 1e-6, "step: guarda el largo y la probabilidad de un paso"); steps.setStepGate (0, 0, 1.0); steps.setStepProb (0, 0, 1.f);
+                    clearAll(); steps.setStep (0, 0, true); steps.setSwingAll (0.8f);
+                    chk (steps.rowGroove (0) == "Basic 16th Swing" && std::abs (steps.rowSwing (0) - 0.8f) < 1e-3 && std::abs (steps.rowSwing (3) - 0.8f) < 1e-3, "step: el swing se aplica a todas las filas");
+                    steps.setSwingAll (0.f); chk (steps.rowGroove (0).isEmpty() && steps.rowSwing (2) == 0.f, "step: swing 0 quita el groove");
+                    steps.setSwingRow (1, 0.5f); chk (steps.rowSwing (1) > 0.4f && steps.rowSwing (0) == 0.f, "step: el swing tambien se puede poner solo a una fila"); steps.setSwingRow (1, 0.f);
+                    steps.setResolution (0.125); chk (std::abs (steps.stepLen() - 0.125) < 1e-6, "step: la resolucion cambia a 1/32"); steps.setResolution (0.25); chk (std::abs (steps.stepLen() - 0.25) < 1e-6, "step: y vuelve a 1/16");
+                    auto b2 = [&] (const char* t) { if (! std::getenv ("INJ_DBG")) return; juce::String b; for (int k = 0; k < 16; ++k) b += steps.getStep (2, k) ? "1" : "0"; std::printf ("DBG %s %s\n", t, b.toRawUTF8()); };
+                    b2 ("antes"); steps.setRowLength (2, 5); b2 ("len5"); steps.setStep (2, 0, true); b2 ("set0"); steps.setRowLength (2, 5); b2 ("len5b"); chk (steps.rowLength (2) == 5 && steps.getStep (2, 5) && steps.getStep (2, 10) && steps.getStep (2, 15) && ! steps.getStep (2, 3), "step: una fila de 5 pasos se repite dentro del patron (polirritmia)");
+                    { auto c = steps.stepCentre (2, 7); steps.mouseDown (sv (scr (c), LL)); steps.mouseUp (sv (scr (c), 0)); chk (steps.getStep (2, 7) && steps.getStep (2, 2) && steps.getStep (2, 12), ("step: pintar un paso en una fila corta se repite en todos sus ciclos (" + juce::String ((int) steps.getStep (2, 7)) + juce::String ((int) steps.getStep (2, 2)) + juce::String ((int) steps.getStep (2, 12)) + " fila " + juce::String (steps.selectedRow()) + " bits=" + [&] { juce::String b; for (int k = 0; k < 16; ++k) b += steps.getStep (2, k) ? "1" : "0"; return b; }() + " len=" + juce::String (steps.rowLength (2)) + " p=" + juce::String ((int) c.x) + "," + juce::String ((int) c.y) + " sc=" + juce::String (steps.scale, 2) + ")").toRawUTF8()); }
+                    steps.setRowLength (2, 16); clearAll(); steps.setStep (0, 0, true); steps.setStep (0, 6, true);
+                    steps.copyRow (0); steps.pasteRow (3); chk (steps.getStep (3, 0) && steps.getStep (3, 6) && ! steps.getStep (3, 1), "step: copiar y pegar una fila");
+                    steps.setStep (1, 2, true); const auto n0 = steps.getClip()->getChannels()[0]->name.get(), n1 = steps.getClip()->getChannels()[1]->name.get();
+                    steps.swapRows (0, 1); chk (steps.getClip()->getChannels()[0]->name.get() == n1 && steps.getClip()->getChannels()[1]->name.get() == n0 && steps.getStep (0, 2) && steps.getStep (1, 6) && ! steps.getStep (0, 6), "step: mover una fila lleva su nombre y sus golpes");
+                    steps.swapRows (0, 1); chk (steps.getClip()->getChannels()[0]->name.get() == n0 && steps.getStep (0, 6), "step: y se puede devolver");
+                    steps.setSolo (1, true); chk (! steps.rowAudible (0) && steps.rowAudible (1), "step: solo en una fila deja fuera a las demas"); steps.setSolo (1, false); chk (steps.rowAudible (0), "step: quitar el solo las devuelve");
+                    // lineas de edicion con el raton: probabilidad y rampa de fuerza
+                    steps.selectRow (0);
+                    { auto tabp = steps.laneTabCentre (1); steps.mouseDown (sv (scr (tabp), LL)); steps.mouseUp (sv (scr (tabp), 0));
+                      steps.setStep (0, 0, true);
+                      auto p0 = steps.laneCentre (0, 0.5f); steps.mouseDown (sv (scr (p0), LL)); steps.mouseUp (sv (scr (p0), 0));
+                      chk (std::abs (steps.getStepProb (0, 0) - 0.5f) < 0.06f, ("step: el carril de probabilidad se edita con el raton (" + juce::String (steps.getStepProb (0, 0), 2) + " fila " + juce::String (steps.selectedRow()) + ")").toRawUTF8());
+                      auto tabv = steps.laneTabCentre (0); steps.mouseDown (sv (scr (tabv), LL)); steps.mouseUp (sv (scr (tabv), 0)); steps.setStepProb (0, 0, 1.f);
+                      for (int k = 0; k < 8; ++k) steps.setStep (0, k, true);
+                      auto a2 = steps.laneCentre (0, 0.2f), b2 = steps.laneCentre (7, 1.0f); const auto SH = juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier | juce::ModifierKeys::shiftModifier);
+                      steps.mouseDown (sv (scr (a2), LL)); steps.mouseDrag (sv (scr (b2), SH)); steps.mouseUp (sv (scr (b2), 0));
+                      chk (steps.getStepVelocity (0, 3) > steps.getStepVelocity (0, 1) && steps.getStepVelocity (0, 6) > steps.getStepVelocity (0, 3), "step: Mayus + arrastrar traza una rampa de fuerza"); for (int k = 0; k < 16; ++k) { steps.setStep (0, k, true); steps.setStepVelocity (0, k, 100); } }
+                    clearAll(); for (int r = 0; r < 4; ++r) for (int k = 0; k < 16; ++k) steps.setStep (r, k, saved[r][k]);
+                    steps.setStepCount (origSteps);
+    }
+    // Pruebas con audio real del Step Sequencer. El sampler aplica sus cambios de forma asincrona, por eso van en dos etapas con espera.
+    void stepAudioTests (int fails)
+    {
+        auto* host = steps.getClip() ? dynamic_cast<te::AudioTrack*> (steps.getClip()->getTrack()) : nullptr;
+        if (host == nullptr || ! steps.hasRowSample (0) || std::getenv ("INJ_SAMPLE_FILE") == nullptr) { std::printf ("OK    step: pruebas de audio omitidas (sin sample)\n"); runToneTest (fails); return; }
+        steps.setStepCount (16); for (int r = 0; r < 4; ++r) for (int k = 0; k < 16; ++k) steps.setStep (r, k, false); steps.setRowCut (0, true);
+        juce::Timer::callAfterDelay (600, [this, host, fails]() mutable
+        {
+            const int hi = te::getAllTracks (edit).indexOf (host); const double bpm = edit.tempoSequence.getTempos()[0]->getBpm();
+            auto chk = [&] (bool ok, const char* what) { std::printf ("%s  %s\n", ok ? "OK  " : "FALLO", what); if (! ok) ++fails; };
+            auto rd = [&] (const char* nm, double secs) { auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (nm); renderWav (f, secs, {}, hi); juce::AudioFormatManager fm; fm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f)); juce::AudioBuffer<float> b (2, 0); if (r) { b.setSize (2, (int) r->lengthInSamples); r->read (&b, 0, (int) r->lengthInSamples, 0, true, true); } return std::make_pair (b, r ? r->sampleRate : 44100.0); };
+            auto onset = [&] (const char* nm) { auto [b, sr] = rd (nm, 1.5); for (int i = 0; i < b.getNumSamples(); ++i) if (std::abs (b.getSample (0, i)) > 0.02f) return (double) i / sr; return -1.0; };
+            auto energy = [&] (const char* nm) { auto [b, sr] = rd (nm, 1.2); juce::ignoreUnused (sr); return b.getNumSamples() > 0 ? (double) b.getRMSLevel (0, 0, b.getNumSamples()) : -1.0; };
+            steps.setStep (0, 1, true);
+            const double o0 = onset ("inj_sw0.wav"); steps.setSwingAll (1.0f); const double o1 = onset ("inj_sw1.wav"); steps.setSwingAll (0.f);
+            const double want = 0.66 * 0.25 * 60.0 / bpm; chk (o0 > 0.0 && o1 - o0 > want * 0.5 && o1 - o0 < want * 1.6, ("step: el swing retrasa el golpe del paso par (" + juce::String ((o1 - o0) * 1000.0, 0) + " ms, esperado ~" + juce::String (want * 1000.0, 0) + ")").toRawUTF8());
+            steps.setStep (0, 1, false); for (int k = 0; k < 16; ++k) steps.setStep (0, k, true);
+            const double eFull = energy ("inj_p0.wav"); for (int k = 0; k < 16; ++k) steps.setStepProb (0, k, 0.05f); const double eProb = energy ("inj_p1.wav"); for (int k = 0; k < 16; ++k) steps.setStepProb (0, k, 1.f);
+            chk (eFull > 0.02 && eProb < eFull * 0.6, ("step: con poca probabilidad suenan menos golpes (" + juce::String (eFull, 3) + " -> " + juce::String (eProb, 3) + ")").toRawUTF8());
+            for (int k = 0; k < 16; ++k) steps.setStep (0, k, false); steps.setStep (0, 0, true);
+            const double gFull = energy ("inj_g0.wav"); steps.setStepGate (0, 0, 0.2); const double gShort = energy ("inj_g1.wav"); steps.setStepGate (0, 0, 1.0);
+            chk (gFull > 0.005 && gShort < gFull * 0.8, ("step: un largo corto corta el sample (" + juce::String (gFull, 3) + " -> " + juce::String (gShort, 3) + ")").toRawUTF8());
+            const double sFull = energy ("inj_s0.wav"); steps.setSolo (1, true);
+            juce::Timer::callAfterDelay (600, [this, host, fails, sFull, hi]() mutable
+            {
+                auto f = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_s1.wav"); renderWav (f, 1.2, {}, hi); juce::AudioFormatManager fm; fm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f)); double sSolo = -1.0;
+                if (r) { juce::AudioBuffer<float> b (2, (int) r->lengthInSamples); r->read (&b, 0, (int) r->lengthInSamples, 0, true, true); sSolo = (double) b.getRMSLevel (0, 0, b.getNumSamples()); }
+                const bool ok = sFull > 0.005 && sSolo >= 0.0 && sSolo < sFull * 0.05; std::printf ("%s  step: con solo en otra fila esta fila deja de sonar (%.3f -> %.3f)\n", ok ? "OK  " : "FALLO", sFull, sSolo); if (! ok) ++fails;
+                steps.setSolo (1, false); steps.setRowCut (0, false); for (int k = 0; k < 16; ++k) steps.setStep (0, k, false);
+                juce::ignoreUnused (host); runToneTest (fails);
+            });
+        });
     }
     int runSelfTest()
     {
@@ -452,6 +600,42 @@ public:
             const int before = seq.getNumNotes(); const int added = piano.importMidiFrom (tmp); chk (added == before && seq.getNumNotes() == before * 2, "piano roll: importa el mismo MIDI y duplica las notas");
             edit.getUndoManager().undo (); chk (seq.getNumNotes() == before, "piano roll: deshacer la importacion"); tmp.deleteFile();
         }
+        {   // --- Piano Roll: carriles de control, slide, silenciar, ratchet, ganancia, bucle de seleccion
+            const auto RBm = juce::ModifierKeys::rightButtonModifier; const int pw = te::MidiControllerEvent::pitchWheelType;
+            piano.clearCurve (pw); piano.showLane (2); const float yTop = (float) piano.gridBottom() + 34.f, yBot = (float) piano.getHeight() - 10.f, yq = yBot - (yBot - yTop) * .75f;
+            const float xa = piano.bx (2.0), xb2 = piano.bx (3.0);
+            piano.mouseDown (ev ({ xa, yq }, L)); piano.mouseDrag (ev ({ xb2, yq }, L)); piano.mouseUp (ev ({ xb2, yq }, 0));
+            auto pb = piano.eventsOfType (pw);
+            chk (pb.size() >= 12 && std::abs (pb.front()->getControllerValue() - 12288) < 400, ("piano roll: el carril de pitch bend dibuja una curva (" + juce::String ((int) pb.size()) + " puntos)").toRawUTF8());
+            piano.mouseDown (ev ({ xa, yq }, RBm)); piano.mouseDrag (ev ({ xb2, yq }, RBm)); piano.mouseUp (ev ({ xb2, yq }, 0));
+            chk (piano.eventsOfType (pw).empty(), "piano roll: clic derecho en el carril borra la curva");
+            piano.showLane (1); piano.mouseDown (ev ({ xa, yBot - (yBot - yTop) * .5f }, L)); piano.mouseUp (ev ({ xa, yBot }, 0));
+            { auto mod = piano.eventsOfType (1); chk (mod.size() == 1 && std::abs (mod[0]->getControllerValue() - 64) <= 2, "piano roll: el carril de modulacion (CC1) pone un punto a la mitad"); }
+            piano.clearCurve (1); piano.showLane (0);
+            // exportar / importar conserva la curva
+            piano.setCurvePoint (pw, 1.0, 10000); piano.setCurvePoint (1, 1.5, 90);
+            auto tmp2 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_test_cc.mid"); piano.exportMidiTo (tmp2);
+            piano.clearCurve (pw); piano.clearCurve (1); piano.importMidiFrom (tmp2); tmp2.deleteFile();
+            { auto a1 = piano.eventsOfType (pw), a2 = piano.eventsOfType (1); chk (a1.size() == 1 && a1[0]->getControllerValue() == 10000 && a2.size() == 1 && a2[0]->getControllerValue() == 90, "piano roll: el MIDI exportado e importado conserva pitch bend y modulacion"); }
+            piano.clearCurve (pw); piano.clearCurve (1);
+            // notas: slide, silenciar, ratchet, velocidad
+            { auto& sq = piano.getClip()->getSequence(); const int cnt0 = sq.getNumNotes();
+              auto* nA = sq.addNote (60, te::BeatPosition::fromBeats (30.0), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr); auto* nB = sq.addNote (62, te::BeatPosition::fromBeats (31.0), te::BeatDuration::fromBeats (1.0), 100, 0, nullptr);
+              piano.growTo (33.0); piano.selectNotesForTest ({ nB });
+              const int sl = piano.toggleSlide(); auto sp = piano.eventsOfType (pw);
+              chk (sl == 1 && sp.size() >= 6 && sp.front()->getControllerValue() < 8192 && sp.back()->getControllerValue() == 8192, ("piano roll: slide crea un deslizamiento de pitch bend (" + juce::String ((int) sp.size()) + " puntos)").toRawUTF8());
+              piano.toggleSlide (); chk (piano.eventsOfType (pw).empty(), "piano roll: quitar el slide borra el deslizamiento");
+              piano.selectNotesForTest ({ nA, nB }); piano.muteSel (); chk (nA->isMute() && nB->isMute(), "piano roll: M silencia las notas elegidas"); piano.muteSel (); chk (! nA->isMute() && ! nB->isMute(), "piano roll: M otra vez las activa");
+              piano.selectNotesForTest ({ nA }); piano.muteSel (); piano.noteTool ("ratchet:4"); int rc = 0, rm = 0; for (auto* o : sq.getNotes()) if (o->getStartBeat().inBeats() >= 30.0 && o->getStartBeat().inBeats() < 31.0) { ++rc; if (o->isMute()) ++rm; }
+              chk (rc == 4 && rm == 4, "piano roll: ratchet x4 parte una nota en 4 y conserva el silencio");
+              piano.selectNotesForTest ({}); { std::vector<te::MidiNote*> ns; for (auto* o : sq.getNotes()) if (o->getStartBeat().inBeats() >= 31.0) ns.push_back (o); piano.selectNotesForTest (ns); const int v0 = ns.front()->getVelocity(); piano.noteTool ("veldown"); chk (piano.selectedVelocityForTest() < v0, "piano roll: velocidad -10 % baja la fuerza"); }
+              piano.selectNotesForTest ({}); { std::vector<te::MidiNote*> del; for (auto* o : sq.getNotes()) if (o->getStartBeat().inBeats() >= 29.0) del.push_back (o); for (auto* o : del) sq.removeNote (*o, nullptr); }
+              chk (sq.getNumNotes() == cnt0, "piano roll: las notas de prueba se limpian");
+            }
+            { auto& tc = edit.getTransport(); const bool l0 = tc.looping; const auto r0 = tc.getLoopRange(); piano.playLoopSelection();
+              chk (piano.loopSel && (bool) tc.looping && tc.getLoopRange().getLength().inSeconds() > 0.1, "piano roll: tocar la seleccion en bucle activa el bucle");
+              piano.stopLoopSel(); chk (! piano.loopSel && (bool) tc.looping == l0 && tc.getLoopRange() == r0, "piano roll: al parar vuelve el bucle de antes"); }
+        }
         // --- Mixer
         setMixer (true); 
         auto tracks = te::getAudioTracks (edit); auto mev = [&] (juce::Point<float> p, juce::ModifierKeys mk) { return juce::MouseEvent (src, p, mk, 1.f, 0.f, 0.f, 0.f, 0.f, &mixer, &mixer, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
@@ -471,8 +655,7 @@ public:
         auto stc = steps.getClip(); chk (stc != nullptr, "step: se crea el clip de patrón en la Playlist");
         for (int s = 0; s < 16; ++s) steps.setStep (0, s, false);
         auto sev = [&] (juce::Point<float> p, juce::ModifierKeys mk) { return juce::MouseEvent (src, p, mk, 1.f, 0.f, 0.f, 0.f, 0.f, &steps, &steps, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
-        const float cw = (float) (steps.designW - 336 - 26) / 16.f;
-        for (int s : { 0, 4, 8, 12 }) { juce::Point<float> p ((336 + s * cw + cw * .5f) * steps.scale, ((float) (FloatingPanel::kHead + 96) + 38.f) * steps.scale); steps.mouseDown (sev (p, L)); steps.mouseUp (sev (p, 0)); }
+        for (int s : { 0, 4, 8, 12 }) { auto c = steps.stepCentre (0, s); juce::Point<float> p (c.x * steps.scale, c.y * steps.scale); steps.mouseDown (sev (p, L)); steps.mouseUp (sev (p, 0)); }
         chk (steps.getStep (0, 0) && steps.getStep (0, 4) && steps.getStep (0, 8) && steps.getStep (0, 12) && ! steps.getStep (0, 2), "step: los clics marcan los pasos 1, 5, 9 y 13");
         steps.runPatternOp (5); chk (steps.getStep (0, 1) && steps.getStep (0, 5) && ! steps.getStep (0, 0), "step: desplazar a la derecha mueve los golpes un paso");
         steps.runPatternOp (4); chk (steps.getStep (0, 0) && steps.getStep (0, 4), "step: desplazar a la izquierda los devuelve");
@@ -491,6 +674,125 @@ public:
                     chk (stopped, "ensayo: Detener todo para la celda"); edit.getTransport().stop (false, false); perf.removeClip (col, 0); chk (perf.stateAt (col, 0) == 0, "ensayo: quitar el clip vacia la celda"); }
             }
             else chk (false, "ensayo: hay una pista libre para probar");
+        }
+        {   // funciones nuevas v0.9.13: nudge, dividir en el cursor, zoom al proyecto, seguir cabezal, tap tempo, loop del clip, seleccionar pista
+            auto tl = te::getAudioTracks (edit); te::AudioTrack* tt = nullptr; for (auto* t : tl) if (! t->getClips().isEmpty()) { tt = t; break; }
+            if (tt != nullptr)
+            {
+                auto* c0 = tt->getClips().getFirst(); const int ti0 = tl.indexOf (tt);
+                playlist.selectTrackClips (ti0); chk (playlist.selectedClips().size() == tt->getClips().size() || tt->getClips().size() == 1, "pista: seleccionar todos los clips de la pista");
+                playlist.selectTrackClips (-1); playlist.selected = c0;
+                const double s0 = c0->getPosition().getStart().inSeconds(); playlist.nudgeSelection (1, false);
+                chk (c0->getPosition().getStart().inSeconds() > s0, "clips: la flecha derecha mueve el clip un paso"); playlist.nudgeSelection (-1, false); chk (std::abs (c0->getPosition().getStart().inSeconds() - s0) < 1e-6, "clips: la flecha izquierda lo devuelve");
+                const int nBefore = tt->getClips().size(); const double mid = c0->getPosition().getStart().inSeconds() + c0->getPosition().getLength().inSeconds() * 0.5;
+                edit.getTransport().setPosition (te::TimePosition::fromSeconds (mid)); playlist.selected = c0; playlist.splitSelectionAtPlayhead(); chk (tt->getClips().size() == nBefore + 1, "clips: S divide el clip elegido en el cursor");
+                edit.getUndoManager().undo();
+                playlist.loopClip (*tt->getClips().getFirst()); chk (edit.getTransport().looping.get(), "clip: repetir en bucle activa el bucle"); edit.getTransport().looping = false;
+            }
+            {   // v0.9.14: recientes, plantillas propias, invertir y normalizar
+                auto tf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_recent_test.injdaw"); tf.replaceWithText ("x"); const auto oldR = userdata::recentFile().loadFileAsString();
+                userdata::addRecent (tf); chk (userdata::recents().size() > 0 && userdata::recents()[0] == tf.getFullPathName(), "recientes: el proyecto guardado queda de primero"); userdata::recentFile().replaceWithText (oldR); tf.deleteFile();
+                edit.flushState(); te::EditFileOperations ops (edit); const auto tp = userdata::templatesDir().getChildFile ("inj_test_tpl.injdaw"); const bool wrote = ops.writeToFile (tp, false);
+                chk (wrote && userdata::templateNames().contains ("inj_test_tpl"), "plantillas: guardar el proyecto como plantilla la lista"); tp.deleteFile();
+                auto rf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_rev_test.wav"); rf.deleteFile();
+                { juce::WavAudioFormat wf; std::unique_ptr<juce::FileOutputStream> os (rf.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 44100.0, 1, 16, {}, 0)); if (w) { os.release(); juce::AudioBuffer<float> sb (1, 22050); for (int i = 0; i < 22050; ++i) sb.setSample (0, i, 0.3f * std::sin (i * 0.0313f) * (1.f - i / 22050.f)); w->writeFromAudioSampleBuffer (sb, 0, 22050); } }
+                { te::AudioTrack* et = nullptr; for (auto* t : te::getAudioTracks (edit)) if (t->getClips().isEmpty()) { et = t; break; } if (et) et->insertWaveClip ("revtest", rf, { te::TimeRange (te::TimePosition::fromSeconds (200.0), te::TimeDuration::fromSeconds (0.5)), te::TimeDuration() }, false); }
+                te::WaveAudioClip* wcx = nullptr; te::AudioTrack* wtx = nullptr; for (auto* t : te::getAudioTracks (edit)) { for (auto* c : t->getClips()) if (auto* w = dynamic_cast<te::WaveAudioClip*> (c)) { wcx = w; wtx = t; break; } if (wcx) break; }
+                if (wcx != nullptr)
+                {
+                    const float g0 = wcx->getGainDB(); playlist.normaliseClip (*wcx); chk (std::abs (wcx->getGainDB() - g0) > 0.05f || std::abs (g0) > 0.05f, "clip: normalizar cambia la ganancia"); wcx->setGainDB (g0);
+                    const int nc0 = wtx->getClips().size(); playlist.reverseClip (*wcx, *wtx); bool inv = false; for (auto* c : wtx->getClips()) if (c->getName().endsWith ("(inv)")) inv = true;
+                    chk (inv && wtx->getClips().size() == nc0, "clip: invertir audio deja un clip nuevo (inv) en lugar del original");
+                    for (int ci = wtx->getClips().size(); --ci >= 0;) { auto* c = wtx->getClips()[ci]; if (c->getName().startsWith ("revtest")) c->removeFromParent(); }   // limpiar para no afectar otras pruebas
+                }
+                else chk (false, "clip: hay un clip de audio para probar invertir");
+                { auto hf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_handle_test.wav"); hf.deleteFile();
+                  { juce::WavAudioFormat wf; std::unique_ptr<juce::FileOutputStream> os (hf.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 44100.0, 1, 16, {}, 0)); if (w) { os.release(); juce::AudioBuffer<float> sb (1, 44100 * 9); sb.clear(); w->writeFromAudioSampleBuffer (sb, 0, 44100 * 9); } }
+                  te::AudioTrack* ht = nullptr; for (auto* t : te::getAudioTracks (edit)) if (t->getClips().isEmpty()) { ht = t; break; } int hti = 0; { auto tt = te::getAudioTracks (edit); for (int i = 0; i < tt.size(); ++i) if (tt[i] == ht) hti = i; }
+                  if (ht) { ht->insertWaveClip ("handletest", hf, { te::TimeRange (te::TimePosition::fromSeconds (0.0), te::TimeDuration::fromSeconds (8.0)), te::TimeDuration() }, false);
+                    const double zPrev = playlist.zoomPx(); playlist.setZoom (14.0); for (auto* c : ht->getClips()) if (auto* hw = dynamic_cast<te::WaveAudioClip*> (c)) { const auto msg = playlist.selfTestHandles (*hw, hti); chk (msg.isEmpty(), ("clip: manijas de fundido y ganancia " + msg).toRawUTF8()); } playlist.setZoom (zPrev);
+                    for (int ci = ht->getClips().size(); --ci >= 0;) { auto* c = ht->getClips()[ci]; if (c->getName().startsWith ("handletest")) c->removeFromParent(); } } }
+                {   // ganancia y fundido de clip: se oyen de verdad en el render
+                  auto gf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_gain_test.wav"); gf.deleteFile();
+                  { juce::WavAudioFormat wf; std::unique_ptr<juce::FileOutputStream> os (gf.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 44100.0, 1, 16, {}, 0)); if (w) { os.release(); juce::AudioBuffer<float> sb (1, 44100 * 3); for (int i = 0; i < 44100 * 3; ++i) sb.setSample (0, i, 0.5f * std::sin (i * 0.0626f)); w->writeFromAudioSampleBuffer (sb, 0, 44100 * 3); } }
+                  auto winRms = [] (const juce::File& f, double t0, double t1) { juce::AudioFormatManager fm; fm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (f)); if (! r) return -1.f; const int a0 = (int) (t0 * r->sampleRate), n = (int) ((t1 - t0) * r->sampleRate); juce::AudioBuffer<float> b ((int) r->numChannels, n); r->read (&b, 0, n, a0, true, true); return b.getRMSLevel (0, 0, n); };
+                  trackutil::addTrack (edit); te::AudioTrack* gt = te::getAudioTracks (edit).getLast(); const int gti = te::getAllTracks (edit).indexOf (gt);
+                  if (gt)
+                  {
+                      auto gc = gt->insertWaveClip ("gaintest", gf, { te::TimeRange (te::TimePosition::fromSeconds (0.0), te::TimeDuration::fromSeconds (3.0)), te::TimeDuration() }, false);
+                      auto* gw = dynamic_cast<te::WaveAudioClip*> (gc.get()); auto of = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_gain_out.wav");
+                      if (gw && renderWav (of, 1.6, {}, gti))
+                      {
+                          const float a0 = winRms (of, 0.5, 1.0); gw->setGainDB (-12.f); renderWav (of, 1.6, {}, gti); const float a1 = winRms (of, 0.5, 1.0);
+                          chk (a0 > 0.01f && a1 > a0 * 0.18f && a1 < a0 * 0.34f, ("clip: -12 dB de ganancia baja el nivel a ~25% (" + juce::String (a0, 3) + " -> " + juce::String (a1, 3) + ")").toRawUTF8());
+                          gw->setGainDB (0.f); gw->setFadeIn (te::TimeDuration::fromSeconds (1.0)); renderWav (of, 1.6, {}, gti);
+                          const float e0 = winRms (of, 0.0, 0.2), e1 = winRms (of, 1.1, 1.5);
+                          chk (e1 > 0.01f && e0 < e1 * 0.45f, ("clip: el fundido de entrada sube el sonido poco a poco (" + juce::String (e0, 3) + " -> " + juce::String (e1, 3) + ")").toRawUTF8());
+                      }
+                      else chk (false, "clip: se pudo renderizar el clip de prueba de ganancia");
+                      if (gw)
+                      {   // se guardan con el proyecto y vuelven al abrirlo
+                          gw->setFadeIn (te::TimeDuration()); gw->setGainDB (-7.5f); gw->setFadeOut (te::TimeDuration::fromSeconds (0.4)); edit.flushState(); te::EditFileOperations ops (edit);
+                          auto pf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_gain_rt.injdaw"); pf.deleteFile(); bool ok = false; float rg = 0.f; double rf = 0.0;
+                          if (ops.writeToFile (pf, false)) if (auto e2 = te::loadEditFromFile (engine, pf)) for (auto* t2 : te::getAudioTracks (*e2)) for (auto* c2 : t2->getClips()) if (c2->getName() == "gaintest") if (auto* w2 = dynamic_cast<te::WaveAudioClip*> (c2)) { ok = true; rg = w2->getGainDB(); rf = w2->getFadeOut().inSeconds(); }
+                          chk (ok && std::abs (rg + 7.5f) < 0.01f && std::abs (rf - 0.4) < 0.01, "clip: ganancia y fundido se guardan en el proyecto y vuelven al abrirlo"); pf.deleteFile();
+                      }
+                      if (gw)
+                      {   // bus: la salida de la pista va a otro canal; el sonido pasa por él y su fader baja a todo el grupo
+                          gw->setGainDB (0.f); gw->setFadeOut (te::TimeDuration()); auto of2 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_bus_out.wav");
+                          juce::Array<te::AudioTrack*> muted; for (auto* ot : te::getAudioTracks (edit)) if (ot != gt && ! ot->isMuted (false)) { ot->setMute (true); muted.add (ot); }   // mezcla completa, solo suena la pista de prueba
+                          renderWav (of2, 1.6, {}); const float b0 = winRms (of2, 0.5, 1.0);
+                          auto* bus = mixer.newBus ("Bus prueba"); const bool routed = bus != nullptr && mixer.setOutput (*gt, bus);
+                          chk (routed && MixerPanel::outputOf (*gt) == bus && MixerPanel::isBus (*bus), "bus: la salida de un canal se enruta a otro canal");
+                          chk (bus != nullptr && ! mixer.setOutput (*bus, gt), "bus: no deja crear un lazo (bus -> canal que ya entra en el bus)");
+                          if (bus && routed)
+                          {
+                              renderWav (of2, 1.6, {}); const float b1 = winRms (of2, 0.5, 1.0);
+                              chk (b0 > 0.01f && b1 > b0 * 0.8f && b1 < b0 * 1.25f, ("bus: el sonido sigue llegando a Master a traves del bus (" + juce::String (b0, 3) + " -> " + juce::String (b1, 3) + ")").toRawUTF8());
+                              bus->getVolumePlugin()->setVolumeDb (-12.f); renderWav (of2, 1.6, {}); const float b2 = winRms (of2, 0.5, 1.0);
+                              chk (b2 > b1 * 0.18f && b2 < b1 * 0.34f, ("bus: bajar el fader del bus baja el nivel del grupo (" + juce::String (b1, 3) + " -> " + juce::String (b2, 3) + ")").toRawUTF8());
+                              mixer.setOutput (*gt, nullptr); chk (MixerPanel::outputOf (*gt) == nullptr, "bus: se puede devolver la salida a Master");
+                              mixer.toggleSendTo (*gt, *bus); chk (mixer.sendTo (*gt, *bus) != nullptr, "envios: se crea un envio a cualquier canal");
+                              mixer.toggleSendTo (*gt, *bus); chk (mixer.sendTo (*gt, *bus) == nullptr, "envios: se quita y desaparece su retorno");
+                          }
+                          if (bus) trackutil::deleteTrack (edit, bus);
+                          for (auto* ot : muted) ot->setMute (false);
+                      }
+                      {   // separación estéreo: un wav con sonido solo a la izquierda; en mono llega a los dos lados
+                          auto sf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_st_test.wav"); sf.deleteFile();
+                          { juce::WavAudioFormat wf; std::unique_ptr<juce::FileOutputStream> os (sf.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 44100.0, 2, 16, {}, 0));
+                            if (w) { os.release(); juce::AudioBuffer<float> b (2, 44100 * 2); b.clear(); for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (0, i, 0.5f * std::sin (i * 0.06f)); w->writeFromAudioSampleBuffer (b, 0, b.getNumSamples()); } }
+                          trackutil::addTrack (edit); auto* stt = te::getAudioTracks (edit).getLast(); const int sti2 = te::getAllTracks (edit).indexOf (stt);
+                          if (stt)
+                          {
+                              stt->insertWaveClip ("sttest", sf, { te::TimeRange (te::TimePosition::fromSeconds (0.0), te::TimeDuration::fromSeconds (2.0)), te::TimeDuration() }, false);
+                              auto rch = [&] (int ch) { auto of3 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_st_out.wav"); renderWav (of3, 1.2, {}, sti2); juce::AudioFormatManager fm; fm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (of3)); if (! r) return -1.f; const int n = (int) (0.5 * r->sampleRate); juce::AudioBuffer<float> b ((int) r->numChannels, n); r->read (&b, 0, n, (int) (0.3 * r->sampleRate), true, true); return b.getRMSLevel (juce::jmin (ch, b.getNumChannels() - 1), 0, n); };
+                              const float r0 = rch (1); mixer.setWidthOfTrack (*stt, 0.f); const float r1 = rch (1), l1 = rch (0);
+                              chk (r0 < 0.02f && r1 > 0.1f && std::abs (r1 - l1) < 0.03f, ("estereo: en mono el sonido de un solo lado llega a los dos (" + juce::String (r0, 3) + " -> " + juce::String (r1, 3) + " / " + juce::String (l1, 3) + ")").toRawUTF8());
+                              mixer.setWidthOfTrack (*stt, 1.f); const float q0 = rch (0); mixer.setEqMid (*stt, 420.f, 12.f); const float q1 = rch (0);
+                              chk (q0 > 0.05f && q1 > q0 * 2.2f, ("ecualizador: subir +12 dB en la frecuencia del sonido lo hace mucho mas fuerte (" + juce::String (q0, 3) + " -> " + juce::String (q1, 3) + ")").toRawUTF8());
+                              mixer.setEqMid (*stt, 420.f, 0.f);
+                              juce::Array<te::AudioTrack*> mutedM; for (auto* ot : te::getAudioTracks (edit)) if (ot != stt && ! ot->isMuted (false)) { ot->setMute (true); mutedM.add (ot); }
+                              auto rfull = [&] { auto of4 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_st_full.wav"); renderWav (of4, 1.2, {}); juce::AudioFormatManager fm; fm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (of4)); if (! r) return -1.f; const int n = (int) (0.5 * r->sampleRate); juce::AudioBuffer<float> b ((int) r->numChannels, n); r->read (&b, 0, n, (int) (0.3 * r->sampleRate), true, true); return b.getRMSLevel (0, 0, n); };
+                              const float q2 = rfull(); mixer.setMasterEqMid (420.f, 12.f); const float q3 = rfull(); mixer.clearMasterEq(); for (auto* ot : mutedM) ot->setMute (false);
+                              chk (q2 > 0.05f && q3 > q2 * 2.2f, ("master: el ecualizador del master sube el sonido (" + juce::String (q2, 3) + " -> " + juce::String (q3, 3) + ")").toRawUTF8());
+                              {   // automatización: la curva de volumen queda guardada y se lee bien (el render con curvas no se prueba aquí)
+                                  auto* pp = stt->getVolumePlugin()->volParam.get(); const float base = pp->getCurrentValue(); auto& cv = pp->getCurve();
+                                  cv.addPoint (te::TimePosition::fromSeconds (0.0), pp->valueRange.start, 0.f); cv.addPoint (te::TimePosition::fromSeconds (1.0), base, 0.f);
+                                  const float v0 = cv.getValueAt (te::TimePosition::fromSeconds (0.1)), v1 = cv.getValueAt (te::TimePosition::fromSeconds (0.9)); const int np = cv.getNumPoints(); cv.clear();
+                                  chk (np == 2 && v1 > v0, ("automatizacion: la curva de volumen se guarda y sube (" + juce::String (v0, 3) + " -> " + juce::String (v1, 3) + ")").toRawUTF8());
+                              }
+                              trackutil::deleteTrack (edit, stt);
+                          }
+                          sf.deleteFile();
+                      }
+                      trackutil::deleteTrack (edit, gt);
+                  }
+                }
+            }
+            const double pxBefore = playlist.zoomPx(); playlist.zoomFit (false); chk (playlist.zoomPx() != pxBefore || playlist.projectEndBeat() < 0.5, "vista: ver todo el proyecto cambia el zoom"); playlist.cancelZoomAnim();
+            playlist.follow = true; chk (playlist.follow, "vista: seguir el cabezal se activa"); playlist.follow = false;
+            { const double b0 = bars.bpm; tapTempo(); juce::Thread::sleep (500); tapTempo(); juce::Thread::sleep (500); tapTempo(); chk (std::abs (bars.bpm - 120.0) < 12.0, ("tap tempo: tres toques a 0.5 s dan ~120 BPM (" + juce::String (bars.bpm, 1) + ")").toRawUTF8()); bars.bpm = b0; if (bars.onBpm) bars.onBpm (b0); taps.clear(); }
         }
         {   // detector de tempo y tono sobre los archivos de prueba de /tmp/pk/out2 (si existen)
             { int hit = 0, tot = 0; juce::String vals; for (auto* nm : { "Loop Gabber 172 BPM 01", "Loop Gabber 172 BPM 02", "Loop Gabber 172 BPM 03", "Loop Gabber 172 BPM 04", "Loop 909 172 BPM 01", "Loop 909 172 BPM 02", "Loop 909 172 BPM 03", "Loop Hardcore 172 BPM 01", "Loop Hardcore 172 BPM 02", "Loop Hardcore 172 BPM 03", "Bass Loop Acid 172 BPM 02" })
@@ -876,6 +1178,7 @@ public:
                 bool othersSilent = host->isSolo (false); for (auto* t : tr) if (t != host && t->isSolo (false)) othersSilent = false; chk (othersSilent, "step: mientras suena el patron las demas pistas quedan fuera");
                 const auto lr = tc.getLoopRange(); chk (std::abs (lr.getLength().inSeconds() - 4.0 * 60.0 / edit.tempoSequence.getTempos()[0]->getBpm()) < 0.01, "step: el bucle dura exactamente un patron (16 pasos)");
                 tc.stop (false, false); steps.endPattern(); chk (! steps.inPatternMode() && ! host->isSolo (false) && ! (bool) tc.looping, "step: al parar se restaura todo");
+                stepFeatureTests (fails, host);
             }
             if (auto* sf0 = std::getenv ("INJ_SAMPLE_FILE"))
             {
@@ -914,6 +1217,9 @@ public:
     bool dirty() const { return forceDirty || edit.hasChangedSinceSaved(); }
     bool autosaveNow() { if (! dirty()) return false; const bool ok = autosave::write (edit, projectFile); lastAutosave = juce::Time::getMillisecondCounter(); return ok; }
     juce::uint32 lastAutosave = juce::Time::getMillisecondCounter();
+    void testShowHelp() { showHelp(); }
+    void testShowMenu (const juce::String& n) { bars.openMenuForTest (n); }
+    void demoFade (te::Clip* c) { playlist.selectForDemo (c); playlist.setZoom (14.0); }
     void note (const char* utf8) { toast.place (getLocalBounds()); toast.show (juce::String::fromUTF8 (utf8)); }
     void note (const juce::String& s) { toast.place (getLocalBounds()); toast.show (s); }
     static juce::File projectsDir() { auto d = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("INJUSTICE DAW"); d.createDirectory(); return d; }
@@ -928,7 +1234,7 @@ public:
     bool doSave (const juce::File& f)
     {
         te::EditFileOperations ops (edit); const bool ok = ops.saveAs (f, true);
-        if (ok) { forceDirty = false; autosave::clear(); projectFile = f; if (onSaved) onSaved (f); note (juce::String::fromUTF8 ("Guardado: ") + f.getFileName()); if (onTitle) onTitle(); } else note ("No se pudo guardar el proyecto en esa ubicaci\xc3\xb3n.");
+        if (ok) { forceDirty = false; autosave::clear(); userdata::addRecent (f); refreshMenuData(); projectFile = f; if (onSaved) onSaved (f); note (juce::String::fromUTF8 ("Guardado: ") + f.getFileName()); if (onTitle) onTitle(); } else note ("No se pudo guardar el proyecto en esa ubicaci\xc3\xb3n.");
         return ok;
     }
     void saveProject (bool as, std::function<void()> then = {})
@@ -1041,11 +1347,19 @@ public:
     }
     void showHelp()
     {
-        juce::DialogWindow::LaunchOptions o; o.content.setOwned (new HelpContent()); o.dialogTitle = "Ayuda"; o.componentToCentreAround = this;
+        auto* vp = new juce::Viewport(); vp->setViewedComponent (new HelpContent(), true); vp->setScrollBarsShown (true, false); vp->setSize (650, 780); vp->setScrollBarThickness (8);
+        juce::DialogWindow::LaunchOptions o; o.content.setOwned (vp); o.dialogTitle = "Ayuda"; o.componentToCentreAround = this;
         o.dialogBackgroundColour = theme::bgBar2; o.useNativeTitleBar = true; o.resizable = false; o.launchAsync();
     }
     void addPlugin (const juce::PluginDescription& d, int trackIdx)
     {
+        if (trackIdx == -2)
+        {   // cadena del Master: el efecto va antes del volumen
+            auto p = engine.getPluginManager().createNewPlugin (edit, te::ExternalPlugin::xmlTypeName, d);
+            if (p == nullptr) { note (juce::String::fromUTF8 ("No se pudo cargar ") + d.name); return; }
+            auto& ml = edit.getMasterPluginList(); const int vi = ml.indexOf (edit.getMasterVolumePlugin().get()); ml.insertPlugin (p, vi >= 0 ? vi : -1, nullptr);
+            mixer.repaint(); note (d.name + juce::String::fromUTF8 (" agregado al Master")); openEditorWhenReady (p); return;
+        }
         auto tracks = te::getAudioTracks (edit); if (trackIdx < 0 || trackIdx >= tracks.size()) return;
         auto* t = tracks[trackIdx];
         auto p = engine.getPluginManager().createNewPlugin (edit, te::ExternalPlugin::xmlTypeName, d);
@@ -1074,7 +1388,7 @@ public:
     }
     void openPluginList (int track = -1)
     {
-        const int t = track >= 0 ? track : mixer.selected;
+        const int t = track != -1 ? track : mixer.selected;
         if (pluginWin != nullptr) { if (auto* c = dynamic_cast<pluginhost::ListContent*> (pluginWin->getContentComponent())) c->setTarget (t); pluginWin->toFront (true); return; }
         auto* c = new pluginhost::ListContent (engine); c->setTarget (t); c->onAdd = [this, c] (const juce::PluginDescription& d) { addPlugin (d, c->targetTrack); };
         juce::DialogWindow::LaunchOptions o; o.content.setOwned (c); o.dialogTitle = "Plugins VST3"; o.componentToCentreAround = this; o.dialogBackgroundColour = theme::bgBar2;
@@ -1086,7 +1400,12 @@ public:
         const auto m = k.getModifiers(); const int c = k.getKeyCode(); auto& tc = edit.getTransport();
         if (m.isCommandDown() && juce::CharacterFunctions::toLowerCase ((juce::juce_wchar) c) == 't') { audition::typingPiano = ! audition::typingPiano; if (! audition::typingPiano) typedReleaseAll(); note (audition::typingPiano ? juce::String::fromUTF8 ("Teclado como piano: ACTIVADO (Z-M y Q-U, Re P\xc3\xa1g / Av P\xc3\xa1g = octava)") : juce::String::fromUTF8 ("Teclado como piano: apagado")); return true; }
         if (handleTypedKey (k)) return true;
-        if (c == juce::KeyPress::spaceKey && ! m.isAnyModifierKeyDown()) { if (tc.isPlaying()) tc.stop (false, false); else { steps.endPattern(); browser.stopPreview(); tc.play (false); } syncState(); return true; }
+        if (c == juce::KeyPress::spaceKey && m.isShiftDown() && ! m.isCommandDown()) { const bool was = tc.isPlaying(); if (was) tc.stop (false, false); tc.setPosition (playStart); syncState(); return true; }   // Mayús+Espacio: parar y volver de donde empezó
+        if (c == juce::KeyPress::spaceKey && ! m.isAnyModifierKeyDown()) { if (tc.isPlaying()) tc.stop (false, false); else { steps.endPattern(); browser.stopPreview(); playStart = tc.getPosition(); tc.play (false); } syncState(); return true; }
+        if (c == juce::KeyPress::endKey) { tc.setPosition (te::TimePosition::fromSeconds (edit.tempoSequence.toTime (te::BeatPosition::fromBeats (playlist.projectEndBeat())).inSeconds())); return true; }
+        if (c == juce::KeyPress::F3Key) { toggleAB(); return true; }
+        if (c == juce::KeyPress::F4Key) { playlist.follow = ! playlist.follow; bars.followOn = playlist.follow; bars.repaint(); return true; }
+        if (m.isCommandDown() && c == '0' && ! bars.pianoMode) { playlist.zoomFit (m.isShiftDown()); return true; }
         if (c == juce::KeyPress::homeKey) { tc.setPosition (te::TimePosition()); return true; }
         if (c == juce::KeyPress::F1Key) { showHelp(); return true; }
         if (c == juce::KeyPress::F5Key) { showView ("playlist"); return true; }
@@ -1198,6 +1517,10 @@ public:
     }
     void typedReleaseAll() { std::vector<int> ks; for (auto& kv : heldKeys) ks.push_back (kv.first); for (int k : ks) typedNoteOff (k); }
     // al terminar la grabación, las notas tocadas con el teclado pasan a un clip MIDI de la pista armada
+    void setCountIn (int k)
+    {
+        k = juce::jlimit (0, 4, k); edit.setCountInMode (static_cast<te::Edit::CountIn> (k)); bars.countIn = k; bars.repaint();
+    }
     void commitTypedRecording()
     {
         auto notes = typedRec; typedRec.clear(); if (notes.empty()) return;
@@ -1240,7 +1563,7 @@ public:
         if (mixer.isVisible() && ! mixer.maximized) mixer.setTopLeftPosition (juce::jmax (0, getWidth() - mixer.getWidth() - 12), juce::jmax (TopBars::kHeight, getHeight() - StatusBar::kHeight - mixer.getHeight() - 12));
     }
     void mouseDown (const juce::MouseEvent& e) override { splitting = browser.isVisible() && e.x >= browserW - 2 && e.x <= browserW + 8 && e.y > TopBars::kHeight; }
-    void mouseDrag (const juce::MouseEvent& e) override { if (splitting) { browserW = juce::jlimit (220, 520, e.x); resized(); repaint(); } }
+    void mouseDrag (const juce::MouseEvent& e) override { if (splitting) { browserW = juce::jlimit (180, 520, e.x); resized(); repaint(); } }
     void mouseMove (const juce::MouseEvent& e) override { setMouseCursor (browser.isVisible() && e.x >= browserW - 2 && e.x <= browserW + 8 && e.y > TopBars::kHeight ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::NormalCursor); }
     void setBrowser (bool v) { browser.setVisible (v); bars.browserOpen = v; bars.repaint(); resized(); repaint(); }
     template <typename P> void fitPanel (P& p)
@@ -1273,9 +1596,10 @@ public:
     }
     void paint (juce::Graphics& g) override { g.fillAll (theme::bgBar); }
 
+    void setMenuData (const juce::StringArray& r, const juce::StringArray& t) { bars.recents = r; bars.myTemplates = t; }
 private:
     audition::Player auditioner;
-    te::Engine& engine; std::unique_ptr<te::Edit>& editPtr; te::Edit& edit; TopBars bars; StatusBar status; juce::Component::SafePointer<juce::DialogWindow> pluginWin; Toast toast; juce::TooltipWindow tooltips { this, 500 }; std::unique_ptr<juce::FileChooser> chooser; PlaylistView playlist; BrowserPanel browser; MixerPanel mixer { edit }; StepSeqPanel steps { edit }; MetersPanel meters { edit }; PerformancePanel perf { edit }; int browserW = 300; bool splitting = false; PianoRollView piano { edit }; int qi = 2; bool lastDirty = false; int tick = 0;
+    te::Engine& engine; std::unique_ptr<te::Edit>& editPtr; te::Edit& edit; TopBars bars; StatusBar status; juce::Component::SafePointer<juce::DialogWindow> pluginWin; Toast toast; juce::TooltipWindow tooltips { this, 500 }; std::unique_ptr<juce::FileChooser> chooser; PlaylistView playlist; BrowserPanel browser; MixerPanel mixer { edit }; StepSeqPanel steps { edit }; MetersPanel meters { edit }; PerformancePanel perf { edit }; int browserW = 250; bool splitting = false; PianoRollView piano { edit }; int qi = 2; bool lastDirty = false; int tick = 0;
     // Abrir el Piano Roll siempre funciona: si no hay ningún clip MIDI, crea uno vacío de 4 compases en la pista elegida.
     void ensurePianoClip()
     {
@@ -1299,15 +1623,63 @@ private:
         if (pr && (bars.tool == "cut" || bars.tool == "brush" || bars.tool == "trim")) { bars.tool = "select"; piano.tool = "select"; }
         bars.resized(); bars.repaint();
     }
-    int lastWholeBeat = -1;
+    int lastWholeBeat = -1; te::TimePosition playStart;
+    void refreshMenuData() { setMenuData (userdata::recents(), userdata::templateNames()); }
+    void showHistory()
+    {
+        auto d = edit.getUndoManager().getUndoDescriptions(); juce::PopupMenu m;
+        if (d.isEmpty()) m.addItem (-1, juce::String::fromUTF8 ("No hay cambios para deshacer"), false);
+        for (int i = 0; i < std::min (15, d.size()); ++i) m.addItem (i + 1, (i == 0 ? juce::String::fromUTF8 ("Último: ") : juce::String (i + 1) + ". ") + (d[i].isEmpty() ? juce::String ("Cambio") : d[i]));
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&bars), [this] (int r) { for (int k = 0; k < r; ++k) undoRedo (true); refreshAll(); });
+    }
+    std::unique_ptr<juce::FileChooser> refChooser; bool abOn = false; std::vector<std::pair<te::AudioTrack*, bool>> abMutes;
+    te::AudioTrack* refTrack() { for (auto* t : te::getAudioTracks (edit)) if ((bool) t->state.getProperty ("injRef", false)) return t; return nullptr; }
+    void loadReference()
+    {
+        refChooser = std::make_unique<juce::FileChooser> (juce::String::fromUTF8 ("Elige una canción de referencia"), juce::File::getSpecialLocation (juce::File::userMusicDirectory), "*.wav;*.mp3;*.flac;*.aif;*.aiff;*.ogg");
+        refChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc)
+        {
+            auto f = fc.getResult(); if (! f.existsAsFile()) return; te::AudioFile af (edit.engine, f); if (af.getLength() <= 0) { note ("No se pudo leer ese archivo"); return; }
+            te::AudioTrack* dst = refTrack(); if (dst == nullptr) for (auto* t : te::getAudioTracks (edit)) if (t->getClips().isEmpty()) { dst = t; break; }
+            if (dst == nullptr) { note ("No hay una pista libre para la referencia"); return; }
+            edit.getUndoManager().beginNewTransaction(); for (int i = dst->getClips().size(); --i >= 0;) dst->getClips()[i]->removeFromParent();
+            dst->state.setProperty ("injRef", true, nullptr); dst->setName ("Referencia"); dst->setMute (true);
+            dst->insertWaveClip (f.getFileNameWithoutExtension(), f, { te::TimeRange (te::TimePosition(), te::TimeDuration::fromSeconds (af.getLength())), te::TimeDuration() }, false);
+            note (juce::String::fromUTF8 ("Referencia cargada en la pista \"Referencia\" (silenciada). Pulsa F3 para comparar A/B.")); playlist.repaint(); mixer.repaint();
+        });
+    }
+    void toggleAB()
+    {
+        auto* rt = refTrack(); if (rt == nullptr) { note (juce::String::fromUTF8 ("Primero carga una referencia (menú Tools)")); return; }
+        if (! abOn) { abMutes.clear(); for (auto* t : te::getAudioTracks (edit)) { abMutes.push_back ({ t, t->isMuted (false) }); t->setMute (t != rt); } abOn = true; note (juce::String::fromUTF8 ("B: suena la referencia (volumen sin igualar)")); }
+        else { for (auto& p : abMutes) p.first->setMute (p.second); abMutes.clear(); rt->setMute (true); abOn = false; note ("A: suena tu mezcla"); }
+        bars.abOn = abOn; bars.repaint(); mixer.repaint(); playlist.repaint();
+    }
+    void saveTemplate()
+    {
+        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Guardar como plantilla"), juce::String::fromUTF8 ("Nombre de la plantilla"), juce::MessageBoxIconType::NoIcon); aw->addTextEditor ("n", "Mi plantilla"); aw->addButton ("Guardar", 1); aw->addButton ("Cancelar", 0);
+        aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, aw] (int r)
+        {
+            if (r == 1) { auto nm = juce::File::createLegalFileName (aw->getTextEditorContents ("n").trim()); if (nm.isNotEmpty()) { edit.flushState(); te::EditFileOperations ops (edit); const bool ok = ops.writeToFile (userdata::templatesDir().getChildFile (nm + ".injdaw"), false); refreshMenuData(); note (ok ? juce::String::fromUTF8 ("Plantilla guardada: ") + nm : juce::String::fromUTF8 ("No se pudo guardar la plantilla")); } }
+            delete aw;
+        }));
+    }
+    std::vector<double> taps;
+    void tapTempo()
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes(); if (! taps.empty() && now - taps.back() > 2000.0) taps.clear(); taps.push_back (now); if (taps.size() > 7) taps.erase (taps.begin());
+        if (taps.size() >= 2) { const double bpm = juce::jlimit (20.0, 400.0, std::round (60000.0 / ((taps.back() - taps.front()) / (double) (taps.size() - 1)) * 100.0) / 100.0); bars.bpm = bpm; if (bars.onBpm) bars.onBpm (bpm); bars.repaint(); }
+    }
     void timerCallback() override { syncState(); }
     void syncState()
     {
         auto& tc = edit.getTransport(); bool changed = false;
         auto upd = [&] (auto& dst, auto v) { if (dst != v) { dst = v; changed = true; } };
+        if (bars.countIn != (int) edit.getCountInMode()) { bars.countIn = (int) edit.getCountInMode(); bars.repaint(); }
         upd (bars.playing, tc.isPlaying()); upd (bars.looping, (bool) tc.looping); upd (bars.metro, (bool) edit.clickTrackEnabled.get());
         const double beats = edit.tempoSequence.toBeats (tc.getPosition()).inBeats(), pb = std::floor (beats * 4.0) / 4.0;   // la posición cambia por semicorchea
         upd (bars.posBeats, pb);
+        bars.onTap = [this] { tapTempo(); };
         { const int wb = (int) std::floor (beats); if (tc.isPlaying() && wb != lastWholeBeat) bars.beatPulse(); lastWholeBeat = tc.isPlaying() ? wb : -1; }
         const double cpu = std::round (engine.getDeviceManager().getCpuUsage() * 100.0) / 100.0; upd (bars.cpu, cpu);
         if (++tick % 20 == 1) { upd (bars.ramMB, std::round (sysinfo::processMemoryMB() / 100.0) * 100.0); upd (bars.ramTotalMB, (double) juce::SystemStats::getMemorySizeInMegabytes()); }
@@ -1321,7 +1693,10 @@ private:
         {
             juce::String l = "Sin dispositivo de audio";
             if (auto* d = engine.getDeviceManager().deviceManager.getCurrentAudioDevice()) l = d->getTypeName() + ": " + d->getName() + "   |   " + juce::String (d->getCurrentSampleRate() / 1000.0, 1) + " kHz   |   " + juce::String::fromUTF8 ("búfer ") + juce::String (d->getCurrentBufferSizeSamples());
-            const juce::String r = (projectFile != juce::File() ? projectFile.getFileNameWithoutExtension() : juce::String::fromUTF8 ("Sin título")) + (dirty() ? juce::String::fromUTF8 ("   |   sin guardar") : juce::String::fromUTF8 ("   |   guardado"));
+            const double endB = playlist.projectEndBeat(); const int nb = (int) std::ceil (endB / timesig::bar() - 1e-6); const int secs = (int) std::lround (edit.tempoSequence.toTime (te::BeatPosition::fromBeats (endB)).inSeconds());
+            const int nsel = playlist.selectedClips().size(); juce::String info = nb > 0 ? juce::String (nb) + " compases  " + juce::String (secs / 60) + ":" + juce::String (secs % 60).paddedLeft ('0', 2) + "   |   " : juce::String();
+            if (nsel > 1) info += juce::String (nsel) + " clips elegidos   |   ";
+            const juce::String r = info + (projectFile != juce::File() ? projectFile.getFileNameWithoutExtension() : juce::String::fromUTF8 ("Sin título")) + (dirty() ? juce::String::fromUTF8 ("   |   sin guardar") : juce::String::fromUTF8 ("   |   guardado"));
             if (l != status.left || r != status.right) { status.left = l; status.right = r; status.repaint(); }
         }
     }
@@ -1351,7 +1726,7 @@ class InjusticeDawApp : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "INJUSTICE DAW"; }
-    const juce::String getApplicationVersion() override { return "0.6.1"; }
+    const juce::String getApplicationVersion() override { return "0.9.36"; }
     void initialise (const juce::String&) override
     {
         auto args = getCommandLineParameterArray();
@@ -1360,7 +1735,7 @@ public:
         engine = std::make_unique<te::Engine> ("InjusticeDAW", std::make_unique<pluginhost::UIBehaviour>(), std::make_unique<pluginhost::Behaviour>());
         const auto t0 = juce::Time::getMillisecondCounter(); auto tick = [t0] (const char* w) { if (std::getenv ("INJ_TIMING")) { std::printf ("t=%4d ms  %s\n", (int) (juce::Time::getMillisecondCounter() - t0), w); std::fflush (stdout); } };
         tick ("motor creado"); installMetronomeSounds(); tick ("metronomo");
-        engine->getPluginManager().createBuiltInType<InjLimiter>(); engine->getPluginManager().createBuiltInType<InjTap>();
+        engine->getPluginManager().createBuiltInType<InjLimiter>(); engine->getPluginManager().createBuiltInType<InjTap>(); engine->getPluginManager().createBuiltInType<InjStereo>();
         engine->getDeviceManager().initialise (0, 2);
         tick ("audio"); pluginhost::loadList (*engine); tick ("lista de plugins");
         edit = makeEdit ({}); tick ("proyecto");
@@ -1368,6 +1743,11 @@ public:
         if (std::getenv ("INJ_DEMO_MIDI")) addDemoMidi();
         if (auto* df = std::getenv ("INJ_DEMO_FULL")) addDemoFull (df);
         edit->getTransport().ensureContextAllocated(); tick ("contexto de audio");
+        {   // primer inicio: abre una canción de ejemplo (plantilla Hardcore) para que no empiece en blanco
+            auto marker = userdata::dataDir().getChildFile ("primer_inicio.txt");
+            if (! marker.existsAsFile() && ! std::getenv ("INJ_SHOT") && ! std::getenv ("INJ_SELFTEST") && ! std::getenv ("INJ_TEMPLATE") && ! std::getenv ("INJ_DEMO_WAV") && ! std::getenv ("INJ_DEMO_MIDI") && ! autosave::file().existsAsFile())
+            { marker.replaceWithText ("1"); samplepack::ensure (samplepack::packsDir()); templates::pending() = 0; }
+        }
         openWindow(); tick ("ventana");
         if (! std::getenv ("INJ_SHOT") && ! std::getenv ("INJ_SELFTEST")) tryRecover();
         if (std::getenv ("INJ_LOADTEST"))   // solo medicion: 100 pistas con muchos clips; imprime tiempos de dibujo y de render
@@ -1390,6 +1770,19 @@ public:
         if (auto* pn = std::getenv ("INJ_PANELS"))   // solo pruebas: abre paneles y datos de ejemplo para las capturas
         {
             auto* mc = window->main;
+            if (juce::String (pn).contains ("help")) mc->testShowHelp();
+            if (auto* mn = std::getenv ("INJ_MENU")) mc->testShowMenu (mn);
+            if (std::getenv ("INJ_DEMO_EQ")) { auto tr = te::getAudioTracks (*edit); if (! tr.isEmpty()) { auto& mx = mc->mixerRef(); mx.setEqMid (*tr[0], 900.f, 7.f); mx.eqDemo (*tr[0]); } }
+            if (std::getenv ("INJ_COMPACT")) mc->mixerRef().setCompact (true);
+            if (std::getenv ("INJ_DEMO_MASTER")) { auto& mx = mc->mixerRef(); mx.selectMaster (true); mx.setMasterEqMid (1200.f, -5.f); mx.setWidthMaster (1.4f); }
+            if (auto* scp = std::getenv ("INJ_SC_SHOT")) { auto tr = te::getAudioTracks (*edit); if (tr.size() > 3) mc->mixerRef().snapshotSidechain (*tr[3], juce::File (scp)); }
+            if (std::getenv ("INJ_DEMO_BUS"))   // captura: tres canales entran a un bus y otro manda un envío
+            {
+                auto& mx = mc->mixerRef(); auto tr = te::getAudioTracks (*edit); mx.refreshTracks();
+                { auto t0 = te::getAudioTracks (*edit); if (t0.size() > 6) mx.linkChannels (*t0[5], *t0[6]); for (int k = 0; k < 8 && k < t0.size(); ++k) t0[k]->state.setProperty ("injIcon", k + 1, nullptr); if (t0.size() > 1) { auto* pp = t0[1]->getVolumePlugin()->volParam.get(); pp->getCurve().addPoint (te::TimePosition::fromSeconds (0.0), pp->valueRange.start, 0.f); pp->getCurve().addPoint (te::TimePosition::fromSeconds (2.0), pp->getCurrentValue(), 0.f); } mx.selected = 3; }
+                if (auto* b = mx.newBus ("Drum Bus")) { for (int i = 0; i < 3 && i < tr.size(); ++i) mx.setOutput (*tr[i], b); if (tr.size() > 4) mx.toggleSendTo (*tr[3], *tr[4]); }
+                mx.refreshTracks();
+            }
             if (auto* sd = std::getenv ("INJ_SAMPLES")) { mc->browserRef().setRoot (juce::File (sd)); mc->browserRef().expandAll (2); }
             if (auto* bs = std::getenv ("INJ_BSEARCH")) mc->browserRef().setSearch (bs);
             if (auto* sel = std::getenv ("INJ_SELECT")) mc->browserRef().selectFile (juce::File (sel));
@@ -1466,11 +1859,11 @@ private:
         if (! fresh) e->resetChangedStatus();
         if (fresh)
         {
-            e->tempoSequence.getTempo (0)->setBpm (172.0);
+            e->tempoSequence.getTempo (0)->setBpm (160.0);
             e->getMasterVolumePlugin()->setVolumeDb (0.f);
             for (auto* t : te::getAudioTracks (*e)) t->setName ("Track");
         }
-        currentFile = fresh ? juce::File() : f;
+        currentFile = (fresh || f.isAChildOf (userdata::templatesDir())) ? juce::File() : f;
         return e;
     }
     void openWindow()
@@ -1484,6 +1877,7 @@ private:
                 if (f.existsAsFile() && te::loadEditFromFile (*engine, f) == nullptr) { window->main->note ("No se pudo abrir ese proyecto."); return; }
                 window.reset(); edit.reset(); edit = makeEdit (f); edit->getTransport().ensureContextAllocated(); openWindow();
                 window->main->note (f.existsAsFile() ? juce::String::fromUTF8 ("Proyecto abierto: ") + f.getFileName() : juce::String::fromUTF8 ("Proyecto nuevo"));
+                if (f.existsAsFile() && ! f.isAChildOf (userdata::templatesDir())) { userdata::addRecent (f); window->main->setMenuData (userdata::recents(), userdata::templateNames()); }
             });
         };
         window->main->onTitle = [this] { if (window) window->setName ("INJUSTICE DAW  -  " + (currentFileName()) + (window->main->dirty() ? " *" : "")); };
@@ -1515,7 +1909,8 @@ private:
     {
         auto tr = te::getAudioTracks (*edit)[1]; juce::File f (demo); te::AudioFile af (*engine, f);
         const auto st = te::TimePosition::fromSeconds (edit->tempoSequence.toTime (te::BeatPosition::fromBeats (8.0)).inSeconds());
-        tr->insertWaveClip ("demo", f, { te::TimeRange (st, te::TimeDuration::fromSeconds (af.getLength())), te::TimeDuration() }, false);
+        auto dc = tr->insertWaveClip ("demo", f, { te::TimeRange (st, te::TimeDuration::fromSeconds (af.getLength())), te::TimeDuration() }, false);
+        if (std::getenv ("INJ_DEMO_FADE") && dc != nullptr) if (auto* dw = dynamic_cast<te::WaveAudioClip*> (dc.get())) { dw->setFadeIn (te::TimeDuration::fromSeconds (0.8)); dw->setFadeOut (te::TimeDuration::fromSeconds (1.2)); dw->setGainDB (-6.f); if (window && window->main) window->main->demoFade (dw); }
     }
     // Arreglo de ejemplo para capturas: varios clips MIDI y de audio repartidos por las pistas
     void addDemoFull (const char* wav)
