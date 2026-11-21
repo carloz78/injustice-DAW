@@ -572,6 +572,16 @@ public:
             for (auto& c : made) if (c != nullptr) c->removeFromParent();
             piano.setClip (nullptr); playlist.repaint();
         }
+        // --- Clic derecho sobre un clip lo borra
+        {
+            auto ts = te::getAudioTracks (edit); mixer.selected = 0; auto* tr = ts[0]; auto c = tr->insertMIDIClip ("rc", te::TimeRange (te::TimePosition::fromSeconds (edit.tempoSequence.toTime (te::BeatPosition::fromBeats (8.0)).inSeconds()), te::TimePosition::fromSeconds (edit.tempoSequence.toTime (te::BeatPosition::fromBeats (12.0)).inSeconds())), nullptr);
+            playlist.setSize (1500, 800); playlist.resetView(); const int before = tr->getClips().size(); juce::MouseInputSource src = juce::Desktop::getInstance().getMainMouseSource();
+            const float cx = playlist.beatToX (10.0), cy = (float) playlist.trackTop (0) + 20.f;
+            auto rev = [&] (juce::Point<float> p, int mk) { return juce::MouseEvent (src, p, juce::ModifierKeys (mk), 1.f, 0.f, 0.f, 0.f, 0.f, &playlist, &playlist, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+            playlist.mouseDown (rev ({ cx, cy }, juce::ModifierKeys::rightButtonModifier)); playlist.mouseUp (rev ({ cx, cy }, 0));
+            chk (before >= 1 && tr->getClips().size() == before - 1, "playlist: clic derecho sobre un clip lo borra al instante");
+            (void) c;
+        }
         // --- Compás variable
         {
             bars.onSig (6, 8); chk (timesig::num == 6 && timesig::den == 8 && std::abs (timesig::bar() - 3.0) < 1e-9, "comp\xc3\xa1s: 6/8 = 3 pulsos por compás");

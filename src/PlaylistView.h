@@ -533,6 +533,11 @@ private:
         const int ti = trackAt ((float) e.y); if (ti < 0) return;
         auto tr = te::getAudioTracks (edit)[ti]; const double t = beatsToTime (xToBeat ((float) e.x)); te::Clip* hit = nullptr;
         for (auto* c : tr->getClips()) if (c->getPosition().time.contains (te::TimePosition::fromSeconds (t))) hit = c;
+        if (hit != nullptr && ! e.mods.isShiftDown())
+        {   // clic derecho sobre un clip = borrarlo (si es parte de una selección, borra toda la selección). Mayús + clic derecho abre el menú del clip.
+            if (group.size() > 1 && group.contains (hit)) { for (auto* c : group) c->removeFromParent(); } else hit->removeFromParent();
+            group.clear(); selected = nullptr; dragClip = nullptr; layoutDirty = true; if (onTracksChanged) onTracksChanged(); repaint(); return;
+        }
         juce::PopupMenu m; const double clickBeat = snapBeat (xToBeat ((float) e.x));
         if (hit != nullptr)
         {

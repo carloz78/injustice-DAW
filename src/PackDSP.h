@@ -63,7 +63,7 @@ namespace packdsp
         run (b, 0, lp, 0.707); if (post > 1.0) for (auto& x : b) x = (float) std::tanh (x * post);
         return b;
     }
-    inline Buf snare (double tone, double td, double nd, double noiseAmt, double hpf, double drive, double len = 0.5)
+    inline Buf snare (double tone, double td, double nd, double noiseAmt, double hpf, double drive, double len = 0.5, double toneAmt = 1.0)
     {
         auto b = make (len); Rng r (11u + 977u * vseed()++); double p1 = 0, p2 = 0; Buf n = make (len);
         for (auto& x : n) x = r.next();
@@ -72,7 +72,7 @@ namespace packdsp
         {
             const double t = (double) i / FS, bend = 1.0 + 0.35 * ex (t, 0.012);
             p1 += TAU * tone * bend / FS; p2 += TAU * tone * 1.83 * bend / FS;
-            const double tones = (0.7 * std::sin (p1) + 0.4 * std::sin (p2)) * ex (t, td);
+            const double tones = toneAmt * (0.7 * std::sin (p1) + 0.4 * std::sin (p2)) * ex (t, td);
             const double nz = n[i] * ex (t, nd) * std::min (1.0, t / 0.0003);
             b[i] = (float) std::tanh ((tones + noiseAmt * nz) * drive);
         }
@@ -83,13 +83,13 @@ namespace packdsp
         const double len = std::min (1.4, bursts * spacing + tail * 4.0 + 0.02);
         auto b = make (len); Rng r (23u + 977u * vseed()++); Buf n2 = make (len);
         for (size_t i = 0; i < b.size(); ++i) { const float v = r.next(); b[i] = v; n2[i] = v; }
-        run (b, 2, centre, q); run (n2, 2, centre * 2.2, 1.0);
+        run (b, 2, centre, q); run (n2, 2, centre * 1.6, 1.0);
         for (size_t i = 0; i < b.size(); ++i)
         {
             const double t = (double) i / FS; double e = 0;
             for (int k = 0; k < bursts; ++k) { const double st = k * spacing; if (t >= st && t < st + spacing) e = 0.85 * ex (t - st, 0.0035); }
-            if (t >= bursts * spacing) e = ex (t - bursts * spacing, tail);
-            b[i] = (float) std::tanh ((b[i] + 0.45 * n2[i]) * e * 2.0 * drive);
+            if (t >= bursts * spacing) { const double tt = t - bursts * spacing; e = 0.62 * ex (tt, tail * 0.2) + 0.38 * ex (tt, tail * 1.15); }
+            b[i] = (float) std::tanh ((b[i] + 0.3 * n2[i]) * e * 2.0 * drive);
         }
         return b;
     }
@@ -443,6 +443,78 @@ namespace packdsp
         return 0.89f;
     }
 
+    // ---------- Bombos de varios tipos (cada familia se construye distinto, no solo cambia el tono) ----------
+    struct KickX
+    {
+        double f0 = 200, f1 = 50, pd = 0.03, ad = 0.15, len = 0.6;   // cuerpo: tono inicial, final, caída del tono, caída del volumen, largo
+        double pre = 3, post = 1.2, lp = 9000, hp = 28; int shape = 0;   // saturación: antes, después, filtros; forma 0 tanh, 1 recorte, 2 pliegue, 3 asimétrica, 4 bits, 5 doble etapa
+        double click = 0.3, clickF = 3200;                              // golpe de ruido al inicio
+        double tail = 0, tailF = 50, tailTau = 0.3;                     // cola sostenida grave (la "campana" del gabber, el rumble del hard techno)
+        double knock = 0, knockF = 180, knockTau = 0.03;                // golpe de medios
+        double noise = 0, noiseTau = 0.03, noiseF = 1800;              // capa de ruido (aire / suciedad)
+    };
+    inline double shaper (int shape, double x, double crush)
+    {
+        switch (shape)
+        {
+            case 1: return std::max (-1.0, std::min (1.0, x));
+            case 2: return std::sin (x * 1.15);
+            case 3: return std::tanh (x + 0.35 * std::abs (x)) - 0.1;
+            case 4: { const double q = std::floor (std::tanh (x) * crush + 0.5) / crush; return q; }
+            case 5: return std::tanh (std::sin (std::tanh (x) * 2.2) * 1.6);
+            default: return std::tanh (x);
+        }
+    }
+    inline Buf kickX (const KickX& k)
+    {
+        auto b = make (k.len); Rng r (7u + 977u * vseed()++); Bq cl, nz; cl.set (2, k.clickF, 0.8); nz.set (2, k.noiseF, 0.7);
+        double ph = 0, pt = 0, pk = 0; const double norm = std::tanh (std::max (1.0, k.pre));
+        for (size_t i = 0; i < b.size(); ++i)
+        {
+            const double t = (double) i / FS, f = k.f1 + (k.f0 - k.f1) * (0.75 * ex (t, k.pd) + 0.25 * ex (t, k.pd * 4.0));
+            ph += TAU * f / FS; pt += TAU * k.tailF * (1.0 + 0.04 * ex (t, 0.08)) / FS; pk += TAU * k.knockF * (1.0 + 0.5 * ex (t, 0.01)) / FS;
+            double x = std::sin (ph) * ex (t, k.ad) * std::min (1.0, t / 0.0005);
+            x += k.tail * std::sin (pt) * ex (t, k.tailTau) * std::min (1.0, t / 0.004);
+            x += k.knock * std::sin (pk) * ex (t, k.knockTau);
+            double y = shaper (k.shape, x * k.pre, 6.0 + 18.0 * std::fmod (k.pre, 1.0)) / norm;
+            y += k.click * cl.tick (r.next()) * ex (t, 0.0025) * 2.0;
+            y += k.noise * nz.tick (r.next()) * ex (t, k.noiseTau) * 1.5;
+            b[i] = (float) y;
+        }
+        if (k.hp > 0) run (b, 1, k.hp, 0.707);
+        run (b, 0, k.lp, 0.707);
+        if (k.post > 1.0) for (auto& x : b) x = (float) std::tanh (x * k.post);
+        return b;
+    }
+    // Rumble de hard techno: bajo corto con saw + seno saturados, para las contra-notas entre bombos
+    inline Buf rumbleBass (int midi, double len)
+    {
+        const double f = mtof (midi); auto b = make (len); double p1 = 0, p2 = 0, ps = 0;
+        for (size_t i = 0; i < b.size(); ++i)
+        {
+            const double t = (double) i / FS, dt = f / FS; p1 += dt; p1 -= std::floor (p1); p2 += dt * 1.006; p2 -= std::floor (p2); ps += TAU * f / FS;
+            const double env = ex (t, len * 0.35) * std::min (1.0, t / 0.003);
+            b[i] = (float) (std::tanh ((0.8 * std::sin (ps) + 0.35 * sawv (p1, dt) + 0.3 * sawv (p2, dt * 1.006)) * 3.0) * env);
+        }
+        run (b, 0, 260, 0.9); run (b, 1, 30, 0.707); return b;
+    }
+    inline Buf techLoop (int v)
+    {   // 150 BPM, 2 compases: bombo duro + rumble en contratiempo + hats + clap
+        const double beat = 60.0 / 150.0, step = beat / 4.0; auto out = make (beat * 8.0);
+        KickX k; k.f0 = mx (170, 230, V (v, 601)); k.f1 = 50; k.pd = 0.025; k.ad = mx (0.08, 0.13, V (v, 602)); k.len = 0.4; k.pre = mx (3.5, 7, V (v, 603)); k.shape = v % 3 == 1 ? 3 : 0; k.knock = 0.7; k.knockF = 170; k.click = 0.4; k.tail = 0.25; k.tailF = 50; k.tailTau = 0.1; k.lp = 8000;
+        const Buf K = kickX (k), Cp = clap (0.16, 1400, 3, 0.011, 1.3, 1.6), Hc = hat (0.025, 1.0, 7000, 9500, 1.0, 0.2, 1.5, 15000), Ho = hat (0.14, 1.0, 6500, 9000, 1.0, 0.2, 1.5, 15000), Rb = rumbleBass (29 + (v % 3) * 2, 0.34);
+        for (int s = 0; s < 32; ++s)
+        {
+            const size_t at = (size_t) (s * step * FS);
+            if (s % 4 == 0) mixInto (out, K, at, 1.0f);
+            if (s % 4 == 2) { mixInto (out, Rb, at, 0.85f); mixInto (out, Ho, at, 0.45f); }
+            if (s % 8 == 4) mixInto (out, Cp, at, 0.7f);
+            if (s % 2 == 1 && (v & 1 ? s % 4 != 3 : true)) mixInto (out, Hc, at, 0.28f);
+        }
+        float pk = 0; for (auto x : out) pk = std::max (pk, std::abs (x)); if (pk > 1e-6f) for (auto& x : out) x = std::tanh (x / pk * 1.1f);
+        return out;
+    }
+
     // ---------- Catálogo ----------
     inline std::string num (int i) { return (i < 10 ? "0" : "") + std::to_string (i); }
     inline std::string noteName (int midi) { static const char* n[12] { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" }; return std::string (n[midi % 12]) + std::to_string (midi / 12 - 1); }
@@ -452,28 +524,28 @@ namespace packdsp
     {
         int count = 0; auto out = [&] (const std::string& p, Buf&& b) { emit (p, std::move (b)); ++count; };
         // Kicks (150)
-        for (int i = 0; i < 30; ++i) { const double ad = mx (0.14, 0.45, V (i, 4)); out ("Kicks/Kick 909 " + num (i + 1) + ".wav", kick (mx (170, 290, V (i, 1)), mx (46, 58, V (i, 2)), mx (0.018, 0.045, V (i, 3)), ad, mx (1.2, 2.6, V (i, 5)), mx (0.05, 0.3, V (i, 6)), ad * 3.2 + 0.1, 1.0, i % 3 == 0 ? 3 : 0, mx (5500, 12000, V (i, 7)))); }
-        for (int i = 0; i < 18; ++i) { const double ad = mx (0.45, 1.1, V (i, 14)); out ("Kicks/Kick 808 " + num (i + 1) + ".wav", kick (mx (90, 170, V (i, 11)), mx (38, 52, V (i, 12)), mx (0.02, 0.06, V (i, 13)), ad, mx (1.0, 1.8, V (i, 15)), mx (0.0, 0.05, V (i, 16)), std::min (1.6, ad * 3.0 + 0.2), 1.0, 0, mx (2200, 9000, V (i, 17)))); }
-        for (int i = 0; i < 40; ++i) { const double ad = mx (0.30, 0.65, V (i, 24)); out ("Kicks/Kick Gabber " + num (i + 1) + ".wav", kick (mx (420, 760, V (i, 21)), mx (38, 58, V (i, 22)), mx (0.022, 0.06, V (i, 23)), ad, mx (5, 14, V (i, 25)), mx (0.1, 0.45, V (i, 26)), ad * 2.2 + 0.15, mx (1.0, 2.4, V (i, 27)), i % 4, mx (3500, 11000, V (i, 28)))); }
-        for (int i = 0; i < 26; ++i) out ("Kicks/Kick Hardcore " + num (i + 1) + ".wav", kick (mx (320, 520, V (i, 31)), mx (46, 64, V (i, 32)), mx (0.025, 0.05, V (i, 33)), mx (0.2, 0.36, V (i, 34)), mx (3, 8, V (i, 35)), mx (0.2, 0.45, V (i, 36)), 0.55, mx (1.0, 2.0, V (i, 37)), (i + 1) % 4, mx (4000, 11000, V (i, 38))));
+        for (int i = 0; i < 30; ++i) { const double ad = mx (0.035, 0.075, V (i, 4)); out ("Kicks/Kick 909 " + num (i + 1) + ".wav", kick (mx (170, 290, V (i, 1)), mx (46, 58, V (i, 2)), mx (0.018, 0.045, V (i, 3)), ad, mx (1.2, 2.6, V (i, 5)), mx (0.2, 0.6, V (i, 6)), ad * 5.0 + 0.08, 1.0, i % 3 == 0 ? 3 : 0, mx (5500, 12000, V (i, 7)))); }
+        for (int i = 0; i < 18; ++i) { const double ad = mx (0.09, 0.22, V (i, 14)); out ("Kicks/Kick 808 " + num (i + 1) + ".wav", kick (mx (90, 170, V (i, 11)), mx (38, 52, V (i, 12)), mx (0.02, 0.06, V (i, 13)), ad, mx (0.7, 1.2, V (i, 15)), mx (0.0, 0.05, V (i, 16)), std::min (1.4, ad * 5.0 + 0.1), 1.0, 0, mx (2200, 9000, V (i, 17)))); }
+        for (int i = 0; i < 24; ++i) { const double ad = mx (0.30, 0.65, V (i, 24)); out ("Kicks/Kick Gabber " + num (i + 1) + ".wav", kick (mx (420, 760, V (i, 21)), mx (38, 58, V (i, 22)), mx (0.022, 0.06, V (i, 23)), ad, mx (5, 14, V (i, 25)), mx (0.1, 0.45, V (i, 26)), ad * 2.2 + 0.15, mx (1.0, 2.4, V (i, 27)), i % 4, mx (3500, 11000, V (i, 28)))); }
+        for (int i = 0; i < 16; ++i) out ("Kicks/Kick Hardcore " + num (i + 1) + ".wav", kick (mx (320, 520, V (i, 31)), mx (46, 64, V (i, 32)), mx (0.025, 0.05, V (i, 33)), mx (0.2, 0.36, V (i, 34)), mx (3, 8, V (i, 35)), mx (0.2, 0.45, V (i, 36)), 0.55, mx (1.0, 2.0, V (i, 37)), (i + 1) % 4, mx (4000, 11000, V (i, 38))));
         for (int i = 0; i < 12; ++i) out ("Kicks/Kick Punch " + num (i + 1) + ".wav", kick (mx (260, 420, V (i, 41)), mx (55, 75, V (i, 42)), mx (0.015, 0.03, V (i, 43)), mx (0.08, 0.2, V (i, 44)), mx (2, 5, V (i, 45)), mx (0.25, 0.5, V (i, 46)), 0.35));
         for (int i = 0; i < 10; ++i) { const double ad = mx (0.5, 0.95, V (i, 54)); out ("Kicks/Kick Sub " + num (i + 1) + ".wav", kick (mx (140, 240, V (i, 51)), mx (32, 44, V (i, 52)), mx (0.05, 0.1, V (i, 53)), ad, mx (1.5, 3, V (i, 55)), 0.02, ad * 2 + 0.2)); }
         for (int i = 0; i < 14; ++i) out ("Kicks/Kick Click " + num (i + 1) + ".wav", kick (mx (700, 1100, V (i, 61)), mx (60, 85, V (i, 62)), 0.012, mx (0.08, 0.16, V (i, 63)), mx (1.5, 4.0, V (i, 64)), mx (0.5, 1.2, V (i, 65)), 0.3, 1.0, i % 4, mx (4500, 12000, V (i, 66))));
         // Snares (70)
-        for (int i = 0; i < 34; ++i) out ("Snares/Snare 909 " + num (i + 1) + ".wav", snare (mx (170, 215, V (i, 71)), mx (0.05, 0.12, V (i, 72)), mx (0.1, 0.3, V (i, 73)), mx (0.8, 1.3, V (i, 74)), mx (900, 1600, V (i, 75)), 1.3));
-        for (int i = 0; i < 22; ++i) out ("Snares/Snare 808 " + num (i + 1) + ".wav", snare (mx (150, 200, V (i, 81)), mx (0.08, 0.16, V (i, 82)), mx (0.1, 0.22, V (i, 83)), mx (0.45, 0.8, V (i, 84)), mx (600, 1100, V (i, 85)), 1.1));
+        for (int i = 0; i < 34; ++i) out ("Snares/Snare 909 " + num (i + 1) + ".wav", snare (mx (150, 190, V (i, 71)), mx (0.02, 0.05, V (i, 72)), mx (0.028, 0.05, V (i, 73)), mx (0.9, 1.4, V (i, 74)), mx (900, 1700, V (i, 75)), 1.1, 0.35, 0.75));
+        for (int i = 0; i < 22; ++i) out ("Snares/Snare 808 " + num (i + 1) + ".wav", snare (mx (170, 210, V (i, 81)), mx (0.025, 0.05, V (i, 82)), mx (0.03, 0.055, V (i, 83)), mx (0.8, 1.2, V (i, 84)), mx (500, 1000, V (i, 85)), 1.1, 0.3, 0.9));
         for (int i = 0; i < 22; ++i) out ("Snares/Snare Gabber " + num (i + 1) + ".wav", snare (mx (200, 280, V (i, 91)), mx (0.06, 0.12, V (i, 92)), mx (0.1, 0.2, V (i, 93)), mx (0.7, 1.1, V (i, 94)), mx (500, 900, V (i, 95)), mx (3, 6, V (i, 96))));
         for (int i = 0; i < 24; ++i) out ("Snares/Snare Hardcore " + num (i + 1) + ".wav", snare (mx (190, 250, V (i, 101)), mx (0.07, 0.14, V (i, 102)), mx (0.12, 0.3, V (i, 103)), mx (0.8, 1.2, V (i, 104)), mx (600, 1200, V (i, 105)), mx (2, 3.5, V (i, 106)), 0.6));
         // Claps (48)
-        for (int i = 0; i < 42; ++i) out ("Claps/Clap 909 " + num (i + 1) + ".wav", clap (mx (0.05, 0.3, V (i, 111)), mx (850, 1900, V (i, 112)), 2 + (int) (V (i, 115) * 4.0), mx (0.007, 0.017, V (i, 113)), mx (0.8, 2.4, V (i, 114)), mx (0.9, 2.0, V (i, 116))));
-        for (int i = 0; i < 24; ++i) out ("Claps/Clap 808 " + num (i + 1) + ".wav", clap (mx (0.08, 0.45, V (i, 121)), mx (750, 1500, V (i, 122)), 2 + (int) (V (i, 125) * 3.0), mx (0.008, 0.022, V (i, 123)), mx (0.7, 1.8, V (i, 124)), mx (0.7, 1.4, V (i, 126))));
+        for (int i = 0; i < 42; ++i) out ("Claps/Clap 909 " + num (i + 1) + ".wav", clap (mx (0.035, 0.09, V (i, 111)), mx (700, 1250, V (i, 112)), 2 + (int) (V (i, 115) * 3.0), mx (0.008, 0.014, V (i, 113)), mx (0.9, 2.0, V (i, 114)), mx (0.9, 1.8, V (i, 116))));
+        for (int i = 0; i < 24; ++i) out ("Claps/Clap 808 " + num (i + 1) + ".wav", clap (mx (0.05, 0.13, V (i, 121)), mx (700, 1200, V (i, 122)), 2 + (int) (V (i, 125) * 3.0), mx (0.009, 0.02, V (i, 123)), mx (0.8, 1.6, V (i, 124)), mx (0.8, 1.4, V (i, 126))));
         for (int i = 0; i < 36; ++i) out ("Claps/Clap Gabber " + num (i + 1) + ".wav", clap (mx (0.06, 0.3, V (i, 131)), mx (600, 1500, V (i, 132)), 3 + (int) (V (i, 135) * 3.0), mx (0.006, 0.014, V (i, 133)), mx (0.6, 1.6, V (i, 136)), mx (2.0, 6.0, V (i, 134))));
         // Hats (110): el 909 es casi todo ruido con un poco de metal y crujido; el 808 es metálico puro
-        for (int i = 0; i < 28; ++i) out ("Hats/Hat 909 Cerrado " + num (i + 1) + ".wav", hat909 (mx (0.014, 0.08, V (i, 141)), mx (4000, 7500, V (i, 143)), mx (6000, 10500, V (i, 144)), mx (0.85, 1.22, V (i, 142)), mx (0.12, 0.5, V (i, 320)), mx (1.3, 2.6, V (i, 321)), mx (10500, 14500, V (i, 322))));
-        for (int i = 0; i < 14; ++i) out ("Hats/Hat 808 Cerrado " + num (i + 1) + ".wav", hat (mx (0.03, 0.09, V (i, 151)), mx (0.8, 0.95, V (i, 152)), mx (4500, 6500, V (i, 153)), mx (6500, 8500, V (i, 154)), mx (0.05, 0.12, V (i, 155))));
+        for (int i = 0; i < 28; ++i) out ("Hats/Hat 909 Cerrado " + num (i + 1) + ".wav", hat909 (mx (0.016, 0.05, V (i, 141)), mx (900, 2400, V (i, 143)), mx (4500, 8500, V (i, 144)), mx (0.85, 1.22, V (i, 142)), mx (0.12, 0.5, V (i, 320)), mx (1.3, 2.6, V (i, 321)), mx (9500, 13500, V (i, 322))));
+        for (int i = 0; i < 14; ++i) out ("Hats/Hat 808 Cerrado " + num (i + 1) + ".wav", hat (mx (0.014, 0.04, V (i, 151)), mx (0.8, 0.95, V (i, 152)), mx (4500, 6500, V (i, 153)), mx (6500, 8500, V (i, 154)), mx (0.05, 0.12, V (i, 155))));
         for (int i = 0; i < 14; ++i) out ("Hats/Hat Hardcore Cerrado " + num (i + 1) + ".wav", hat (mx (0.025, 0.055, V (i, 161)), mx (1.05, 1.25, V (i, 162)), mx (7000, 9000, V (i, 163)), mx (9000, 12000, V (i, 164)), mx (0.5, 0.9, V (i, 165)), 0.5, 1.6, 14500.0));
-        for (int i = 0; i < 18; ++i) out ("Hats/Hat 909 Abierto " + num (i + 1) + ".wav", hat909 (mx (0.08, 0.42, V (i, 171)), mx (4000, 7000, V (i, 173)), mx (6000, 10000, V (i, 174)), mx (0.85, 1.22, V (i, 172)), mx (0.12, 0.5, V (i, 324)), mx (1.3, 2.6, V (i, 325)), mx (10500, 14500, V (i, 326))));
-        for (int i = 0; i < 10; ++i) out ("Hats/Hat 808 Abierto " + num (i + 1) + ".wav", hat (mx (0.15, 0.4, V (i, 181)), mx (0.8, 0.95, V (i, 182)), mx (4500, 6000, V (i, 183)), mx (6500, 8500, V (i, 184)), mx (0.05, 0.12, V (i, 185))));
+        for (int i = 0; i < 18; ++i) out ("Hats/Hat 909 Abierto " + num (i + 1) + ".wav", hat909 (mx (0.05, 0.2, V (i, 171)), mx (900, 2400, V (i, 173)), mx (4500, 8500, V (i, 174)), mx (0.85, 1.22, V (i, 172)), mx (0.12, 0.5, V (i, 324)), mx (1.3, 2.6, V (i, 325)), mx (9500, 13500, V (i, 326))));
+        for (int i = 0; i < 10; ++i) out ("Hats/Hat 808 Abierto " + num (i + 1) + ".wav", hat (mx (0.07, 0.14, V (i, 181)), mx (0.8, 0.95, V (i, 182)), mx (4500, 6000, V (i, 183)), mx (6500, 8500, V (i, 184)), mx (0.05, 0.12, V (i, 185))));
         for (int i = 0; i < 8; ++i) out ("Hats/Hat Hardcore Abierto " + num (i + 1) + ".wav", hat (mx (0.12, 0.3, V (i, 191)), mx (1.05, 1.25, V (i, 192)), mx (7000, 9000, V (i, 193)), mx (9000, 12000, V (i, 194)), mx (0.5, 0.9, V (i, 195)), 0.5, 1.6, 14500.0));
         for (int i = 0; i < 10; ++i) out ("Hats/Hat Pedal " + num (i + 1) + ".wav", hat909 (mx (0.012, 0.025, V (i, 201)), mx (6000, 8000, V (i, 203)), 9500, mx (0.95, 1.1, V (i, 202)), mx (0.12, 0.5, V (i, 332)), mx (1.3, 2.6, V (i, 333)), mx (10500, 14500, V (i, 334))));
         for (int i = 0; i < 8; ++i) out ("Hats/Hat 909 Semi " + num (i + 1) + ".wav", hat909 (mx (0.07, 0.14, V (i, 205)), mx (5800, 7200, V (i, 206)), mx (7500, 9500, V (i, 207)), mx (0.95, 1.1, V (i, 208)), mx (0.12, 0.5, V (i, 328)), mx (1.3, 2.6, V (i, 329)), mx (10500, 14500, V (i, 330))));
@@ -522,6 +594,34 @@ namespace packdsp
         for (int i = 0; i < 8; ++i) out ("Loops/Snare Roll 172 BPM " + num (i + 1) + ".wav", rollLoop (0, i));
         for (int i = 0; i < 6; ++i) out ("Loops/Clap Roll 172 BPM " + num (i + 1) + ".wav", rollLoop (1, i));
         for (int i = 0; i < 6; ++i) out ("Loops/Kick Roll 172 BPM " + num (i + 1) + ".wav", rollLoop (2, i));
+        // Bombos nuevos: cada familia se construye distinto (84 bombos) + hard techno
+        for (int i = 0; i < 12; ++i) { KickX k; k.f0 = mx (260, 520, V (i, 701)); k.f1 = mx (44, 54, V (i, 702)); k.pd = mx (0.025, 0.05, V (i, 703)); k.ad = mx (0.1, 0.2, V (i, 704)); k.len = 1.0; k.pre = mx (8, 18, V (i, 705)); k.shape = i % 3 == 0 ? 1 : (i % 3 == 1 ? 3 : 0);
+            k.post = mx (1.2, 2.0, V (i, 706)); k.lp = mx (3500, 9000, V (i, 707)); k.click = mx (0.1, 0.35, V (i, 708)); k.tail = mx (0.5, 0.9, V (i, 709)); k.tailF = k.f1; k.tailTau = mx (0.25, 0.5, V (i, 710)); out ("Kicks/Kick Rotterdam " + num (i + 1) + ".wav", kickX (k)); }
+        for (int i = 0; i < 10; ++i) { KickX k; k.f0 = mx (600, 1100, V (i, 711)); k.f1 = mx (42, 52, V (i, 712)); k.pd = mx (0.03, 0.06, V (i, 713)); k.ad = mx (0.25, 0.4, V (i, 714)); k.len = mx (1.0, 1.3, V (i, 715)); k.pre = mx (15, 40, V (i, 716)); k.shape = i % 2 ? 2 : 5;
+            k.post = mx (2.0, 3.5, V (i, 717)); k.lp = mx (2500, 6000, V (i, 718)); k.click = 0.15; k.noise = mx (0.1, 0.3, V (i, 719)); k.noiseTau = 0.05; out ("Kicks/Kick Frenchcore " + num (i + 1) + ".wav", kickX (k)); }
+        for (int i = 0; i < 10; ++i) { KickX k; k.f0 = mx (250, 450, V (i, 721)); k.f1 = mx (55, 80, V (i, 722)); k.pd = mx (0.02, 0.04, V (i, 723)); k.ad = mx (0.06, 0.12, V (i, 724)); k.len = 0.4; k.pre = mx (1.5, 4, V (i, 725)); k.shape = i % 2 ? 3 : 0;
+            k.click = mx (0.3, 0.7, V (i, 726)); k.noise = mx (0.15, 0.4, V (i, 727)); k.noiseTau = mx (0.02, 0.04, V (i, 728)); k.lp = mx (6000, 12000, V (i, 729)); out ("Kicks/Kick Old School " + num (i + 1) + ".wav", kickX (k)); }
+        for (int i = 0; i < 10; ++i) { KickX k; k.f0 = mx (300, 600, V (i, 731)); k.f1 = mx (48, 60, V (i, 732)); k.pd = mx (0.02, 0.04, V (i, 733)); k.ad = mx (0.09, 0.16, V (i, 734)); k.len = 0.55; k.pre = mx (3, 8, V (i, 735)); k.shape = i % 2 ? 4 : 1;
+            k.noise = mx (0.3, 0.7, V (i, 736)); k.noiseTau = mx (0.04, 0.12, V (i, 737)); k.noiseF = mx (1500, 5000, V (i, 738)); k.click = mx (0.6, 1.0, V (i, 739)); k.clickF = mx (2500, 6000, V (i, 740)); k.knock = mx (0.4, 0.8, V (i, 741)); k.knockF = mx (180, 260, V (i, 742)); k.knockTau = mx (0.02, 0.05, V (i, 743)); k.lp = mx (5000, 10000, V (i, 744));
+            out ("Kicks/Kick Industrial " + num (i + 1) + ".wav", kickX (k)); }
+        for (int i = 0; i < 8; ++i) { KickX k; k.f0 = mx (900, 1600, V (i, 751)); k.f1 = mx (50, 70, V (i, 752)); k.pd = mx (0.01, 0.02, V (i, 753)); k.ad = mx (0.1, 0.2, V (i, 754)); k.len = 0.5; k.pre = mx (6, 14, V (i, 755)); k.shape = 2; k.knock = mx (0.6, 1.0, V (i, 756)); k.knockF = mx (300, 500, V (i, 757)); k.knockTau = 0.03;
+            k.lp = mx (3000, 5000, V (i, 758)); k.post = 1.5; k.click = 0.2; out ("Kicks/Kick Screech " + num (i + 1) + ".wav", kickX (k)); }
+        for (int i = 0; i < 14; ++i) { KickX k; k.f0 = mx (150, 230, V (i, 761)); k.f1 = mx (46, 56, V (i, 762)); k.pd = mx (0.018, 0.035, V (i, 763)); k.ad = mx (0.07, 0.14, V (i, 764)); k.len = 0.45; k.pre = mx (3, 7, V (i, 765)); k.shape = i % 3 == 0 ? 3 : (i % 3 == 1 ? 0 : 1);
+            k.knock = mx (0.5, 0.9, V (i, 766)); k.knockF = mx (140, 200, V (i, 767)); k.knockTau = mx (0.02, 0.04, V (i, 768)); k.click = mx (0.3, 0.6, V (i, 769)); k.tail = mx (0.2, 0.4, V (i, 770)); k.tailF = k.f1; k.tailTau = 0.12; k.lp = mx (6000, 10000, V (i, 771)); k.post = mx (1.3, 2.0, V (i, 772));
+            out ("Kicks/Kick Hard Techno " + num (i + 1) + ".wav", kickX (k)); }
+        for (int i = 0; i < 10; ++i) { KickX k; k.f0 = mx (160, 240, V (i, 781)); k.f1 = mx (40, 52, V (i, 782)); k.pd = mx (0.02, 0.035, V (i, 783)); k.ad = mx (0.08, 0.14, V (i, 784)); k.len = mx (1.0, 1.4, V (i, 785)); k.pre = mx (3, 6, V (i, 786)); k.shape = i % 2 ? 3 : 0;
+            k.knock = 0.6; k.knockF = mx (140, 190, V (i, 787)); k.knockTau = 0.03; k.click = 0.3; k.tail = mx (0.9, 1.4, V (i, 788)); k.tailF = k.f1; k.tailTau = mx (0.25, 0.6, V (i, 789)); k.hp = 30; k.lp = mx (2500, 6000, V (i, 790)); k.post = 1.3;
+            out ("Kicks/Kick Rumble " + num (i + 1) + ".wav", kickX (k)); }
+        for (int i = 0; i < 10; ++i) { KickX k; k.f0 = mx (200, 350, V (i, 791)); k.f1 = 50; k.pd = 0.03; k.ad = 0.2; k.len = 0.7; k.pre = mx (2, 30, V (i, 792)); k.shape = i % 6; k.lp = mx (3000, 11000, V (i, 793)); k.post = mx (1.0, 2.5, V (i, 794)); k.click = mx (0.1, 0.4, V (i, 795));
+            out ("Kicks/Kick Saturado " + num (i + 1) + ".wav", kickX (k)); }
+        // Hard techno: hats, claps, percusión, bajos y bucles
+        for (int i = 0; i < 6; ++i) out ("Hats/Hat Techno Cerrado " + num (i + 1) + ".wav", hat (mx (0.018, 0.04, V (i, 801)), mx (0.95, 1.15, V (i, 802)), mx (6000, 8500, V (i, 803)), mx (8500, 11500, V (i, 804)), 1.0, mx (0.1, 0.3, V (i, 805)), mx (1.3, 2.0, V (i, 806)), 15000.0));
+        for (int i = 0; i < 6; ++i) out ("Hats/Hat Techno Abierto " + num (i + 1) + ".wav", hat (mx (0.09, 0.22, V (i, 811)), mx (0.95, 1.15, V (i, 812)), mx (6000, 8500, V (i, 813)), mx (8500, 11500, V (i, 814)), 1.0, mx (0.1, 0.3, V (i, 815)), mx (1.3, 2.0, V (i, 816)), 15000.0));
+        for (int i = 0; i < 6; ++i) out ("Claps/Clap Techno " + num (i + 1) + ".wav", clap (mx (0.1, 0.28, V (i, 821)), mx (1100, 1800, V (i, 822)), 2 + (int) (V (i, 823) * 3.0), mx (0.009, 0.015, V (i, 824)), mx (1.0, 1.8, V (i, 825)), mx (1.3, 2.2, V (i, 826))));
+        for (int i = 0; i < 4; ++i) { const double f0 = mx (360, 220, i / 3.0); out ("Percusiones/Perc Techno Tom " + num (i + 1) + ".wav", tomDist (f0, f0 * 0.6, mx (0.08, 0.16, V (i, 831)), mx (2.5, 5.0, V (i, 832)))); }
+        for (int i = 0; i < 4; ++i) out ("Percusiones/Perc Techno Rim " + num (i + 1) + ".wav", rim (mx (520, 760, V (i, 841)), mx (1900, 2600, V (i, 842))));
+        { static const int rn[8] { 24, 26, 27, 29, 31, 32, 34, 36 }; for (int k = 0; k < 8; ++k) out ("Bajos/Bajo Rumble " + noteName (rn[k]) + ".wav", rumbleBass (rn[k], 0.9)); }
+        for (int i = 0; i < 6; ++i) out ("Loops/Loop Hard Techno 150 BPM " + num (i + 1) + ".wav", techLoop (i));
         return count;
     }
 }
