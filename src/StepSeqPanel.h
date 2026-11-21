@@ -11,7 +11,7 @@ public:
     std::function<void()> onClipChanged; std::function<void (te::AudioTrack*, int)> onAudition;
     explicit StepSeqPanel (te::Edit& e) : edit (e)
     {
-        title = "Step Sequencer"; icon = icons::Steps; setDesign (1130, kHead + 96 + 4 * 76 + kPanel + 26); startTimerHz (20);
+        title = "Step Sequencer"; icon = icons::Steps; setDesign (1130, kHead + 96 + 4 * 76 + kPanel + 26); startTimerHz (60);
     }
 
     // Crea (si hace falta) el clip de patrón en la primera pista libre, con su sampler.
@@ -132,7 +132,9 @@ protected:
             for (int s = 0; s < stepCount(); ++s)
             {
                 const bool v = clip->getPattern (0).getNote (r, s); auto sr = stepR (r, s);
-                g.setColour (v ? (on ? juce::Colour (0xffcf26f5) : juce::Colour (0xff6b3a78)) : (((s / 4) & 1) ? juce::Colour (0xff2a2830) : juce::Colour (0xff24222a))); g.fillRoundedRectangle (sr, 7.f);
+                const float fl = (r < 8 && s < 64) ? flash[r][s] : 0.f;
+                if (fl > 0.f) { g.setColour (juce::Colour (0xffe35cff).withAlpha (fl * .55f)); g.drawRoundedRectangle (sr.expanded (1.f + fl * 4.f), 9.f, 2.f + fl * 2.f); }
+                g.setColour (v ? (on ? juce::Colour (0xffcf26f5) : juce::Colour (0xff6b3a78)).interpolatedWith (juce::Colours::white, fl * .6f) : (((s / 4) & 1) ? juce::Colour (0xff2a2830) : juce::Colour (0xff24222a))); g.fillRoundedRectangle (fl > 0.f ? sr.expanded (fl * 1.5f) : sr, 7.f);
                 if (s == cur) { g.setColour (juce::Colours::white.withAlpha (.85f)); g.drawRoundedRectangle (sr.reduced (.5f), 7.f, 2.f); }
             }
             if (r == selRow) { g.setColour (accentHi); g.fillRoundedRectangle (nameR (r).getX() - 6.f, nameR (r).getY() + 6, 3.f, nameR (r).getHeight() - 12, 1.5f); }
@@ -190,7 +192,7 @@ protected:
         {
             if (powerR (r).contains (p)) { setOn (r, ! isOn (r)); return; }
             if (nameR (r).contains (p)) { selRow = r; if (p.x > nameR (r).getRight() - 52) rowMenu (r); else repaint(); return; }
-            for (int s = 0; s < stepCount(); ++s) if (stepR (r, s).expanded (3).contains (p)) { selRow = r; auto pat = clip->getPattern (0); paint_ = ! pat.getNote (r, s); pat.setNote (r, s, paint_); if (paint_) hear (r); lastCell = { r, s }; painting = true; if (onClipChanged) onClipChanged(); repaint(); return; }
+            for (int s = 0; s < stepCount(); ++s) if (stepR (r, s).expanded (3).contains (p)) { selRow = r; auto pat = clip->getPattern (0); paint_ = ! pat.getNote (r, s); pat.setNote (r, s, paint_); if (paint_) { hear (r); if (r < 8 && s < 64) flash[r][s] = 1.f; } lastCell = { r, s }; painting = true; if (onClipChanged) onClipChanged(); repaint(); return; }
         }
     }
     juce::String tipAt (juce::Point<float> p) override
@@ -227,7 +229,7 @@ protected:
         }
         if (! painting) return;
         for (int r = 0; r < rows; ++r) for (int s = 0; s < stepCount(); ++s)
-            if (stepR (r, s).expanded (3).contains (e.position) && lastCell != juce::Point<int> (r, s)) { clip->getPattern (0).setNote (r, s, paint_); if (paint_) hear (r); lastCell = { r, s }; repaint(); return; }
+            if (stepR (r, s).expanded (3).contains (e.position) && lastCell != juce::Point<int> (r, s)) { clip->getPattern (0).setNote (r, s, paint_); if (paint_) { hear (r); if (r < 8 && s < 64) flash[r][s] = 1.f; } lastCell = { r, s }; repaint(); return; }
     }
     void bodyUp (const juce::MouseEvent&) override { painting = false; drag = Drag::none; }
 
@@ -243,7 +245,17 @@ private:
     juce::StringArray dummy;
     std::unique_ptr<juce::FileChooser> chooser;
 
-    void timerCallback() override { validate(); if (patternMode && ! edit.getTransport().isPlaying()) endPattern(); if (isVisible() && edit.getTransport().isPlaying()) repaint(); }
+    void timerCallback() override
+    {
+        validate(); auto& tc = edit.getTransport(); if (patternMode && ! tc.isPlaying()) endPattern();
+        if (! isVisible()) return;
+        bool dirty = false; const bool playing = tc.isPlaying();
+        int cur = -1; if (playing && clip != nullptr) { const double b = edit.tempoSequence.toBeats (tc.getPosition()).inBeats() - edit.tempoSequence.toBeats (clip->getPosition().getStart()).inBeats(); if (b >= 0) cur = (int) std::floor (std::fmod (b, stepCount() * 0.25) / 0.25); }
+        if (cur != lastCur) { lastCur = cur; if (cur >= 0 && clip != nullptr) { auto pat = clip->getPattern (0); for (int r = 0; r < rows && r < 8; ++r) if (cur < 64 && pat.getNote (r, cur) && isOn (r)) flash[r][cur] = 1.f; } dirty = true; }
+        for (auto& row : flash) for (auto& f : row) if (f > 0.f) { f = f < .03f ? 0.f : f * .88f; dirty = true; }
+        if (dirty || playing) repaint();
+    }
+    int lastCur = -1; float flash[8][64] {};
     te::SamplerPlugin* findSampler (te::AudioTrack* t) { for (auto* p : t->pluginList.getPlugins()) if (auto* s = dynamic_cast<te::SamplerPlugin*> (p)) return s; return nullptr; }
     void hear (int r) { if (onAudition && clip) if (auto* t = dynamic_cast<te::AudioTrack*> (clip->getTrack())) onAudition (t, clip->getChannels()[r]->noteNumber.get()); }
     bool hasSample (int r) { return soundForRow (r) >= 0; }

@@ -1,9 +1,33 @@
 #pragma once
 #include "Icons.h"
 #include <functional>
+#include <cstdlib>
 
 // Ventana flotante propia: se arrastra por la barra, se redimensiona desde bordes y esquinas (el contenido
 // se escala), se maximiza y se cierra. El contenido se dibuja en coordenadas de diseño (designW x designH).
+
+// Sombra de un panel que acaba de cerrarse: se encoge y se desvanece (como en FL Studio). No intercepta el ratón.
+class CloseGhost : public juce::Component
+{
+public:
+    CloseGhost (juce::Image i) : img (std::move (i)) { setInterceptsMouseClicks (false, false); setOpaque (false); }
+    void start()
+    {
+        vb = std::make_unique<juce::VBlankAttachment> (this, [this]
+        {
+            t += 1.f / 8.f; if (t >= 1.f) { vb.reset(); juce::Component::SafePointer<CloseGhost> sp (this); juce::MessageManager::callAsync ([sp] { delete sp.getComponent(); }); return; }
+            repaint();
+        });
+    }
+    void paint (juce::Graphics& g) override
+    {
+        const float e = t * t, s = 1.f - .06f * e; g.setOpacity (1.f - e);
+        g.drawImageTransformed (img, juce::AffineTransform::scale (s, s, getWidth() * .5f, getHeight() * .5f));
+    }
+private:
+    juce::Image img; float t = 0.f; std::unique_ptr<juce::VBlankAttachment> vb;
+};
+
 class FloatingPanel : public juce::Component, public juce::TooltipClient
 {
 public:
@@ -21,6 +45,27 @@ public:
     {
         designW = w; designH = h; constrainer.setFixedAspectRatio ((double) w / h); constrainer.setMinimumSize (juce::roundToInt (w * .45), juce::roundToInt (h * .45));
         setSize (juce::roundToInt (w * scale), juce::roundToInt (h * scale));
+    }
+    // animación al abrir (aparece creciendo y desvaneciéndose) y al cerrar (sombra que se encoge); apagada en las pruebas automáticas
+    void visibilityChanged() override
+    {
+        auto* par = getParentComponent(); if (par == nullptr || std::getenv ("INJ_SELFTEST") != nullptr || std::getenv ("INJ_SHOT") != nullptr) return;
+        if (isVisible())
+        {
+            openT = 0.f; setAlpha (0.f);
+            openVb = std::make_unique<juce::VBlankAttachment> (this, [this]
+            {
+                openT = std::min (1.f, openT + 1.f / 9.f); const float e = 1.f - std::pow (1.f - openT, 3.f);
+                setAlpha (e); setTransform (juce::AffineTransform::scale (.95f + .05f * e, .95f + .05f * e, getWidth() * .5f, getHeight() * .5f));
+                if (openT >= 1.f) { setAlpha (1.f); setTransform ({}); openVb.reset(); }
+            });
+        }
+        else
+        {
+            if (openVb) { openVb.reset(); setAlpha (1.f); setTransform ({}); }
+            auto img = createComponentSnapshot (getLocalBounds(), true, 1.f);
+            if (img.isValid()) { auto* gh = new CloseGhost (img); par->addAndMakeVisible (gh); gh->setBounds (getBounds()); gh->toFront (false); gh->start(); }
+        }
     }
     void resized() override { scale = (float) getWidth() / (float) designW; if (resizer) resizer->setBounds (getLocalBounds()); }
 
@@ -104,6 +149,7 @@ protected:
     juce::MouseEvent sc (const juce::MouseEvent& e) const { return e.withNewPosition (e.position / scale); }
     juce::Rectangle<int> toLocal (juce::Rectangle<float> r) const { return r.transformedBy (juce::AffineTransform::scale (scale)).toNearestInt(); }
 private:
+    float openT = 1.f; std::unique_ptr<juce::VBlankAttachment> openVb;
     bool dragging = false; juce::Point<int> dragOff; juce::Rectangle<int> normal;
     juce::ComponentBoundsConstrainer constrainer; std::unique_ptr<juce::ResizableBorderComponent> resizer;
 };

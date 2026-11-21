@@ -66,6 +66,15 @@ public:
     int trackAt (float y) const { for (int i = 0; i < numTracks(); ++i) if (y >= trackTop (i) && y < trackTop (i) + hOf (i)) return i; return -1; }
 
     //==============================================================================
+    // cabezal suave: entre dos avisos del motor de audio se avanza con el reloj, para que no dé saltos
+    double smoothPos()
+    {
+        auto& tc = edit.getTransport(); const double raw = tc.getPosition().inSeconds(), now = juce::Time::getMillisecondCounterHiRes() * .001;
+        if (! tc.isPlaying()) { lastRaw = raw; lastRawAt = now; return raw; }
+        if (raw != lastRaw) { lastRaw = raw; lastRawAt = now; }
+        return raw + std::min (now - lastRawAt, 0.04);
+    }
+    double lastRaw = -1, lastRawAt = 0;
     void paint (juce::Graphics& g) override
     {
         using namespace theme;
@@ -119,7 +128,7 @@ public:
         drawScrollbars (g);
 
         // cabezal
-        const float px = beatToX (timeToBeats (edit.getTransport().getPosition().inSeconds()));
+        const float px = beatToX (timeToBeats (smoothPos()));
         if (magnetBeat >= 0 && dragMode != 0)
         {
             const float mx = beatToX (magnetBeat); if (mx >= kHeaderW + 6 && mx <= W) { g.setColour (theme::accentHi.withAlpha (magnetHit ? .95f : .35f)); g.fillRect (mx - (magnetHit ? 1.f : .5f), (float) kRulerH, magnetHit ? 2.f : 1.f, (float) (H - kRulerH)); }
@@ -129,7 +138,7 @@ public:
             g.setColour (juce::Colours::white.withAlpha (.75f)); g.fillRect (px - .5f, (float) kRulerH - 6, 1.f, (float) (H - kRulerH + 6));
             g.setColour (accentHi); g.fillEllipse (px - 11.f, kRulerH - 26.f, 22.f, 22.f);
             g.setColour (juce::Colours::white); g.setFont (juce::FontOptions (13.f, juce::Font::bold));
-            g.drawText (juce::String ((int) (timeToBeats (edit.getTransport().getPosition().inSeconds()) / timesig::bar()) + 1), juce::Rectangle<int> ((int) px - 11, kRulerH - 26, 22, 22), juce::Justification::centred);
+            g.drawText (juce::String ((int) (timeToBeats (smoothPos()) / timesig::bar()) + 1), juce::Rectangle<int> ((int) px - 11, kRulerH - 26, 22, 22), juce::Justification::centred);
         }
     }
 

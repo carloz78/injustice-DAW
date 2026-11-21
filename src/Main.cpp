@@ -240,7 +240,7 @@ public:
         if (auto* zz = std::getenv ("INJ_ZOOM")) playlist.setZoom (juce::String (zz).getDoubleValue());
         if (auto* v = std::getenv ("INJ_VIEW")) if (juce::String (v) == "piano") { piano.setClip (firstMidiClip()); showView ("piano"); }
         if (std::getenv ("INJ_SELFTEST")) juce::Timer::callAfterDelay (500, [this] { const int f = runSelfTest(); std::fflush (stdout); if (f >= 0) std::_Exit (f == 0 ? 0 : 1); });
-        startTimerHz (20);
+        startTimerHz (30);
     }
     // Autoprueba de edición (INJ_SELFTEST=1): simula clics sobre el Piano Roll y comprueba el resultado.
     // Prueba de tono y velocidad (Rubber Band). Va aparte porque el audio estirado se prepara en segundo plano y hay que dejar correr el programa.
@@ -1299,6 +1299,7 @@ private:
         if (pr && (bars.tool == "cut" || bars.tool == "brush" || bars.tool == "trim")) { bars.tool = "select"; piano.tool = "select"; }
         bars.resized(); bars.repaint();
     }
+    int lastWholeBeat = -1;
     void timerCallback() override { syncState(); }
     void syncState()
     {
@@ -1307,6 +1308,7 @@ private:
         upd (bars.playing, tc.isPlaying()); upd (bars.looping, (bool) tc.looping); upd (bars.metro, (bool) edit.clickTrackEnabled.get());
         const double beats = edit.tempoSequence.toBeats (tc.getPosition()).inBeats(), pb = std::floor (beats * 4.0) / 4.0;   // la posición cambia por semicorchea
         upd (bars.posBeats, pb);
+        { const int wb = (int) std::floor (beats); if (tc.isPlaying() && wb != lastWholeBeat) bars.beatPulse(); lastWholeBeat = tc.isPlaying() ? wb : -1; }
         const double cpu = std::round (engine.getDeviceManager().getCpuUsage() * 100.0) / 100.0; upd (bars.cpu, cpu);
         if (++tick % 20 == 1) { upd (bars.ramMB, std::round (sysinfo::processMemoryMB() / 100.0) * 100.0); upd (bars.ramTotalMB, (double) juce::SystemStats::getMemorySizeInMegabytes()); }
         if (changed) bars.repaint();

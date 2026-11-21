@@ -26,9 +26,11 @@ public:
     // fundido de brillo al pasar el mouse sobre un botón (sube rápido, baja un poco más lento)
     std::map<juce::String, float> hAmt;
     float hoverAmt (const juce::String& id) const { auto it = hAmt.find (id); return it == hAmt.end() ? 0.f : it->second; }
+    float pulse = 0.f;   // destello del tempo en cada pulso
+    void beatPulse() { pulse = 1.f; startTimerHz (60); repaint(); }
     void timerCallback() override
     {
-        bool moving = false;
+        bool moving = false; if (pulse > 0.f) { pulse = pulse < .03f ? 0.f : pulse * .86f; moving = true; }
         for (auto it = hAmt.begin(); it != hAmt.end();) { const float t = it->first == hoverId ? 1.f : 0.f, d = t - it->second; if (std::abs (d) < .02f) { it->second = t; if (t == 0.f) { it = hAmt.erase (it); continue; } } else { it->second += d * (d > 0 ? .4f : .22f); moving = true; } ++it; }
         if (! hoverId.isEmpty() && hAmt.find (hoverId) == hAmt.end()) hAmt[hoverId] = 0.f;
         if (moving) repaint(); else stopTimer();
@@ -58,7 +60,9 @@ public:
         for (auto& b : btns) if (isTransport (b.id)) paintBtn (g, b);
         // cajas de BPM, compás y posición
         auto box = [&] (juce::Rectangle<float> r, bool hot) { g.setColour (boxFill); g.fillRoundedRectangle (r, 9.f); g.setColour (hot ? accent : boxLine); g.drawRoundedRectangle (r.reduced (.5f), 9.f, 1.f); };
-        box (bpmR, hoverId == "bpm" || dragBpm); box (sigR, false); box (posR, false);
+        if (pulse > 0.f && playing) { g.setColour (accent.withAlpha (pulse * .55f)); g.drawRoundedRectangle (bpmR.expanded (pulse * 3.f), 11.f, 1.5f + pulse * 1.5f); }
+        box (bpmR, hoverId == "bpm" || dragBpm);
+        if (pulse > 0.f && playing) { g.setColour (accent.withAlpha (pulse * .22f)); g.fillRoundedRectangle (bpmR.reduced (1.f), 9.f); } box (sigR, false); box (posR, false);
         g.setFont (juce::FontOptions (20.f, juce::Font::bold)); g.setColour (accentHi); g.drawText (juce::String (bpm, 2), bpmR.toNearestInt(), juce::Justification::centred);
         g.setColour (text); g.drawText (juce::String (timesig::num) + "/" + juce::String (timesig::den), sigR.toNearestInt(), juce::Justification::centred);
         g.drawText (posText(), posR.toNearestInt(), juce::Justification::centred);

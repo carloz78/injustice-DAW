@@ -1,5 +1,6 @@
 #pragma once
 #include "FloatingPanel.h"
+#include <map>
 #include "InjLimiter.h"
 #include "TrackUtil.h"
 #include <tracktion_engine/tracktion_engine.h>
@@ -267,6 +268,13 @@ private:
         bool changed = false;
         for (auto& c : clients) { if (! c.meter) continue; const float ol = c.l, orr = c.r; c.l = std::max (c.client.getAndClearAudioLevel (0).dB, c.l - fall); c.r = std::max (c.client.getAndClearAudioLevel (1).dB, c.r - fall); c.l = juce::jmax (c.l, -100.f); c.r = juce::jmax (c.r, -100.f); const float opl = c.pl, opr = c.pr; holdPeak (c.pl, c.hl, c.l); holdPeak (c.pr, c.hr, c.r); if (c.l != ol || c.r != orr || c.pl != opl || c.pr != opr) changed = true; }
         const float ml0 = masterClient.l, mr0 = masterClient.r; pollMaster(); masterClient.l = juce::jmax (masterClient.l, -100.f); masterClient.r = juce::jmax (masterClient.r, -100.f); const float mpl = masterClient.pl, mpr = masterClient.pr; holdPeak (masterClient.pl, masterClient.hl, masterClient.l); holdPeak (masterClient.pr, masterClient.hr, masterClient.r); if (ml0 != masterClient.l || mr0 != masterClient.r || mpl != masterClient.pl || mpr != masterClient.pr) changed = true;
+        for (int i = -1; i < kN; ++i)   // brillo suave del fader y la perilla al pasar el ratón o arrastrar
+        {
+            auto sr = i < 0 ? masterR() : stripR (i); const int key = i < 0 ? -1 : i + first;
+            const bool hot = faderOf (sr).expanded (22, 0).contains (hoverPos) || knobOf (sr).expanded (4).contains (hoverPos)
+                             || (i >= 0 && (active.kind == Hit::Fader || active.kind == Hit::Pan) && active.idx == i) || (i < 0 && (active.kind == Hit::MasterFader || active.kind == Hit::MasterPan));
+            float& gv = glow[key]; const float t = hot ? 1.f : 0.f, d = t - gv; if (std::abs (d) > .01f) { gv += d * .35f; changed = true; } else gv = t;
+        }
         if (changed) repaint();   // sin sonido no hay nada que redibujar
     }
 
@@ -322,6 +330,7 @@ private:
         using namespace theme; g.setColour (on ? (solo ? juce::Colour (0xfff2ecf9) : accent) : juce::Colour (0xff464352)); g.fillRoundedRectangle (r, 5.f);
         g.setColour (on ? (solo ? juce::Colour (0xff3b2c4b) : juce::Colours::white) : juce::Colour (0xffe4e4e9)); g.setFont (juce::FontOptions (14.f, juce::Font::bold)); g.drawText (label, r.toNearestInt(), juce::Justification::centred);
     }
+    std::map<int, float> glow;
     void drawStrip (juce::Graphics& g, juce::Rectangle<float> s, int index, te::AudioTrack* t, float lvL, float lvR, bool master, float pkL = -100.f, float pkR = -100.f)
     {
         using namespace theme;
@@ -339,11 +348,15 @@ private:
         }
         if (! master && index == selected && ! empty) { g.setColour (juce::Colour (0xffe4e4ee)); g.drawRoundedRectangle (s.reduced (.75f), 6.f, 1.5f); }
         te::VolumeAndPanPlugin* vp = master ? edit.getMasterVolumePlugin().get() : (t ? t->getVolumePlugin() : nullptr);
+        const float gl = glow.count (index) ? glow[index] : 0.f;
+        if (gl > .01f && ! empty) { g.setColour (accentHi.withAlpha (gl * .30f)); g.fillEllipse (knobOf (s).expanded (3.f + 3.f * gl)); }
         knob (g, knobOf (s), vp ? vp->getPan() : 0.f);
         const bool sig = std::max (lvL, lvR) > -60.f;
         if (master) { const bool hot = masterPeak > -0.1f; g.setColour (hot ? record : textDim); g.setFont (juce::FontOptions (12.f, juce::Font::bold)); g.drawText (masterPeak <= -99.f ? juce::String ("pico -inf") : juce::String ("pico ") + juce::String (masterPeak, 1), peakR (s).toNearestInt(), juce::Justification::centred); }
         else { g.setColour (sig ? accentHi : juce::Colour (0xff637171)); g.fillEllipse (s.getCentreX() - 4.f, knobOf (s).getBottom() + 10.f, 8.f, 8.f); }
-        auto fa = faderOf (s); faderTrack (g, fa);
+        auto fa = faderOf (s);
+        if (gl > .01f && ! empty) { g.setColour (accentHi.withAlpha (gl * .22f)); g.fillRoundedRectangle (fa.withSizeKeepingCentre (22, fa.getHeight() - 6).expanded (3.f + 3.f * gl, 3.f + 3.f * gl), 8.f); }
+        faderTrack (g, fa);
         auto mr = meterOf (s); g.setColour (juce::Colour (0xff1b1b23)); g.fillRoundedRectangle (mr.expanded (3, 3), 3.f);
         ledMeter (g, { mr.getX(), mr.getY(), 12, mr.getHeight() }, lvL, pkL); ledMeter (g, { mr.getX() + 16, mr.getY(), 12, mr.getHeight() }, lvR, pkR);
         const float pos = vp ? dbToPos (master && masterMuted ? preMute : vp->getVolumeDb()) : dbToPos (0.f);
