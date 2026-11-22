@@ -25,6 +25,14 @@ public:
         for (int r = 0; r < 4 && r < clip->getChannels().size(); ++r) if (! hasSample (r) && pack.getChildFile (f[r]).existsAsFile()) assignSample (r, pack.getChildFile (f[r]));
         clip->state.setProperty ("injDefaults", true, nullptr); repaint();
     }
+    // Version por pasos de assignDefaults (una fila por llamada) para no congelar la ventana al abrir: devuelve true cuando ya no quedan filas.
+    bool assignDefaultsStep (const juce::File& pack, int r)
+    {
+        if (! clip || (bool) clip->state.getProperty ("injDefaults", false) || ! pack.isDirectory()) return true;
+        static const char* f[] { "Kicks/Kick Dash 01.wav", "Claps/Clap 909 01.wav", "Hats/Hat Corto 01.wav", "Hats/Hat Abierto 01.wav" };
+        if (r < 4 && r < clip->getChannels().size()) { if (! hasSample (r) && pack.getChildFile (f[r]).existsAsFile()) assignSample (r, pack.getChildFile (f[r])); return false; }
+        clip->state.setProperty ("injDefaults", true, nullptr); repaint(); return true;
+    }
     bool hasClip() { validate(); return clip != nullptr; }
     bool inPatternMode() const { return patternMode; }
     // Reproduce solo el patrón en bucle: silencia las demás pistas mientras dura y lo restaura al parar.

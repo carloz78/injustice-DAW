@@ -1,4 +1,5 @@
 #pragma once
+#include <climits>
 #include "Instruments.h"
 #include "Theme.h"
 #include "TimeSig.h"
@@ -109,13 +110,18 @@ public:
             for (auto* c : tracks[i]->getClips()) { drawClip (g, *c, i); drawClipHandles (g, *c, i); }
         }
         for (auto& gh : ghosts)
-        {
-            const float t = 1.f - gh.a, e = t * (2.f - t);   // salida suave
-            const float x0 = beatToX (gh.b0), x1 = beatToX (gh.b1), y0 = (float) trackTop (gh.track), hh = (float) hOf (gh.track), grow = 10.f * e, sq = hh * .5f * e;
-            juce::Rectangle<float> r (x0 - grow, y0 + sq, (x1 - x0) + 2.f * grow, hh - 2.f * sq);
-            g.setColour (juce::Colour (0xffff3b45).withAlpha (.25f * gh.a)); g.fillRoundedRectangle (r.expanded (6.f * e, 4.f * e), 3.f);
-            g.setColour (gh.col.interpolatedWith (juce::Colour (0xffff3b45), .6f).withAlpha (.7f * gh.a)); g.fillRect (r);
-            g.setColour (juce::Colour (0xffff3b45).withAlpha (gh.a)); g.drawRect (r, 1.5f);
+        {   // borrar un clip: destello y se rompe en tiras que caen girando y se desvanecen, con el color del propio clip
+            const float t = 1.f - gh.a; const float x0 = beatToX (gh.b0), x1 = beatToX (gh.b1), y0 = (float) trackTop (gh.track), hh = (float) hOf (gh.track), w = std::max (2.f, x1 - x0);
+            const int n = juce::jlimit (3, 16, (int) (w / 12.f)); const float sw = w / (float) n;
+            for (int i = 0; i < n; ++i)
+            {
+                const float d = ((i * 7) % n) / (float) n * .35f, ti = juce::jlimit (0.f, 1.f, (t - d) / (1.f - d)), fall = hh * .9f * ti * ti, al = 1.f - ti;
+                if (al <= 0.f) continue; const float cx = x0 + (i + .5f) * sw, cy = y0 + hh * .5f + fall, rot = ((i % 2) ? 1.f : -1.f) * .5f * ti * (.6f + .1f * (float) (i % 4));
+                g.saveState(); g.addTransform (juce::AffineTransform::rotation (rot, cx, cy));
+                juce::Rectangle<float> r (cx - sw * .5f * (1.f - .35f * ti), cy - hh * .5f * (1.f - .4f * ti), sw * (1.f - .35f * ti), hh * (1.f - .4f * ti));
+                g.setColour (gh.col.withAlpha (.9f * al)); g.fillRect (r); g.setColour (gh.col.brighter (.6f).withAlpha (al)); g.drawRect (r, 1.f); g.restoreState();
+            }
+            if (t < .22f) { g.setColour (juce::Colours::white.withAlpha (.55f * (1.f - t / .22f))); g.fillRect (juce::Rectangle<float> (x0, y0, w, hh)); }
         }
         for (int i = 0; i < tracks.size(); ++i) { if (! visibleRow (i)) { if (trackTop (i) > H) break; continue; } if (autoShown (*tracks[i])) drawAuto (g, i); }
         g.restoreState();
@@ -148,10 +154,14 @@ public:
         altDown = e.mods.isAltDown();
         grabKeyboardFocus(); sbDrag = 0; edit.getUndoManager().beginNewTransaction();   // cada gesto = un solo "deshacer"
         if (tool == "auto" && e.x >= kHeaderW + 6 && e.y >= kRulerH && ! (needHScroll() && hScrollR().expanded (0, 4).contains (e.position)) && ! vScrollR().expanded (4, 0).contains (e.position)) { autoDown (e); return; }
-        if (e.mods.isPopupMenu()) { contextMenu (e); return; }
+        if (e.mods.isPopupMenu())
+        {   // sobre los clips: si arrastras con el boton derecho BORRAS lo que cruzas; si solo haces clic, sale el menu al soltar
+            if (e.x >= kHeaderW + 6 && e.y >= kRulerH) { rightDown = true; rightErase = false; rightLast = e.position; rightStart = e.position; rightEv = std::make_unique<juce::MouseEvent> (e); return; }
+            contextMenu (e); return;
+        }
         if ((needHScroll() && hScrollR().expanded (0, 4).contains (e.position))) { sbDrag = 1; sbGrab = e.x - hThumb().getX(); if (! hThumb().contains (e.position)) sbGrab = hThumb().getWidth() * .5f; dragScroll (e); return; }
         if (vScrollR().expanded (4, 0).contains (e.position)) { sbDrag = 2; sbGrab = e.y - vThumb().getY(); if (! vThumb().contains (e.position)) sbGrab = vThumb().getHeight() * .5f; dragScroll (e); return; }
-        scrubbing = false; brushSrc = nullptr; brushTrack = -1; lastDT = 0;
+        scrubbing = false; brushSrc = nullptr; brushTrack = -1; lastDT = 0; brushNew.clear(); brushLastIdx = LONG_MIN; brushLastTrack = -1;
         if (e.y < kRulerH && e.x >= kHeaderW) { scrubbing = true; seekTo (e.x); return; }
         dragClip = nullptr; dragMode = 0;
         if (const int ed = edgeAt (e.getPosition()); ed >= 0) { resizing = ed; resizeStartY = e.position.y; resizeStartH = hOf (ed); return; }
@@ -207,8 +217,26 @@ public:
         for (auto* c : te::getAudioTracks (edit)[ti]->getClips())
             if (auto* mc = dynamic_cast<te::MidiClip*> (c)) if (mc->getPosition().time.contains (te::TimePosition::fromSeconds (t))) { if (onOpenMidi) onOpenMidi (mc); return; }
     }
+    // Borrar con el boton derecho: recorre el trayecto del raton (sin saltarse nada aunque vaya rapido) y borra los clips que cruza
+    void rightEraseTo (juce::Point<float> to)
+    {
+        const auto from = rightLast; const float dist = from.getDistanceFrom (to); const int steps = std::max (1, (int) (dist / 3.f)); auto tl = te::getAudioTracks (edit); juce::Array<te::Clip*> victims;
+        for (int k = 0; k <= steps; ++k)
+        {
+            const auto p = from + (to - from) * ((float) k / (float) steps); if (p.x < kHeaderW + 6 || p.y < kRulerH) continue;
+            const int ti = trackAt (p.y); if (ti < 0 || ti >= tl.size()) continue; const double tt = beatsToTime (xToBeat (p.x));
+            for (auto* c : tl[ti]->getClips()) if (c->getPosition().time.contains (te::TimePosition::fromSeconds (tt))) victims.addIfNotAlreadyThere (c);
+        }
+        for (auto* c : victims) { if (isLocked (c)) continue; if (selected == c) selected = nullptr; group.removeObject (c); if (dragClip == c) dragClip = nullptr; killClip (c); }
+        rightLast = to; if (! victims.isEmpty()) repaint();
+    }
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        if (rightDown)
+        {
+            if (! rightErase && e.position.getDistanceFrom (rightStart) < 5.f) return;
+            if (! rightErase) { rightErase = true; rightLast = rightStart; } rightEraseTo (e.position); return;
+        }
         altDown = e.mods.isAltDown();
         if (fadeMode != 0) { handleDrag (e); return; }
         if (autoIdx >= 0) { autoDrag (e); return; }
@@ -242,19 +270,39 @@ public:
     }
     void setZoom (double ppb) { pxPerBeat = ppb; repaint(); }
     void resetView() { scrollX = 0; scrollY = 0; repaint(); }
-    void mouseUp (const juce::MouseEvent&) override { fadeMode = 0; fadeClip = nullptr; altDown = false; magnetBeat = -1; magnetHit = false; autoIdx = -1; sbDrag = 0; dragMode = 0; resizing = -1; scrubbing = false; brushTrack = -1; brushSrc = nullptr; marquee = false; dragOrig.clear(); lastDT = 0; repaint(); }
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        if (rightDown) { const bool menu = ! rightErase; rightDown = false; rightErase = false; auto ev = std::move (rightEv); repaint(); if (menu && ev != nullptr) contextMenu (*ev); return; }
+        mouseUpNormal();
+    }
+    void mouseUpNormal() { fadeMode = 0; fadeClip = nullptr; altDown = false; magnetBeat = -1; magnetHit = false; autoIdx = -1; sbDrag = 0; dragMode = 0; resizing = -1; scrubbing = false; brushTrack = -1; brushSrc = nullptr; brushNew.clear(); brushLastIdx = LONG_MIN; brushLastTrack = -1; marquee = false; dragOrig.clear(); lastDT = 0; repaint(); }
     // Pincel: sobre un hueco pinta clips MIDI de 1 compás; sobre un clip, lo copia a lo largo del arrastre (sin pisar otros clips).
     void brushPaint (int ti, double beat)
-    {
+    {   // pinta el clip en el hueco bajo el cursor y en TODOS los huecos entre la ultima posicion y esta (si arrastras rapido el raton salta y no deja vacios)
         auto tracks = te::getAudioTracks (edit); if (ti < 0 || ti >= tracks.size()) return; auto* tr = tracks[ti];
         if (brushSrc != nullptr && brushSrc->getTrack() == nullptr) brushSrc = nullptr;
         double s0 = 0.0, len = 4.0;
         if (brushSrc != nullptr) { s0 = timeToBeats (brushSrc->getPosition().getStart().inSeconds()); len = timeToBeats (brushSrc->getPosition().getEnd().inSeconds()) - s0; if (len <= 0.0) return; }
-        const double pos = s0 + std::floor ((beat - s0) / len) * len; if (pos < -1e-6) return;
-        const auto a = te::TimePosition::fromSeconds (beatsToTime (pos)), b = te::TimePosition::fromSeconds (beatsToTime (pos + len));
-        for (auto* c : tr->getClips()) if (c->getPosition().getStart() < b - te::TimeDuration::fromSeconds (1e-4) && c->getPosition().getEnd() > a + te::TimeDuration::fromSeconds (1e-4)) return;
-        te::Clip* nc = brushSrc != nullptr ? trackutil::copyClipTo (edit, *brushSrc, *tr, a) : tr->insertMIDIClip ("MIDI", te::TimeRange (a, b), nullptr).get();
-        if (nc != nullptr) { selected = nc; if (onTracksChanged) onTracksChanged(); repaint(); }
+        const long cur = (long) std::floor ((beat - s0) / len); long from = cur;
+        if (brushLastTrack == ti && brushLastIdx != LONG_MIN) from = brushLastIdx;
+        const long step = cur >= from ? 1 : -1; bool any = false;
+        for (long k = from; ; k += step)
+        {
+            const double pos = s0 + (double) k * len;
+            if (pos > -1e-6 && (k != brushLastIdx || brushLastTrack != ti || k == cur))
+            {
+                const auto a = te::TimePosition::fromSeconds (beatsToTime (pos)), b = te::TimePosition::fromSeconds (beatsToTime (pos + len)); bool busy = false;
+                for (auto* c : tr->getClips()) if (c->getPosition().getStart() < b - te::TimeDuration::fromSeconds (1e-4) && c->getPosition().getEnd() > a + te::TimeDuration::fromSeconds (1e-4)) { busy = true; break; }
+                if (! busy)
+                {
+                    te::Clip* nc = brushSrc != nullptr ? trackutil::copyClipTo (edit, *brushSrc, *tr, a) : tr->insertMIDIClip ("MIDI", te::TimeRange (a, b), nullptr).get();
+                    if (nc != nullptr) { selected = nc; brushNew.add (te::Clip::Ptr (nc)); any = true; }
+                }
+            }
+            if (k == cur) break;
+        }
+        brushLastTrack = ti; brushLastIdx = cur;
+        if (any) { if (onTracksChanged) onTracksChanged(); repaint(); }
     }
     void updateCut (const juce::MouseEvent& e)
     {
@@ -457,6 +505,8 @@ private:
     struct Orig { te::Clip::Ptr clip; double beat; int track; };
     juce::ReferenceCountedArray<te::Clip> group; std::vector<Orig> dragOrig; bool marquee = false; juce::Point<float> mqStart; juce::Rectangle<float> mqRect; int downTrack = 0, lastDT = 0;
     bool inGroup (te::Clip* c) const { return group.contains (c); }
+    bool rightDown = false, rightErase = false; juce::Point<float> rightLast, rightStart; std::unique_ptr<juce::MouseEvent> rightEv;   // clic derecho: borrar arrastrando
+    juce::ReferenceCountedArray<te::Clip> brushNew; int brushLastTrack = -1; long brushLastIdx = LONG_MIN;   // pincel: clips de este trazo (se ven rojos) y ultimo hueco pintado
     bool scrubbing = false; te::Clip* brushSrc = nullptr; te::Clip::Ptr lastTouched; int brushTrack = -1;
     te::Edit& edit; double pxPerBeat = 3.6, scrollX = 0, scrollY = 0, dragOffsetBeats = 0; te::Clip* dragClip = nullptr;
     juce::AudioFormatManager fm; juce::AudioThumbnailCache thumbCache; std::map<juce::String, std::unique_ptr<juce::AudioThumbnail>> thumbs;
@@ -800,7 +850,7 @@ private:
     bool thumbsPending() const { for (auto& kv : thumbs) if (kv.second && ! kv.second->isFullyLoaded()) return true; return false; }
     void timerCallback() override
     {
-        if (! ghosts.empty()) { for (auto& gh : ghosts) gh.a -= .06f; ghosts.erase (std::remove_if (ghosts.begin(), ghosts.end(), [] (const Ghost& gh) { return gh.a <= 0.f; }), ghosts.end()); repaint(); }
+        if (! ghosts.empty()) { for (auto& gh : ghosts) gh.a -= .045f; ghosts.erase (std::remove_if (ghosts.begin(), ghosts.end(), [] (const Ghost& gh) { return gh.a <= 0.f; }), ghosts.end()); repaint(); }
         if (tgtX >= 0) { scrollX += (tgtX - scrollX) * .26; if (std::abs (tgtX - scrollX) < .5) { scrollX = tgtX; tgtX = -1; } repaint(); }
         if (follow && edit.getTransport().isPlaying() && tgtX < 0 && zoomTarget < 0.f)
         { const double pb = timeToBeats (smoothPos()); const float pxp = beatToX (pb); if (pxp > getWidth() - 70.f || pxp < kHeaderW + 6) tgtX = std::max (0.0, pb * pxPerBeat - 90.0); }
@@ -1008,6 +1058,40 @@ public:
     bool demoHandles = false;
     void selectForDemo (te::Clip* c) { demoHandles = true; selected = c; group.clear(); if (c) group.add (c); repaint(); }
     // Prueba interna: arrastra las manijas con eventos de raton sinteticos; devuelve "" si todo va bien
+    juce::String selfTestBrush (te::WaveAudioClip& w, int ti)
+    {   // pincel: un salto rapido del raton no deja huecos y lo pintado es rojo solo mientras arrastras
+        selectForDemo (&w); tool = "brush"; auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto ev = [&] (juce::Point<float> p) { return juce::MouseEvent (src, p, juce::ModifierKeys(), 1.f, 0.f, 0.f, 0.f, 0.f, this, this, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+        auto* tr = dynamic_cast<te::AudioTrack*> (w.getTrack()); if (tr == nullptr) return "sin pista";
+        const double s0 = w.getPosition().getStart().inSeconds(), len = w.getPosition().getLength().inSeconds(); const auto r = clipRect (w, ti); const int n0 = tr->getClips().size();
+        const auto c = r.getCentre(); mouseDown (ev (c)); const float jump = (float) (pxPerBeat * timeToBeats (len) * 5.0);
+        mouseDrag (ev ({ c.x + jump, c.y })); const int redDuring = brushNew.size(); mouseUp (ev ({ c.x + jump, c.y }));
+        int found = 0; for (int k = 1; k <= 5; ++k) for (auto* cl : tr->getClips()) if (std::abs (cl->getPosition().getStart().inSeconds() - (s0 + k * len)) < 0.01) { ++found; break; }
+        const int redAfter = brushNew.size(); tool = "select";
+        for (int k = tr->getClips().size(); --k >= 0;) { auto* cl = tr->getClips()[k]; if (cl != &w && cl->getName().startsWith (w.getName().substring (0, 4))) cl->removeFromParent(); }
+        if (found != 5) return "hay huecos: se pintaron " + juce::String (found) + " de 5";
+        if (redDuring < 5) return "lo pintado no se marca en rojo mientras arrastras";
+        if (redAfter != 0) return "lo rojo no se limpia al soltar";
+        juce::ignoreUnused (n0); return {};
+    }
+    juce::String selfTestRightErase (te::WaveAudioClip& w, int ti)
+    {   // clic derecho + arrastrar borra todos los clips que cruza (menos los bloqueados) y un clic derecho sin arrastrar no borra nada
+        selectForDemo (&w); tool = "select"; auto src = juce::Desktop::getInstance().getMainMouseSource(); auto* tr = dynamic_cast<te::AudioTrack*> (w.getTrack()); if (tr == nullptr) return "sin pista";
+        auto ev = [&] (juce::Point<float> p) { return juce::MouseEvent (src, p, juce::ModifierKeys (juce::ModifierKeys::rightButtonModifier), 1.f, 0.f, 0.f, 0.f, 0.f, this, this, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+        const double s0 = timeToBeats (w.getPosition().getStart().inSeconds()), len = timeToBeats (w.getPosition().getEnd().inSeconds()) - s0; brushSrc = &w;
+        for (int k = 1; k <= 4; ++k) brushPaint (ti, s0 + (double) k * len + 0.1);
+        brushSrc = nullptr; brushNew.clear(); brushLastIdx = LONG_MIN; brushLastTrack = -1; const int made = tr->getClips().size() - 1; if (made != 4) return "no se pudieron preparar 4 clips (" + juce::String (made) + ")";
+        te::Clip* keep = nullptr; for (auto* c : tr->getClips()) if (c != &w && std::abs (timeToBeats (c->getPosition().getStart().inSeconds()) - (s0 + 3.0 * len)) < 0.01) keep = c;
+        if (keep == nullptr) return "falta el clip 3"; keep->state.setProperty ("injLocked", true, nullptr);
+        const float y = clipRect (w, ti).getCentreY(), xa = beatToX (s0 + len * 1.2), xb = beatToX (s0 + len * 5.2);
+        mouseDown (ev ({ xa, y })); mouseDrag (ev ({ xa + 2.f, y })); mouseDrag (ev ({ xb, y })); mouseUp (ev ({ xb, y }));
+        int left = 0; for (auto* c : tr->getClips()) if (c != &w) ++left;
+        const bool lockedSurvives = keep->getTrack() != nullptr; keep->state.setProperty ("injLocked", false, nullptr);
+        for (int k = tr->getClips().size(); --k >= 0;) { auto* c = tr->getClips()[k]; if (c != &w) c->removeFromParent(); }
+        if (w.getTrack() == nullptr) return "se borro el clip de origen (no se cruzo)";
+        if (left != 1 || ! lockedSurvives) return "sobraron " + juce::String (left) + " clips (debia quedar solo el bloqueado)";
+        return {};
+    }
     juce::String selfTestLock (te::WaveAudioClip& w, int ti)
     {   // bloquear clip: con candado no se mueve (raton ni flechas), no se borra y al desbloquear vuelve a funcionar
         selectForDemo (&w); tool = "select"; auto src = juce::Desktop::getInstance().getMainMouseSource();
@@ -1116,6 +1200,7 @@ public:
           const double gs = pxPerBeat >= 14 ? 1.0 : timesig::bar(); for (double b = std::floor (xToBeat (r.getX()) / gs) * gs; beatToX (b) < r.getRight(); b += gs) g.fillRect (beatToX (b), r.getY(), 1.f, r.getHeight()); g.restoreState(); }
         { const float bh = r.getHeight() >= 60.f ? 16.f : (r.getHeight() >= 40.f ? 8.f : 0.f); if (bh > 0.f) { g.setColour (col.darker (.16f).withMultipliedSaturation (1.08f)); g.fillRect (r.getX(), r.getY(), r.getWidth(), bh); } g.setColour (col.darker (.7f).withAlpha (.85f)); g.drawRect (r, 1.f); }
         if (c.isMuted()) { g.setColour (juce::Colour (0xff1b1b1b).withAlpha (.62f)); g.fillRect (r); }
+        if (brushNew.contains (&c)) { g.setColour (juce::Colour (0xffe53935).withAlpha (.5f)); g.fillRect (r); g.setColour (juce::Colour (0xffff5a52)); g.drawRect (r, 2.f); }
         if (isLocked (&c) && r.getWidth() > 18.f && r.getHeight() > 14.f)
         {   // candado en la esquina superior derecha
             const float lx = r.getRight() - 15.f, ly = r.getY() + 3.f; g.setColour (juce::Colours::black.withAlpha (.55f)); g.fillRoundedRectangle (lx - 2.f, ly - 2.f, 14.f, 16.f, 3.f);

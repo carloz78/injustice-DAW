@@ -3,6 +3,7 @@
 #include <map>
 #include "InjLimiter.h"
 #include "InjStereo.h"
+#include "FxAll.h"
 #include "TrackUtil.h"
 #include <tracktion_engine/tracktion_engine.h>
 #include <array>
@@ -360,7 +361,7 @@ public:
     }
 private:
     te::AudioTrack* trackAt (int i) { auto t = te::getAudioTracks (edit); return i >= 0 && i < t.size() ? t[i] : nullptr; }
-    static juce::Array<te::Plugin*> fxOfList (te::PluginList& pl) { juce::Array<te::Plugin*> a; for (auto* p : pl.getPlugins()) if (dynamic_cast<te::ExternalPlugin*> (p)) a.add (p); return a; }
+    static juce::Array<te::Plugin*> fxOfList (te::PluginList& pl) { juce::Array<te::Plugin*> a; for (auto* p : pl.getPlugins()) if (dynamic_cast<te::ExternalPlugin*> (p) || dynamic_cast<injfx::InjFx*> (p)) a.add (p); return a; }
     juce::Array<te::Plugin*> fxOf (te::AudioTrack* t) { return t ? fxOfList (t->pluginList) : juce::Array<te::Plugin*>(); }
     juce::Array<te::Plugin*> currentFx() { return masterSel ? fxOfList (edit.getMasterPluginList()) : fxOf (trackAt (selected)); }
     //---- mezcla seca/húmeda de un plugin (como la perilla Mix de cada ranura de FL)
@@ -379,7 +380,7 @@ private:
 public:
     //---- cadenas de canal: guardar y cargar ecualizador, estéreo y plugins de un canal
     static juce::File chainDir() { auto d = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("INJUSTICE DAW").getChildFile ("Cadenas"); d.createDirectory(); return d; }
-    static bool isChainPlugin (te::Plugin* p) { return dynamic_cast<te::ExternalPlugin*> (p) || dynamic_cast<te::EqualiserPlugin*> (p) || dynamic_cast<InjStereo*> (p); }
+    static bool isChainPlugin (te::Plugin* p) { return dynamic_cast<te::ExternalPlugin*> (p) || dynamic_cast<te::EqualiserPlugin*> (p) || dynamic_cast<InjStereo*> (p) || dynamic_cast<injfx::InjFx*> (p); }
     bool saveChain (te::AudioTrack& t, const juce::String& name, const juce::File& dir = chainDir())
     {
         juce::XmlElement root ("INJCHAIN"); int n = 0;
@@ -536,6 +537,26 @@ private:
             repaint();
         });
     }
+    // efecto integrado nuevo en la cadena del canal (antes del volumen), con su ventana abierta
+    te::Plugin* addBuiltinFx (const char* type)
+    {
+        auto* t = masterSel ? nullptr : trackAt (selected); if (! masterSel && t == nullptr) return nullptr;
+        auto& pl = masterSel ? edit.getMasterPluginList() : t->pluginList; auto* vol = masterSel ? edit.getMasterVolumePlugin().get() : t->getVolumePlugin();
+        edit.getUndoManager().beginNewTransaction();
+        auto np = edit.getPluginCache().createNewPlugin (type, {}); if (np == nullptr) return nullptr;
+        pl.insertPlugin (np, vol ? pl.indexOf (vol) : -1, nullptr); np->setEnabled (true); repaint(); return np.get();
+    }
+    void addEffectMenu (juce::Rectangle<float> row)
+    {
+        juce::PopupMenu m; const auto& cat = injfx::catalog(); const char* fam = nullptr; juce::PopupMenu sub; int k = 1;
+        for (auto& e : cat) { if (fam == nullptr || std::strcmp (fam, e.family) != 0) { if (fam != nullptr) m.addSubMenu (juce::String::fromUTF8 (fam), sub); sub = juce::PopupMenu(); fam = e.family; } sub.addItem (k++, juce::String::fromUTF8 (e.label)); }
+        if (fam != nullptr) m.addSubMenu (juce::String::fromUTF8 (fam), sub); m.addSeparator(); m.addItem (100, "Plugins VST3...");
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (toLocal (row))), [this] (int r)
+        {
+            if (r == 100) { if (onAddEffect) onAddEffect (masterSel ? -2 : selected); return; }
+            if (r >= 1 && r <= (int) injfx::catalog().size()) if (auto* np = addBuiltinFx (injfx::catalog()[(size_t) r - 1].type)) if (onOpenPlugin) onOpenPlugin (np);
+        });
+    }
     void fxClick (juce::Point<float> p)
     {
         if (! masterSel && trackAt (selected) == nullptr) return; auto fx = currentFx();
@@ -553,7 +574,7 @@ private:
                 }
                 else if (onOpenPlugin) onOpenPlugin (fx[n]);
             }
-            else if (onAddEffect) onAddEffect (masterSel ? -2 : selected);
+            else addEffectMenu (row);
             return;
         }
     }

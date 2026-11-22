@@ -5,6 +5,9 @@
 #include "MixerPanel.h"
 #include "StepSeqPanel.h"
 #include "InjLimiter.h"
+#include "FxAll.h"
+#include "FxTest.h"
+#include "FxTest2.h"
 #include <thread>
 #include "Meters.h"
 #include "PerformancePanel.h"
@@ -280,6 +283,13 @@ public:
             auto ns = pc->getSequence().getNotes(); if (ns.size() > 2) { ns[1]->setMute (true, nullptr); ns[2]->state.setProperty ("injSlide", true, nullptr); }
         }
         if (auto* v = std::getenv ("INJ_VIEW")) if (juce::String (v) == "piano") { piano.setClip (firstMidiClip()); showView ("piano"); }
+        if (std::getenv ("INJ_OPENSTEPS")) juce::Timer::callAfterDelay (2500, [this] {   // medicion: cuanto se congela la ventana al abrir el Step Sequencer (mayor retraso de la ventana)
+            auto worst = std::make_shared<std::atomic<int>> (0); auto stop = std::make_shared<std::atomic<bool>> (false);
+            std::thread ([worst, stop] { while (! stop->load()) { const auto t0 = juce::Time::getMillisecondCounter(); auto done = std::make_shared<std::atomic<bool>> (false); juce::MessageManager::callAsync ([done] { done->store (true); });
+                while (! done->load() && ! stop->load()) juce::Thread::sleep (2); const int d = (int) (juce::Time::getMillisecondCounter() - t0); if (d > worst->load()) worst->store (d); juce::Thread::sleep (5); } }).detach();
+            setSteps (true);
+            juce::Timer::callAfterDelay (5000, [worst, stop] { stop->store (true); std::printf ("INJ_OPENSTEPS: mayor congelamiento de la ventana = %d ms\n", worst->load()); std::fflush (stdout); std::_Exit (0); }); });
+        if (std::getenv ("INJ_FXTEST")) juce::Timer::callAfterDelay (300, [this] { int f = 0; injfx::test::run (edit, f); injfx::test::runNew (edit, f); std::printf (f == 0 ? "TODO OK\n" : "%d FALLOS\n", f); std::fflush (stdout); std::_Exit (f == 0 ? 0 : 1); });
         if (std::getenv ("INJ_STEPTEST")) juce::Timer::callAfterDelay (500, [this] { setSteps (true); steps.setTopLeftPosition (0, 60); steps.ensureClip(); int f = 0; stepFeatureTests (f, steps.getClip() ? dynamic_cast<te::AudioTrack*> (steps.getClip()->getTrack()) : nullptr); std::printf (f == 0 ? "TODO OK\n" : "%d FALLOS\n", f); std::fflush (stdout); std::_Exit (0); });
         if (std::getenv ("INJ_SELFTEST")) juce::Timer::callAfterDelay (500, [this] { const int f = runSelfTest(); std::fflush (stdout); if (f >= 0) std::_Exit (f == 0 ? 0 : 1); });
         startTimerHz (30);
@@ -321,6 +331,7 @@ public:
                     if (renderWav (kf, 1.5, {}, kti)) { juce::AudioFormatManager afm; afm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> r (afm.createReaderFor (kf)); if (r) { juce::AudioBuffer<float> b (2, (int) r->lengthInSamples); r->read (&b, 0, (int) r->lengthInSamples, 0, true, true); kv = (double) b.getRMSLevel (0, 0, b.getNumSamples()); } }
                     chk (kv > 0.002, "kit de bateria: suena al tocar notas (" + juce::String (kv, 4) + ")");
                 }
+                if (! std::getenv ("INJ_NOINTEG")) injfx::test::runIntegration (edit, *fails);
                 std::printf (*fails == 0 ? "TODO OK\n" : "%d FALLOS\n", *fails); std::fflush (stdout); std::_Exit (*fails == 0 ? 0 : 1);
             });
         });
@@ -710,7 +721,7 @@ public:
                   { juce::WavAudioFormat wf; std::unique_ptr<juce::FileOutputStream> os (hf.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 44100.0, 1, 16, {}, 0)); if (w) { os.release(); juce::AudioBuffer<float> sb (1, 44100 * 9); sb.clear(); w->writeFromAudioSampleBuffer (sb, 0, 44100 * 9); } }
                   te::AudioTrack* ht = nullptr; for (auto* t : te::getAudioTracks (edit)) if (t->getClips().isEmpty()) { ht = t; break; } int hti = 0; { auto tt = te::getAudioTracks (edit); for (int i = 0; i < tt.size(); ++i) if (tt[i] == ht) hti = i; }
                   if (ht) { ht->insertWaveClip ("handletest", hf, { te::TimeRange (te::TimePosition::fromSeconds (0.0), te::TimeDuration::fromSeconds (8.0)), te::TimeDuration() }, false);
-                    const double zPrev = playlist.zoomPx(); playlist.setZoom (14.0); for (auto* c : ht->getClips()) if (auto* hw = dynamic_cast<te::WaveAudioClip*> (c)) { const auto msg = playlist.selfTestHandles (*hw, hti); chk (msg.isEmpty(), ("clip: manijas de fundido y ganancia " + msg).toRawUTF8());  { const auto lm = playlist.selfTestLock (*hw, hti); chk (lm.isEmpty(), ("clip: bloquear clip " + lm).toRawUTF8()); } } playlist.setZoom (zPrev);
+                    const double zPrev = playlist.zoomPx(); playlist.setZoom (14.0); for (auto* c : ht->getClips()) if (auto* hw = dynamic_cast<te::WaveAudioClip*> (c)) { const auto msg = playlist.selfTestHandles (*hw, hti); chk (msg.isEmpty(), ("clip: manijas de fundido y ganancia " + msg).toRawUTF8());  { const auto lm = playlist.selfTestLock (*hw, hti); chk (lm.isEmpty(), ("clip: bloquear clip " + lm).toRawUTF8()); } { const auto bm = playlist.selfTestBrush (*hw, hti); chk (bm.isEmpty(), ("pincel: " + bm).toRawUTF8()); } { const auto rm = playlist.selfTestRightErase (*hw, hti); chk (rm.isEmpty(), ("borrar con clic derecho arrastrando: " + rm).toRawUTF8()); } } playlist.setZoom (zPrev);
                     for (int ci = ht->getClips().size(); --ci >= 0;) { auto* c = ht->getClips()[ci]; if (c->getName().startsWith ("handletest")) c->removeFromParent(); } } }
                 {   // ganancia y fundido de clip: se oyen de verdad en el render
                   auto gf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_gain_test.wav"); gf.deleteFile();
@@ -1576,7 +1587,19 @@ public:
     void setMeters (bool v) { if (v) fitPanel (meters); meters.setVisible (v); bars.metersOpen = v; if (v) { meters.setTopLeftPosition (juce::jmax (0, (getWidth() - meters.getWidth()) / 2), TopBars::kHeight + 50); meters.toFront (false); } bars.repaint(); }
     void setSteps (bool v)
     {   // la ventana aparece al instante; el patrón y su sampler se crean justo después, sin congelar la pantalla
-        if (v) { fitPanel (steps); if (! steps.hasClip()) { juce::Component::SafePointer<MainComponent> self (this); juce::MessageManager::callAsync ([self] { if (self != nullptr) { self->steps.ensureClip(); self->steps.assignDefaults (samplepack::packDir (samplepack::packsDir())); self->steps.repaint(); self->playlist.repaint(); } }); } }
+        if (v) { fitPanel (steps); if (! steps.hasClip())
+            {   // el trabajo pesado se reparte en pasos de ~30 ms (clip, sampler y un sample por paso) para que la ventana siga respondiendo
+                juce::Component::SafePointer<MainComponent> self (this); auto stage = std::make_shared<int> (-2); auto run = std::make_shared<std::function<void()>>();
+                *run = [self, stage, run]
+                {
+                    if (self == nullptr) return; auto& st = self->steps; bool more = true;
+                    if (*stage == -2) st.ensureClip(); else if (*stage == -1) st.ensureSampler(); else more = ! st.assignDefaultsStep (samplepack::packDir (samplepack::packsDir()), *stage);
+                    ++*stage; st.repaint(); self->playlist.repaint(); if (more) juce::Timer::callAfterDelay (30, [run] { (*run)(); });
+                };
+                if (std::getenv ("INJ_SELFTEST") != nullptr || std::getenv ("INJ_SHOT") != nullptr || std::getenv ("INJ_STEPTEST") != nullptr)   // pruebas y capturas: todo de una vez, como antes
+                { for (int k = 0; k < 8; ++k) { if (self == nullptr) break; auto& st = self->steps; if (k == 0) st.ensureClip(); else if (k == 1) st.ensureSampler(); else if (st.assignDefaultsStep (samplepack::packDir (samplepack::packsDir()), k - 2)) break; } }
+                else juce::Timer::callAfterDelay (60, [run] { (*run)(); });
+            } }
         steps.setVisible (v); bars.stepsOpen = v; if (v) { steps.setTopLeftPosition (juce::jmax (0, (getWidth() - steps.getWidth()) / 2), TopBars::kHeight + 70); steps.toFront (false); } playlist.repaint(); bars.repaint(); }
     PianoRollView& pianoRef() { return piano; } StepSeqPanel& stepsRef() { return steps; } BrowserPanel& browserRef() { return browser; } MixerPanel& mixerRef() { return mixer; }
     void openPanelsFromEnv (const juce::String& list)
@@ -1726,7 +1749,7 @@ class InjusticeDawApp : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "INJUSTICE DAW"; }
-    const juce::String getApplicationVersion() override { return "0.9.37"; }
+    const juce::String getApplicationVersion() override { return "0.9.41"; }
     void initialise (const juce::String&) override
     {
         auto args = getCommandLineParameterArray();
@@ -1735,7 +1758,7 @@ public:
         engine = std::make_unique<te::Engine> ("InjusticeDAW", std::make_unique<pluginhost::UIBehaviour>(), std::make_unique<pluginhost::Behaviour>());
         const auto t0 = juce::Time::getMillisecondCounter(); auto tick = [t0] (const char* w) { if (std::getenv ("INJ_TIMING")) { std::printf ("t=%4d ms  %s\n", (int) (juce::Time::getMillisecondCounter() - t0), w); std::fflush (stdout); } };
         tick ("motor creado"); installMetronomeSounds(); tick ("metronomo");
-        engine->getPluginManager().createBuiltInType<InjLimiter>(); engine->getPluginManager().createBuiltInType<InjTap>(); engine->getPluginManager().createBuiltInType<InjStereo>();
+        engine->getPluginManager().createBuiltInType<InjLimiter>(); engine->getPluginManager().createBuiltInType<InjTap>(); engine->getPluginManager().createBuiltInType<InjStereo>(); injfx::registerAll (*engine);
         engine->getDeviceManager().initialise (0, 2);
         tick ("audio"); pluginhost::loadList (*engine); tick ("lista de plugins");
         edit = makeEdit ({}); tick ("proyecto");
