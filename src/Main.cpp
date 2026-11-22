@@ -710,7 +710,7 @@ public:
                   { juce::WavAudioFormat wf; std::unique_ptr<juce::FileOutputStream> os (hf.createOutputStream()); std::unique_ptr<juce::AudioFormatWriter> w (wf.createWriterFor (os.get(), 44100.0, 1, 16, {}, 0)); if (w) { os.release(); juce::AudioBuffer<float> sb (1, 44100 * 9); sb.clear(); w->writeFromAudioSampleBuffer (sb, 0, 44100 * 9); } }
                   te::AudioTrack* ht = nullptr; for (auto* t : te::getAudioTracks (edit)) if (t->getClips().isEmpty()) { ht = t; break; } int hti = 0; { auto tt = te::getAudioTracks (edit); for (int i = 0; i < tt.size(); ++i) if (tt[i] == ht) hti = i; }
                   if (ht) { ht->insertWaveClip ("handletest", hf, { te::TimeRange (te::TimePosition::fromSeconds (0.0), te::TimeDuration::fromSeconds (8.0)), te::TimeDuration() }, false);
-                    const double zPrev = playlist.zoomPx(); playlist.setZoom (14.0); for (auto* c : ht->getClips()) if (auto* hw = dynamic_cast<te::WaveAudioClip*> (c)) { const auto msg = playlist.selfTestHandles (*hw, hti); chk (msg.isEmpty(), ("clip: manijas de fundido y ganancia " + msg).toRawUTF8()); } playlist.setZoom (zPrev);
+                    const double zPrev = playlist.zoomPx(); playlist.setZoom (14.0); for (auto* c : ht->getClips()) if (auto* hw = dynamic_cast<te::WaveAudioClip*> (c)) { const auto msg = playlist.selfTestHandles (*hw, hti); chk (msg.isEmpty(), ("clip: manijas de fundido y ganancia " + msg).toRawUTF8());  { const auto lm = playlist.selfTestLock (*hw, hti); chk (lm.isEmpty(), ("clip: bloquear clip " + lm).toRawUTF8()); } } playlist.setZoom (zPrev);
                     for (int ci = ht->getClips().size(); --ci >= 0;) { auto* c = ht->getClips()[ci]; if (c->getName().startsWith ("handletest")) c->removeFromParent(); } } }
                 {   // ganancia y fundido de clip: se oyen de verdad en el render
                   auto gf = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("inj_gain_test.wav"); gf.deleteFile();
@@ -1726,7 +1726,7 @@ class InjusticeDawApp : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "INJUSTICE DAW"; }
-    const juce::String getApplicationVersion() override { return "0.9.36"; }
+    const juce::String getApplicationVersion() override { return "0.9.37"; }
     void initialise (const juce::String&) override
     {
         auto args = getCommandLineParameterArray();

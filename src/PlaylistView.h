@@ -163,6 +163,7 @@ public:
         te::Clip* hit = nullptr;
         for (auto* c : tr->getClips()) if (c->getPosition().time.contains (te::TimePosition::fromSeconds (t))) hit = c;
         if (hit != nullptr && tryHandleDown (e, hit, ti)) return;
+        if (tool == "cut" && hit != nullptr && isLocked (hit)) { selected = hit; repaint(); return; }
         if (tool == "cut" && hit != nullptr) { const double cb = snapBeat (xToBeat ((float) e.x)); tr->splitAt (te::TimePosition::fromSeconds (beatsToTime (cb))); flashBeat = cb; flashTrack = ti; flashA = 1.f; cutTrack = -1; repaint(); return; }
         if (tool == "brush")
         {   // pinta copias del clip bajo el cursor; si empiezas en vacío usa el clip seleccionado o el último que pintaste
@@ -183,8 +184,8 @@ public:
         if (hit == nullptr) group.clear();
         else if (e.mods.isShiftDown()) { if (inGroup (hit)) group.removeObject (hit); else group.add (hit); }
         else if (! inGroup (hit)) { group.clear(); group.add (hit); }
-        selected = hit; dragClip = hit;
-        if (hit)
+        selected = hit; dragClip = hit; if (isLocked (hit)) dragClip = nullptr;   // clip bloqueado: se elige pero no se arrastra
+        if (hit && ! isLocked (hit))
         {
             const float x0 = beatToX (timeToBeats (hit->getPosition().getStart().inSeconds())), x1 = beatToX (timeToBeats (hit->getPosition().getEnd().inSeconds()));
             const float zone = tool == "trim" ? 16.f : juce::jmin (7.f, (x1 - x0) * .3f);
@@ -193,7 +194,7 @@ public:
         }
         if (hit) { dragOffsetBeats = xToBeat ((float) e.x) - timeToBeats (hit->getPosition().getStart().inSeconds()); }
         dragOrig.clear(); downTrack = ti; auto allT = te::getAudioTracks (edit);
-        if (hit && dragMode == 0 && (tool == "select" || tool == "pencil")) for (auto* c : group) { if (c->getTrack() == nullptr) continue; int idx = 0; for (int k = 0; k < allT.size(); ++k) if (allT[k] == c->getTrack()) idx = k; dragOrig.push_back ({ c, timeToBeats (c->getPosition().getStart().inSeconds()), idx }); }
+        if (hit && dragMode == 0 && (tool == "select" || tool == "pencil")) for (auto* c : group) { if (c->getTrack() == nullptr || isLocked (c)) continue; int idx = 0; for (int k = 0; k < allT.size(); ++k) if (allT[k] == c->getTrack()) idx = k; dragOrig.push_back ({ c, timeToBeats (c->getPosition().getStart().inSeconds()), idx }); }
         repaint();
     }
     void mouseDoubleClick (const juce::MouseEvent& e) override
@@ -327,6 +328,7 @@ public:
             if (k.getKeyCode() == juce::KeyPress::leftKey || k.getKeyCode() == juce::KeyPress::rightKey) { nudgeSelection (k.getKeyCode() == juce::KeyPress::rightKey ? 1 : -1, k.getModifiers().isShiftDown()); return true; }
             if (lower() == 's') { splitSelectionAtPlayhead(); return true; }
         }
+        if (k.getModifiers().isCommandDown() && lower() == 'l' && ! selectedClips().isEmpty()) { toggleLockSelection(); return true; }
         if (k.getModifiers().isCommandDown() && lower() == 'm') { addMarker (snapBeat (timeToBeats (edit.getTransport().getPosition().inSeconds()))); return true; }
         if (k.getModifiers().isCommandDown() && k.getKeyCode() == juce::KeyPress::rightKey) { jumpToMarker (1); return true; }
         if (k.getModifiers().isCommandDown() && k.getKeyCode() == juce::KeyPress::leftKey) { jumpToMarker (-1); return true; }
@@ -367,9 +369,16 @@ public:
     struct Ghost { double b0, b1; int track; juce::Colour col; float a; };
     std::vector<Ghost> ghosts;
     // Borra un clip con animación: deja una sombra roja que se encoge y se desvanece donde estaba
+    // Bloquear clip: no se mueve, no se recorta, no se corta, no se borra y no se le tocan fundidos ni ganancia. Se guarda en el proyecto.
+    static bool isLocked (te::Clip* c) { return c != nullptr && (bool) c->state.getProperty ("injLocked", false); }
+    void toggleLockSelection()
+    {
+        auto cs = selectedClips(); if (cs.isEmpty()) return; bool anyOpen = false; for (auto* c : cs) anyOpen = anyOpen || ! isLocked (c);
+        edit.getUndoManager().beginNewTransaction(); for (auto* c : cs) c->state.setProperty ("injLocked", anyOpen, &edit.getUndoManager()); repaint();
+    }
     void killClip (te::Clip* c)
     {
-        if (c == nullptr) return;
+        if (c == nullptr || isLocked (c)) return;
         if (auto* tr = dynamic_cast<te::AudioTrack*> (c->getTrack())) { auto all = te::getAudioTracks (edit); const int ti = all.indexOf (tr);
             if (ti >= 0) { const int cc = (int) c->state.getProperty ("injColour", -1); ghosts.push_back ({ timeToBeats (c->getPosition().getStart().inSeconds()), timeToBeats (c->getPosition().getEnd().inSeconds()), ti, cc != -1 ? juce::Colour ((juce::uint32) cc) : trackutil::colourOf (tr, ti), 1.f }); } }
         c->removeFromParent();
@@ -419,13 +428,13 @@ public:
     {
         auto cs = selectedClips(); if (cs.isEmpty()) return; edit.getUndoManager().beginNewTransaction();
         const double st = bigStep ? timesig::bar() : snapStep();
-        for (auto* c : cs) { const double nb = std::max (0.0, timeToBeats (c->getPosition().getStart().inSeconds()) + dir * st); c->setStart (te::TimePosition::fromSeconds (beatsToTime (nb)), false, true); }
+        for (auto* c : cs) { if (isLocked (c)) continue; const double nb = std::max (0.0, timeToBeats (c->getPosition().getStart().inSeconds()) + dir * st); c->setStart (te::TimePosition::fromSeconds (beatsToTime (nb)), false, true); }
         repaint();
     }
     void splitSelectionAtPlayhead()
     {
         const double t = edit.getTransport().getPosition().inSeconds(); auto cs = selectedClips(); juce::Array<te::AudioTrack*> trs;
-        for (auto* c : cs) if (c->getPosition().time.contains (te::TimePosition::fromSeconds (t))) if (auto* at = dynamic_cast<te::AudioTrack*> (c->getTrack())) trs.addIfNotAlreadyThere (at);
+        for (auto* c : cs) if (! isLocked (c) && c->getPosition().time.contains (te::TimePosition::fromSeconds (t))) if (auto* at = dynamic_cast<te::AudioTrack*> (c->getTrack())) trs.addIfNotAlreadyThere (at);
         if (trs.isEmpty()) return; edit.getUndoManager().beginNewTransaction(); for (auto* at : trs) at->splitAt (te::TimePosition::fromSeconds (t)); repaint();
     }
     void selectTrackClips (int ti)
@@ -685,6 +694,25 @@ private:
         if (hit != nullptr)
         {
             selected = hit; te::Clip::Ptr c (hit);
+            if (isLocked (hit))
+            {   // clip bloqueado: solo se puede desbloquear, duplicar, silenciar o renombrar
+                juce::PopupMenu lm; if (dynamic_cast<te::MidiClip*> (hit)) lm.addItem (1, "Abrir en Piano Roll");
+                lm.addItem (80, "Desbloquear clip  (Ctrl+L)"); lm.addSeparator(); lm.addItem (2, "Duplicar  (Ctrl+D)"); lm.addItem (6, hit->isMuted() ? "Quitar silencio del clip" : "Silenciar clip"); lm.addItem (5, juce::String::fromUTF8 ("Renombrar…"));
+                lm.showMenuAsync (juce::PopupMenu::Options(), [this, c] (int r)
+                {
+                    if (r == 1) { if (onOpenMidi) onOpenMidi (dynamic_cast<te::MidiClip*> (c.get())); }
+                    else if (r == 80) { edit.getUndoManager().beginNewTransaction(); c->state.setProperty ("injLocked", false, &edit.getUndoManager()); }
+                    else if (r == 2) { if (auto* nc = trackutil::duplicateClip (edit, *c)) { selected = nc; nc->state.setProperty ("injLocked", false, &edit.getUndoManager()); } }
+                    else if (r == 6) { edit.getUndoManager().beginNewTransaction(); c->setMuted (! c->isMuted()); }
+                    else if (r == 5)
+                    {
+                        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Renombrar clip"), "", juce::MessageBoxIconType::NoIcon); aw->addTextEditor ("n", c->getName()); aw->addButton ("Aceptar", 1); aw->addButton ("Cancelar", 0);
+                        aw->enterModalState (true, juce::ModalCallbackFunction::create ([this, c, aw] (int res) { if (res == 1) { edit.getUndoManager().beginNewTransaction(); c->setName (aw->getTextEditorContents ("n")); repaint(); } delete aw; }));
+                    }
+                    repaint();
+                });
+                return;
+            }
             if (dynamic_cast<te::MidiClip*> (hit)) m.addItem (1, "Abrir en Piano Roll");
             { juce::PopupMenu cm; cm.addItem (99, "Color de la pista"); cm.addSeparator(); for (int ci = 0; ci < 8; ++ci) cm.addColouredItem (100 + ci, "      ", theme::trackColours[ci], false, false, nullptr); m.addSubMenu ("Color del clip", cm); }
             if (auto* wc = dynamic_cast<te::WaveAudioClip*> (hit))
@@ -705,7 +733,7 @@ private:
             }
             if (dynamic_cast<te::WaveAudioClip*> (hit)) { m.addItem (60, juce::String::fromUTF8 ("Detectar tempo y tono")); m.addItem (61, juce::String::fromUTF8 ("Ajustar al tempo del proyecto")); }
             m.addItem (70, juce::String::fromUTF8 ("Repetir este clip en bucle")); if (dynamic_cast<te::MidiClip*> (hit)) m.addItem (8, juce::String::fromUTF8 ("Exportar como archivo MIDI…"));
-            m.addItem (5, juce::String::fromUTF8 ("Renombrar…")); m.addItem (6, hit->isMuted() ? "Quitar silencio del clip" : "Silenciar clip"); m.addSeparator(); m.addItem (2, "Duplicar  (Ctrl+D)"); m.addItem (30, "Repetir 2 veces m\xc3\xa1s"); m.addItem (31, "Repetir 4 veces m\xc3\xa1s"); m.addItem (32, "Repetir 8 veces m\xc3\xa1s"); m.addItem (3, "Dividir aqu\xc3\xad"); m.addItem (33, "Dividir en 2 partes iguales"); m.addItem (34, "Dividir en 4 partes iguales"); m.addItem (35, "Dividir en 8 partes iguales"); m.addSeparator(); m.addItem (4, "Eliminar  (Supr)");
+            m.addItem (80, "Bloquear clip  (Ctrl+L)"); m.addItem (5, juce::String::fromUTF8 ("Renombrar…")); m.addItem (6, hit->isMuted() ? "Quitar silencio del clip" : "Silenciar clip"); m.addSeparator(); m.addItem (2, "Duplicar  (Ctrl+D)"); m.addItem (30, "Repetir 2 veces m\xc3\xa1s"); m.addItem (31, "Repetir 4 veces m\xc3\xa1s"); m.addItem (32, "Repetir 8 veces m\xc3\xa1s"); m.addItem (3, "Dividir aqu\xc3\xad"); m.addItem (33, "Dividir en 2 partes iguales"); m.addItem (34, "Dividir en 4 partes iguales"); m.addItem (35, "Dividir en 8 partes iguales"); m.addSeparator(); m.addItem (4, "Eliminar  (Supr)");
             m.showMenuAsync (juce::PopupMenu::Options(), [this, c, tr, clickBeat] (int r)
             {
                 if (r == 1) { if (onOpenMidi) onOpenMidi (dynamic_cast<te::MidiClip*> (c.get())); }
@@ -719,6 +747,7 @@ private:
                 else if (r >= 400 && r < 413) { static const int st[] { -12, -7, -5, -3, -2, -1, 0, 1, 2, 3, 5, 7, 12 }; if (auto* wc = dynamic_cast<te::WaveAudioClip*> (c.get())) { edit.getUndoManager().beginNewTransaction(); setClipPitch (*wc, (float) st[r - 400]); } }
                 else if (r >= 430 && r < 438) { static const int sr[] { 50, 75, 90, 100, 110, 125, 150, 200 }; if (auto* wc = dynamic_cast<te::WaveAudioClip*> (c.get())) { edit.getUndoManager().beginNewTransaction(); setClipSpeed (*wc, sr[r - 430] / 100.0); } }
                 else if (r == 450 || r == 451) { if (auto* wc = dynamic_cast<te::WaveAudioClip*> (c.get())) { edit.getUndoManager().beginNewTransaction(); wc->setTimeStretchMode (r == 451 ? te::TimeStretcher::rubberbandPercussive : te::TimeStretcher::rubberbandMelodic); } }
+                else if (r == 80) { edit.getUndoManager().beginNewTransaction(); c->state.setProperty ("injLocked", true, &edit.getUndoManager()); }
                 else if (r == 70) loopClip (*c);
                 else if (r == 71) compareTones();
                 else if (r == 72) { if (auto* wc = dynamic_cast<te::WaveAudioClip*> (c.get())) reverseClip (*wc, *tr); }
@@ -979,6 +1008,22 @@ public:
     bool demoHandles = false;
     void selectForDemo (te::Clip* c) { demoHandles = true; selected = c; group.clear(); if (c) group.add (c); repaint(); }
     // Prueba interna: arrastra las manijas con eventos de raton sinteticos; devuelve "" si todo va bien
+    juce::String selfTestLock (te::WaveAudioClip& w, int ti)
+    {   // bloquear clip: con candado no se mueve (raton ni flechas), no se borra y al desbloquear vuelve a funcionar
+        selectForDemo (&w); tool = "select"; auto src = juce::Desktop::getInstance().getMainMouseSource();
+        auto ev = [&] (juce::Point<float> p) { return juce::MouseEvent (src, p, juce::ModifierKeys(), 1.f, 0.f, 0.f, 0.f, 0.f, this, this, juce::Time::getCurrentTime(), p, juce::Time::getCurrentTime(), 1, false); };
+        const double s0 = w.getPosition().getStart().inSeconds(); const auto r = clipRect (w, ti); if (r.getWidth() < 60.f) return "clip demasiado corto";
+        const auto ctrlL = juce::KeyPress ('l', juce::ModifierKeys::commandModifier, 0);
+        keyPressed (ctrlL); if (! isLocked (&w)) return "Ctrl+L no bloquea";
+        const auto c = r.getCentre(); mouseDown (ev (c)); mouseDrag (ev ({ c.x + 60.f, c.y })); mouseUp (ev ({ c.x + 60.f, c.y }));
+        if (std::abs (w.getPosition().getStart().inSeconds() - s0) > 1e-6) return "el clip bloqueado se mueve con el raton";
+        selectForDemo (&w); keyPressed (juce::KeyPress (juce::KeyPress::rightKey));
+        if (std::abs (w.getPosition().getStart().inSeconds() - s0) > 1e-6) return "el clip bloqueado se mueve con las flechas";
+        selectForDemo (&w); keyPressed (juce::KeyPress (juce::KeyPress::deleteKey)); if (w.getTrack() == nullptr) return "el clip bloqueado se borra";
+        selectForDemo (&w); keyPressed (ctrlL); if (isLocked (&w)) return "Ctrl+L no desbloquea";
+        keyPressed (juce::KeyPress (juce::KeyPress::rightKey)); if (std::abs (w.getPosition().getStart().inSeconds() - s0) < 1e-6) return "al desbloquear el clip no se mueve";
+        w.setStart (te::TimePosition::fromSeconds (s0), false, true); return {};
+    }
     juce::String selfTestHandles (te::WaveAudioClip& w, int ti)
     {
         selectForDemo (&w); w.setFadeIn (te::TimeDuration()); w.setFadeOut (te::TimeDuration()); w.setGainDB (0.f);
@@ -1019,7 +1064,7 @@ public:
     }
     bool tryHandleDown (const juce::MouseEvent& e, te::Clip* hit, int ti)
     {
-        auto* w = dynamic_cast<te::WaveAudioClip*> (hit); if (w == nullptr || ! (tool == "select" || tool == "pencil") || ! (hit == selected || inGroup (hit))) return false;
+        auto* w = dynamic_cast<te::WaveAudioClip*> (hit); if (w == nullptr || isLocked (hit) || ! (tool == "select" || tool == "pencil") || ! (hit == selected || inGroup (hit))) return false;
         const auto r = clipRect (*w, ti); if (r.getWidth() < 30.f || r.getHeight() < 50.f) return false; const auto p = e.position;
         if (fadeInH (*w, r).expanded (4.f).contains (p)) fadeMode = 1; else if (fadeOutH (*w, r).expanded (4.f).contains (p)) fadeMode = 2; else if (gainH (r, w->getGainDB()).expanded (4.f).contains (p)) fadeMode = 3; else return false;
         fadeClip = w; lastGainY = e.position.y; selected = w; group.clear(); group.add (w); dragClip = nullptr; repaint(); return true;
@@ -1071,6 +1116,13 @@ public:
           const double gs = pxPerBeat >= 14 ? 1.0 : timesig::bar(); for (double b = std::floor (xToBeat (r.getX()) / gs) * gs; beatToX (b) < r.getRight(); b += gs) g.fillRect (beatToX (b), r.getY(), 1.f, r.getHeight()); g.restoreState(); }
         { const float bh = r.getHeight() >= 60.f ? 16.f : (r.getHeight() >= 40.f ? 8.f : 0.f); if (bh > 0.f) { g.setColour (col.darker (.16f).withMultipliedSaturation (1.08f)); g.fillRect (r.getX(), r.getY(), r.getWidth(), bh); } g.setColour (col.darker (.7f).withAlpha (.85f)); g.drawRect (r, 1.f); }
         if (c.isMuted()) { g.setColour (juce::Colour (0xff1b1b1b).withAlpha (.62f)); g.fillRect (r); }
+        if (isLocked (&c) && r.getWidth() > 18.f && r.getHeight() > 14.f)
+        {   // candado en la esquina superior derecha
+            const float lx = r.getRight() - 15.f, ly = r.getY() + 3.f; g.setColour (juce::Colours::black.withAlpha (.55f)); g.fillRoundedRectangle (lx - 2.f, ly - 2.f, 14.f, 16.f, 3.f);
+            g.setColour (juce::Colours::white.withAlpha (.95f)); g.fillRoundedRectangle (lx, ly + 5.f, 10.f, 7.f, 1.5f);
+            juce::Path sh; sh.addArc (lx + 2.f, ly, 6.f, 8.f, -juce::MathConstants<float>::halfPi * 2.f, 0.f, true); g.strokePath (sh, juce::PathStrokeType (1.5f));
+            g.setColour (juce::Colours::white.withAlpha (.3f)); g.drawRect (r.reduced (.5f), 1.f);
+        }
         if (&c == selected || inGroup (&c)) { g.setColour (juce::Colours::white.withAlpha (.22f)); g.fillRect (r); g.setColour (juce::Colours::white.withAlpha (.95f)); g.drawRect (r, 1.5f); }
                 if (r.getHeight() >= 26.f && r.getWidth() > 24.f) { g.setColour (ink.withAlpha (.85f)); g.setFont (juce::FontOptions (11.f, juce::Font::bold));
         g.drawText (c.getName(), r.toNearestInt().reduced (5, 1).withHeight (15), juce::Justification::centredLeft); }

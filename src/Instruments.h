@@ -148,22 +148,22 @@ namespace instruments
     inline const std::vector<KitDef>& kits()
     {
         static const std::vector<KitDef> k {
-            { "Kit INJUSTICE", { { 36, "Kicks/Kick Gabber 01.wav" }, { 35, "Kicks/Kick Hardcore 01.wav" }, { 34, "Kicks/Kick Gabber 12.wav" }, { 37, "Percusiones/Rim 01.wav" },
-                                 { 38, "Snares/Snare Gabber 01.wav" }, { 40, "Snares/Snare Hardcore 01.wav" }, { 39, "Claps/Clap Gabber 01.wav" }, { 41, "Percusiones/Tom 909 03.wav" },
-                                 { 43, "Percusiones/Tom 909 07.wav" }, { 45, "Percusiones/Tom 909 09.wav" }, { 42, "Hats/Hat Hardcore Cerrado 01.wav" }, { 44, "Hats/Hat Pedal 01.wav" },
-                                 { 46, "Hats/Hat Hardcore Abierto 01.wav" }, { 49, "Percusiones/Crash 01.wav" }, { 51, "Percusiones/Ride 01.wav" }, { 56, "Percusiones/Cowbell 01.wav" } } },
-            { "Kit 909", { { 36, "Kicks/Kick 909 01.wav" }, { 35, "Kicks/Kick 909 09.wav" }, { 34, "Kicks/Kick Punch 01.wav" }, { 37, "Percusiones/Rim 02.wav" },
-                           { 38, "Snares/Snare 909 01.wav" }, { 40, "Snares/Snare 909 07.wav" }, { 39, "Claps/Clap 909 01.wav" }, { 41, "Percusiones/Tom 909 02.wav" },
-                           { 43, "Percusiones/Tom 909 05.wav" }, { 45, "Percusiones/Tom 909 08.wav" }, { 42, "Hats/Hat 909 Cerrado 01.wav" }, { 44, "Hats/Hat Pedal 02.wav" },
-                           { 46, "Hats/Hat 909 Abierto 01.wav" }, { 49, "Percusiones/Crash 02.wav" }, { 51, "Percusiones/Ride 02.wav" }, { 54, "Percusiones/Tambourine 01.wav" }, { 70, "Percusiones/Shaker 01.wav" } } },
-            { "Kit 808", { { 36, "Kicks/Kick 808 01.wav" }, { 35, "Kicks/Kick 808 06.wav" }, { 34, "Kicks/Kick Sub 01.wav" }, { 37, "Percusiones/Clave 01.wav" },
-                           { 38, "Snares/Snare 808 01.wav" }, { 40, "Snares/Snare 808 06.wav" }, { 39, "Claps/Clap 808 01.wav" }, { 41, "Percusiones/Tom 808 02.wav" },
-                           { 43, "Percusiones/Tom 808 04.wav" }, { 45, "Percusiones/Tom 808 07.wav" }, { 42, "Hats/Hat 808 Cerrado 01.wav" }, { 44, "Hats/Hat Pedal 03.wav" },
-                           { 46, "Hats/Hat 808 Abierto 01.wav" }, { 49, "Percusiones/Crash 03.wav" }, { 56, "Percusiones/Cowbell 03.wav" }, { 62, "Percusiones/Conga 02.wav" }, { 70, "Percusiones/Shaker 03.wav" } } },
-            { "Kit Hardcore", { { 36, "Kicks/Kick Hardcore 05.wav" }, { 35, "Kicks/Kick Gabber 20.wav" }, { 34, "Kicks/Kick Sub 03.wav" }, { 37, "Percusiones/Rim 04.wav" },
-                                { 38, "Snares/Snare Hardcore 03.wav" }, { 40, "Snares/Snare Gabber 05.wav" }, { 39, "Claps/Clap Gabber 05.wav" }, { 41, "Percusiones/Tom 808 01.wav" },
-                                { 43, "Percusiones/Tom 808 05.wav" }, { 45, "Percusiones/Tom 909 04.wav" }, { 42, "Hats/Hat Hardcore Cerrado 04.wav" }, { 44, "Hats/Hat Pedal 05.wav" },
-                                { 46, "Hats/Hat Hardcore Abierto 03.wav" }, { 49, "Percusiones/Crash 05.wav" }, { 56, "Percusiones/Cowbell 05.wav" }, { 51, "Percusiones/Ride 04.wav" } } } };
+            { "Kit INJUSTICE", { { 36, "Kicks/Kick Gabber 01.wav" }, { 35, "Kicks/Kick Burst 01.wav" }, { 34, "Kicks/Kick Gabber 12.wav" }, { 37, "Percusiones/Rim 01.wav" },
+                                 { 38, "Snares/Snare Hype 01.wav" }, { 40, "Snares/Snare Crowd 01.wav" }, { 39, "Claps/Clap Gabber 01.wav" }, { 41, "Percusiones/Tom 909 03.wav" },
+                                 { 43, "Percusiones/Tom 909 07.wav" }, { 45, "Percusiones/Tom 909 09.wav" }, { 42, "Hats/Hat Corto 02.wav" }, { 44, "Hats/Hat Tick 01.wav" },
+                                 { 46, "Hats/Hat Abierto 02.wav" }, { 49, "Percusiones/Crash 01.wav" }, { 51, "Percusiones/Ride 01.wav" }, { 56, "Percusiones/Cowbell 01.wav" } } },
+            { "Kit 909", { { 36, "Kicks/Kick Dash 01.wav" }, { 35, "Kicks/Kick Dash 09.wav" }, { 34, "Kicks/Kick Basic 01.wav" }, { 37, "Percusiones/Rim 02.wav" },
+                           { 38, "Snares/Snare Brillante 01.wav" }, { 40, "Snares/Snare Brillante 07.wav" }, { 39, "Claps/Clap 909 01.wav" }, { 41, "Percusiones/Tom 909 02.wav" },
+                           { 43, "Percusiones/Tom 909 05.wav" }, { 45, "Percusiones/Tom 909 08.wav" }, { 42, "Hats/Hat Corto 01.wav" }, { 44, "Hats/Hat Tick 02.wav" },
+                           { 46, "Hats/Hat Abierto 01.wav" }, { 49, "Percusiones/Crash 02.wav" }, { 51, "Percusiones/Ride 02.wav" }, { 54, "Percusiones/Tambourine 01.wav" }, { 70, "Percusiones/Shaker 01.wav" } } },
+            { "Kit 808", { { 36, "Kicks/Kick Sub 06.wav" }, { 35, "Kicks/Kick Sub 10.wav" }, { 34, "Kicks/Kick Sub 01.wav" }, { 37, "Percusiones/Clave 01.wav" },
+                           { 38, "Snares/Snare Oscuro 01.wav" }, { 40, "Snares/Snare Oscuro 06.wav" }, { 39, "Claps/Clap 808 01.wav" }, { 41, "Percusiones/Tom 808 02.wav" },
+                           { 43, "Percusiones/Tom 808 04.wav" }, { 45, "Percusiones/Tom 808 07.wav" }, { 42, "Hats/Hat Corto 05.wav" }, { 44, "Hats/Hat Tick 03.wav" },
+                           { 46, "Hats/Hat Abierto 05.wav" }, { 49, "Percusiones/Crash 03.wav" }, { 56, "Percusiones/Cowbell 03.wav" }, { 62, "Percusiones/Conga 02.wav" }, { 70, "Percusiones/Shaker 03.wav" } } },
+            { "Kit Hardcore", { { 36, "Kicks/Kick Burst 05.wav" }, { 35, "Kicks/Kick Gabber 20.wav" }, { 34, "Kicks/Kick Sub 03.wav" }, { 37, "Percusiones/Rim 04.wav" },
+                                { 38, "Snares/Snare Crowd 03.wav" }, { 40, "Snares/Snare Hype 05.wav" }, { 39, "Claps/Clap Gabber 05.wav" }, { 41, "Percusiones/Tom 808 01.wav" },
+                                { 43, "Percusiones/Tom 808 05.wav" }, { 45, "Percusiones/Tom 909 04.wav" }, { 42, "Hats/Hat Corto 09.wav" }, { 44, "Hats/Hat Tick 05.wav" },
+                                { 46, "Hats/Hat Abierto 08.wav" }, { 49, "Percusiones/Crash 05.wav" }, { 56, "Percusiones/Cowbell 05.wav" }, { 51, "Percusiones/Ride 04.wav" } } } };
         return k;
     }
 

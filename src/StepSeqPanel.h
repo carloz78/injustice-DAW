@@ -21,7 +21,7 @@ public:
     void assignDefaults (const juce::File& pack)
     {
         ensureClip(); if (! clip || (bool) clip->state.getProperty ("injDefaults", false) || ! pack.isDirectory()) return;
-        static const char* f[] { "Kicks/Kick 909 01.wav", "Claps/Clap 909 01.wav", "Hats/Hat 909 Cerrado 01.wav", "Hats/Hat 909 Abierto 01.wav" };
+        static const char* f[] { "Kicks/Kick Dash 01.wav", "Claps/Clap 909 01.wav", "Hats/Hat Corto 01.wav", "Hats/Hat Abierto 01.wav" };
         for (int r = 0; r < 4 && r < clip->getChannels().size(); ++r) if (! hasSample (r) && pack.getChildFile (f[r]).existsAsFile()) assignSample (r, pack.getChildFile (f[r]));
         clip->state.setProperty ("injDefaults", true, nullptr); repaint();
     }
