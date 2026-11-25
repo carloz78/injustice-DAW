@@ -1,7 +1,7 @@
 [Setup]
 AppId={{7C3B1E52-94A6-4D0F-8E21-5B6A0C9D3F47}
 AppName=INJUSTICE DAW
-AppVersion=0.9.41
+AppVersion=0.9.47
 AppPublisher=Injustice Audio
 DefaultDirName={autopf}\INJUSTICE DAW
 DefaultGroupName=INJUSTICE DAW
@@ -14,6 +14,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\INJUSTICE DAW.exe
 WizardStyle=modern
 SetupIconFile=assets\icon.ico
+WizardImageFile=assets\wiz_large.bmp,assets\wiz_large2x.bmp
+WizardSmallImageFile=assets\wiz_small.bmp,assets\wiz_small2x.bmp
+
+[Languages]
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Files]
 Source: "build\src\InjusticeDAW_artefacts\Release\INJUSTICE DAW.exe"; DestDir: "{app}"; Flags: ignoreversion
