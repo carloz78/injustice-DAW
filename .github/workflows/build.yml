@@ -7,6 +7,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      - name: SDK de ASIO (opcional)
+        continue-on-error: true
+        run: git clone --depth 1 https://github.com/steinbergmedia/asiosdk third_party/asiosdk
       - name: Configurar
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
       - name: Compilar
