@@ -22,7 +22,9 @@ namespace templates
             { "House",       ideas::House,     36, "Kit 909",       "Bajo Sub",    "Stab Rave",     false, "Pluck",         "Pad Cuerdas" } };
         return d;
     }
-    inline int& pending() { static int v = -1; return v; }   // plantilla elegida para el proyecto que se abre a continuación
+    inline int& pending() { static int v = -1; return v; }   // (ver abajo: opciones de la IA de ideas)
+    struct Over { double bpm = 0; int root = -1; bool major = false; int energy = 0; int seedOff = 0; bool set = false; };
+    inline Over& pendingOver() { static Over o; return o; }   // plantilla elegida para el proyecto que se abre a continuación
 
     inline int synthIdx (const char* name) { for (size_t k = 0; k < instruments::list().size(); ++k) if (juce::String (instruments::list()[k].name) == name) return (int) k; return 0; }
     inline int kitIdx (const char* name) { for (size_t k = 0; k < instruments::kits().size(); ++k) if (juce::String (instruments::kits()[k].name) == name) return (int) k; return 0; }
@@ -32,17 +34,17 @@ namespace templates
     inline const int* secBars() { static const int s[5] { 4, 8, 4, 8, 4 }; return s; }
 
     // Devuelve cuántas pistas creó (0 si no hay paquete de sonidos).
-    inline int apply (te::Edit& e, const juce::File& packsRoot, int idx)
+    inline int apply (te::Edit& e, const juce::File& packsRoot, int idx, const Over* ov = nullptr)
     {
         if (idx < 0 || idx >= (int) list().size() || ! samplepack::ready (packsRoot)) return 0;
-        const auto& d = list()[(size_t) idx]; auto tracks = te::getAudioTracks (e);
+        auto d = list()[(size_t) idx]; if (ov != nullptr && ov->root >= 0) d.root = ov->root; ideas::majorMode() = ov != nullptr && ov->major; auto tracks = te::getAudioTracks (e);
         struct Spec { const char* name; int role; int mask; int colour; float db; float pan; };   // rol: 0 bombo, 1 caja/clap/fills, 2 hats, 3 bajo, 4 acordes, 5 melodía, 6 pad
         const Spec specs[] {
             { "Bombo",          0, 1 | 2 | 8 | 16, 0, -2.f, 0.f },   { "Caja / Clap", 1, 2 | 8 | 16, 1, -4.f, 0.f }, { "Hats", 2, 31, 2, -9.f, 0.15f },
             { "Bajo",           3, 2 | 8,          3, -5.f, 0.f },   { "Acordes",     4, 2 | 8,      4, -10.f, -0.2f }, { "Melodia", 5, 8 | 4, 5, -8.f, 0.2f },
             { "Pad",            6, 1 | 4 | 16,     6, -13.f, 0.f } };
-        e.tempoSequence.getTempo (0)->setBpm (ideas::styleBpm (d.style));
-        int made = 0; const int seed = 1000 + idx * 17;
+        e.tempoSequence.getTempo (0)->setBpm (ov != nullptr && ov->bpm > 0 ? ov->bpm : ideas::styleBpm (d.style));
+        int made = 0; const int seed = 1000 + idx * 17 + (ov != nullptr ? ov->seedOff : 0);
         for (size_t i = 0; i < std::size (specs); ++i)
         {
             if ((int) i >= tracks.size()) break; auto* t = tracks[(int) i]; auto& sp = specs[i];
@@ -77,6 +79,6 @@ namespace templates
         }
         if (made >= 7) { for (int k : { 3, 4, 6 }) trackutil::setSidechain (e, *tracks[k], tracks[0], 0.7, 110.0); }
         if (made >= 7) { trackutil::joinGroup (e, *tracks[1], *tracks[0], juce::String::fromUTF8 ("Bater\xc3\xad" "a")); trackutil::joinGroup (e, *tracks[2], *tracks[0]); trackutil::joinGroup (e, *tracks[4], *tracks[3], "Sintes"); trackutil::joinGroup (e, *tracks[5], *tracks[3]); trackutil::joinGroup (e, *tracks[6], *tracks[3]); }
-        return made;
+        ideas::majorMode() = false; return made;
     }
 }

@@ -127,7 +127,7 @@ class InjFx : public te::Plugin
 {
 public:
     InjFx (te::PluginCreationInfo info) : te::Plugin (info) {}
-    ~InjFx() override { notifyListenersOfDeletion(); for (auto* p : params) p->detachFromCurrentValue(); cvs.clear(); }
+    ~InjFx() override { for (auto* p : params) p->detachFromCurrentValue(); params.clear(); cvs.clear(); notifyListenersOfDeletion(); }   // primero se sueltan los parámetros: notifyListenersOfDeletion() los borra
     juce::String getSelectableDescription() override { return getName(); }
     int getNumOutputChannelsGivenInputs (int n) override { return juce::jmin (n, 2); }
     void deinitialise() override {}
@@ -200,7 +200,7 @@ inline float coefMs (float ms, double sr) { return std::exp (-1.f / (std::max (.
 
 //==============================================================================
 // Controles de la ventana (estilo de los diseños: tablero #26272b, perillas con arco naranja)
-inline juce::Font uiFont (float h, bool bold = false) { return juce::Font (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain)); }
+inline juce::Font uiFont (float h, bool bold = false) { return theme::fonts::ui (h, bold); }
 
 class FxButton : public juce::Component
 {
@@ -209,8 +209,8 @@ public:
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat(); const bool hot = isMouseOver();
-        if (on || filled) { g.setColour (on ? theme::accent : theme::accent.withAlpha (hot ? 1.f : .9f)); g.fillRoundedRectangle (r, 8.f); g.setColour (juce::Colour (0xff1a1a1a)); }
-        else { g.setColour (hot ? theme::panelHi : theme::panel); g.fillRoundedRectangle (r, 8.f); g.setColour (theme::barLine); g.drawRoundedRectangle (r.reduced (.5f), 8.f, 1.f); g.setColour (theme::text); }
+        if (on || filled) { g.setColour (theme::accent.withAlpha (hot ? .28f : .2f)); g.fillRoundedRectangle (r, 3.f); g.setColour (theme::accent); g.drawRoundedRectangle (r.reduced (.5f), 3.f, 1.f); g.setColour (theme::accentHi); }
+        else { g.setColour (hot ? theme::panelHi : theme::panel); g.fillRoundedRectangle (r, 3.f); g.setColour (theme::seam); g.drawRoundedRectangle (r.reduced (.5f), 3.f, 1.f); g.setColour (theme::edgeLight); g.fillRect (r.getX() + 2.f, r.getY() + 1.f, r.getWidth() - 4.f, 1.f); g.setColour (theme::text); }
         g.setFont (uiFont (fontH, bold)); g.drawText (text, getLocalBounds(), juce::Justification::centred);
     }
     void mouseUp (const juce::MouseEvent& e) override { if (getLocalBounds().contains (e.getPosition()) && onClick) onClick(); }
@@ -227,12 +227,17 @@ public:
     {
         const auto& s = fx.specs()[i]; const float v = fx.v (i), n = juce::jlimit (0.f, 1.f, fx.param (i)->getCurrentNormalisedValue());
         const float cx = getWidth() * .5f, cy = dia * .5f, R = dia * .5f * .78f, sw = dia * .0785f, a0 = -kPi * .75f, a1 = a0 + kPi * 1.5f * n;
-        juce::Path tr; tr.addCentredArc (cx, cy, R, R, 0.f, a0, kPi * .75f, true); g.setColour (theme::panelHi); g.strokePath (tr, juce::PathStrokeType (sw, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        if (n > .015f) { juce::Path va; va.addCentredArc (cx, cy, R, R, 0.f, a0, a1, true); g.setColour (theme::accent); g.strokePath (va, juce::PathStrokeType (sw, juce::PathStrokeType::curved, juce::PathStrokeType::rounded)); }
-        g.setColour (theme::text); g.drawLine (cx + std::sin (a1) * R * .36f, cy - std::cos (a1) * R * .36f, cx + std::sin (a1) * R * .76f, cy - std::cos (a1) * R * .76f, sw * .6f);
+        const float aw = std::max (2.f, sw * .8f);
+        juce::Path tr; tr.addCentredArc (cx, cy, R, R, 0.f, a0, kPi * .75f, true); g.setColour (theme::boxFill); g.strokePath (tr, juce::PathStrokeType (aw + 2.f, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+        g.setColour (theme::panelHi); g.strokePath (tr, juce::PathStrokeType (aw, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+        if (n > .015f) { juce::Path va; va.addCentredArc (cx, cy, R, R, 0.f, a0, a1, true); g.setColour (theme::accent); g.strokePath (va, juce::PathStrokeType (aw, juce::PathStrokeType::curved, juce::PathStrokeType::butt)); }
+        { const float br = R - aw * .5f - 3.f; g.setColour (theme::seam); g.fillEllipse (cx - br - 1.f, cy - br - .5f, (br + 1.f) * 2.f, (br + 1.f) * 2.f);
+          g.setGradientFill (juce::ColourGradient (juce::Colour (0xff3a3d45), cx, cy - br, juce::Colour (0xff25272d), cx, cy + br, false)); g.fillEllipse (cx - br, cy - br, br * 2.f, br * 2.f);
+          g.setColour (theme::edgeLight.withAlpha (.12f)); g.drawEllipse (cx - br + .5f, cy - br + .5f, br * 2.f - 1.f, br * 2.f - 1.f, 1.f);
+          g.setColour (theme::text); g.drawLine (cx + std::sin (a1) * br * .35f, cy - std::cos (a1) * br * .35f, cx + std::sin (a1) * br * .92f, cy - std::cos (a1) * br * .92f, std::max (1.6f, sw * .55f)); }
         const bool sm = dia < 48.f;
-        g.setFont (uiFont (sm ? 11.f : 13.f, true)); g.drawText (fmtValue (s, v), juce::Rectangle<int> (0, (int) dia + 2, getWidth(), sm ? 14 : 17), juce::Justification::centred);
-        g.setColour (juce::Colour (0xffa8a8ad)); g.setFont (uiFont (sm ? 10.f : 12.f)); juce::String nm = juce::String::fromUTF8 (s.name); if (nm.contains ("|")) nm = sm ? nm.fromLastOccurrenceOf ("|", false, false) : nm.upToFirstOccurrenceOf ("|", false, false);
+        g.setColour (theme::text); g.setFont (theme::fonts::digits (sm ? 10.5f : 12.f)); g.drawText (fmtValue (s, v), juce::Rectangle<int> (0, (int) dia + 2, getWidth(), sm ? 14 : 17), juce::Justification::centred);
+        g.setColour (theme::textDim); g.setFont (uiFont (sm ? 10.f : 11.f)); juce::String nm = juce::String::fromUTF8 (s.name); if (nm.contains ("|")) nm = sm ? nm.fromLastOccurrenceOf ("|", false, false) : nm.upToFirstOccurrenceOf ("|", false, false);
         g.drawText (labelOverride.isNotEmpty() ? labelOverride : nm, juce::Rectangle<int> (0, (int) dia + (sm ? 16 : 20), getWidth(), 14), juce::Justification::centred);
     }
     void mouseDown (const juce::MouseEvent&) override { startN = fx.param (i)->getCurrentNormalisedValue(); fx.param (i)->parameterChangeGestureBegin(); }
@@ -298,9 +303,10 @@ public:
     void resized() override { presetBtn.setBounds (getWidth() - 14 - 60 - 10 - 200, 10, 200, 28); activeBtn.setBounds (getWidth() - 14 - 60, 10, 60, 28); }
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (theme::bgBar2); g.setColour (theme::bgBar); g.fillRect (0, 0, getWidth(), 48);
-        if (! icon.isEmpty()) { g.setColour (theme::accent); g.strokePath (icon, juce::PathStrokeType (2.f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded), juce::AffineTransform::scale (22.f / 24.f).translated (16.f, 13.f)); }
-        g.setColour (theme::text); g.setFont (uiFont (16.f, true)); g.drawText (fx.getName(), 50, 0, getWidth() - 320, 48, juce::Justification::centredLeft);
+        g.fillAll (theme::bgBar2); g.setColour (theme::bgBar); g.fillRect (0, 0, getWidth(), 48); g.setColour (theme::seam); g.fillRect (0, 47, getWidth(), 1); g.setColour (theme::edgeLight); g.fillRect (0, 0, getWidth(), 1);
+        g.setColour (theme::accent); g.fillRect (0, 0, 3, 48);
+        if (! icon.isEmpty()) { g.setColour (theme::iconIdle); g.strokePath (icon, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::butt), juce::AffineTransform::scale (22.f / 24.f).translated (16.f, 13.f)); }
+        g.setColour (theme::text); g.setFont (uiFont (15.f, true)); g.drawText (fx.getName(), 50, 0, getWidth() - 320, 48, juce::Justification::centredLeft);
         paintBody (g);
     }
 protected:
@@ -358,12 +364,12 @@ struct OS2
     }
 };
 
-inline void barH (juce::Graphics& g, juce::Rectangle<float> r, float v01, juce::Colour c) { g.setColour (theme::bgBar); g.fillRoundedRectangle (r, r.getHeight() * .5f); const float w = juce::jlimit (0.f, 1.f, v01) * r.getWidth(); if (w > 1.f) { g.setColour (c); g.fillRoundedRectangle (r.withWidth (std::max (w, r.getHeight())), r.getHeight() * .5f); } }
-inline void barV (juce::Graphics& g, juce::Rectangle<float> r, float v01, juce::Colour c, bool fromTop = false) { g.setColour (theme::bgBar); g.fillRoundedRectangle (r, 4.f); const float h = juce::jlimit (0.f, 1.f, v01) * r.getHeight(); if (h > 1.f) { g.setColour (c); g.fillRoundedRectangle (fromTop ? r.withHeight (h) : r.withTop (r.getBottom() - h), 4.f); } }
-inline void label (juce::Graphics& g, const juce::String& t, juce::Rectangle<float> r, juce::Justification j = juce::Justification::centredLeft, float h = 11.f, bool bold = false, juce::Colour c = juce::Colour (0xffa8a8ad)) { g.setColour (c); g.setFont (uiFont (h, bold)); g.drawText (t, r.toNearestInt(), j); }
+inline void barH (juce::Graphics& g, juce::Rectangle<float> r, float v01, juce::Colour c) { g.setColour (theme::boxFill); g.fillRoundedRectangle (r, 1.5f); const float w = juce::jlimit (0.f, 1.f, v01) * r.getWidth(); if (w > 1.f) { g.setColour (c); g.fillRoundedRectangle (r.withWidth (std::max (w, 2.f)), 1.5f); } }
+inline void barV (juce::Graphics& g, juce::Rectangle<float> r, float v01, juce::Colour c, bool fromTop = false) { g.setColour (theme::boxFill); g.fillRoundedRectangle (r, 2.f); const float h = juce::jlimit (0.f, 1.f, v01) * r.getHeight(); if (h > 1.f) { g.setColour (c); g.fillRoundedRectangle (fromTop ? r.withHeight (h) : r.withTop (r.getBottom() - h), 2.f); } }
+inline void label (juce::Graphics& g, const juce::String& t, juce::Rectangle<float> r, juce::Justification j = juce::Justification::centredLeft, float h = 11.f, bool bold = false, juce::Colour c = theme::textDim) { g.setColour (c); g.setFont (uiFont (h, bold)); g.drawText (t, r.toNearestInt(), j); }
 
 // Caja oscura de gráficos (#1c1c1c, esquinas redondas) para dibujar curvas y medidores
-inline void plotBox (juce::Graphics& g, juce::Rectangle<float> r) { g.setColour (theme::boxFill); g.fillRoundedRectangle (r, 10.f); }
+inline void plotBox (juce::Graphics& g, juce::Rectangle<float> r) { g.setColour (theme::boxFill); g.fillRoundedRectangle (r, 3.f); g.setColour (theme::seam); g.drawRoundedRectangle (r.reduced (.5f), 3.f, 1.f); }
 
 
 // Ventana automática para los efectos nuevos: tipo en botones, zona visual opcional y perillas en filas
@@ -386,7 +392,7 @@ public:
 protected:
     void paintBody (juce::Graphics& g) override
     {
-        if (L.visualH <= 0) return; plotBox (g, vis); juce::Graphics::ScopedSaveState ss (g); juce::Path clip; clip.addRoundedRectangle (vis, 10.f); g.reduceClipRegion (clip); fx.paintVisual (g, vis);
+        if (L.visualH <= 0) return; plotBox (g, vis); juce::Graphics::ScopedSaveState ss (g); juce::Path clip; clip.addRoundedRectangle (vis, 3.f); g.reduceClipRegion (clip); fx.paintVisual (g, vis);
     }
     void mouseDown (const juce::MouseEvent& e) override { if (L.visualH > 0 && vis.contains (e.position)) fx.visualClickAt (e.position, vis); }
 private:

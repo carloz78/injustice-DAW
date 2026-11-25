@@ -62,15 +62,17 @@ namespace ideas
     }
 
     // ---- notas por grados de la escala menor natural ----
+    inline bool& majorMode() { static bool m = false; return m; }   // false: menor natural (por defecto); true: mayor
     inline int degreePitch (int root, int deg)
     {
-        static const int sc[7] { 0, 2, 3, 5, 7, 8, 10 }; const int o = (int) std::floor (deg / 7.0), d = ((deg % 7) + 7) % 7;
+        static const int mi[7] { 0, 2, 3, 5, 7, 8, 10 }, ma[7] { 0, 2, 4, 5, 7, 9, 11 }; const int* sc = majorMode() ? ma : mi; const int o = (int) std::floor (deg / 7.0), d = ((deg % 7) + 7) % 7;
         return juce::jlimit (0, 127, root + 12 * o + sc[d]);
     }
     inline std::vector<int> progression (int seed)
     {
         static const int P[4][4] { { 0, 5, 2, 6 }, { 0, 6, 5, 6 }, { 0, 0, 5, 4 }, { 0, 3, 5, 6 } };   // i-VI-III-VII, i-VII-VI-VII, i-i-VI-v, i-iv-VI-VII
-        const auto& p = P[(seed & 0x7fffffff) % 4]; return { p[0], p[1], p[2], p[3] };
+        static const int M[4][4] { { 0, 4, 5, 3 }, { 0, 5, 3, 4 }, { 0, 3, 4, 3 }, { 0, 5, 1, 4 } };   // I-V-vi-IV, I-vi-IV-V, I-IV-V-IV, I-vi-ii-V
+        const auto& p = (majorMode() ? M : P)[(seed & 0x7fffffff) % 4]; return { p[0], p[1], p[2], p[3] };
     }
 
     inline std::vector<N> bass (int style, int bars, int seed, int root)
@@ -135,6 +137,49 @@ namespace ideas
             else for (int k = 0; k < 4; ++k) for (int t : { 0, 2, 4 }) v.push_back ({ degreePitch (root, deg + t), b * 4.0 + pat[k] * 0.25, 0.22, 96 + (int) r.nextInt (16) });
         }
         return v;
+    }
+
+
+    // ---- "IA" de ideas: entiende una frase (género, BPM, tonalidad, ánimo) y la convierte en parámetros. Es por reglas, sin red neuronal ni internet. ----
+    struct Prompt { int style = -1; double bpm = 0; int root = -1; bool major = false; bool minorSet = false; int role = -1; int energy = 0; juce::StringArray understood; };
+    inline juce::String fold (juce::String t)
+    {
+        t = t.toLowerCase(); const char* from[] { "\xc3\xa1", "\xc3\xa9", "\xc3\xad", "\xc3\xb3", "\xc3\xba", "\xc3\xbc", "\xc3\xb1" }; const char* to[] { "a", "e", "i", "o", "u", "u", "n" };
+        for (int i = 0; i < 7; ++i) t = t.replace (juce::String::fromUTF8 (from[i]), to[i]); return " " + t + " ";
+    }
+    inline bool has (const juce::String& t, const char* w) { return t.contains (w); }
+    inline Prompt parsePrompt (const juce::String& text)
+    {
+        Prompt p; const auto t = fold (text); auto note = [&] (const juce::String& s) { p.understood.add (s); };
+        struct S { const char* w; int style; double bpm; }; static const S st[] {
+            { "frenchcore", Hardcore, 200 }, { "speedcore", Uptempo, 220 }, { "terror", Uptempo, 210 }, { "uptempo", Uptempo, 0 }, { "gabber", Gabber, 0 }, { "gabba", Gabber, 0 }, { "hardcore", Hardcore, 0 },
+            { "hardstyle", Hardstyle, 0 }, { "rawstyle", Hardstyle, 155 }, { "psytrance", Trance, 145 }, { "trance", Trance, 0 }, { "acid", Techno, 0 }, { "techno", Techno, 0 },
+            { "drum and bass", DnB, 0 }, { "drum & bass", DnB, 0 }, { "dnb", DnB, 0 }, { "jungle", DnB, 168 }, { "drum n bass", DnB, 0 }, { "tech house", House, 126 }, { "house", House, 0 }, { "rave", Hardcore, 0 } };
+        for (auto& s : st) if (has (t, s.w)) { p.style = s.style; if (s.bpm > 0) p.bpm = s.bpm; note (juce::String ("Estilo: ") + styleName (s.style)); break; }
+        // BPM: "170 bpm", "a 170", o un número suelto entre 60 y 300
+        { auto digitsAround = [&] (int from) { int v = 0, n = 0; for (int i = from; i < t.length() && t[i] >= '0' && t[i] <= '9'; ++i) { v = v * 10 + (t[i] - '0'); ++n; } return n >= 2 && n <= 3 ? v : 0; };
+          const int at = t.indexOf ("bpm"); int v = 0;
+          if (at > 0) { int e = at - 1; while (e > 0 && t[e] == ' ') --e; int b = e; while (b > 0 && t[b - 1] >= '0' && t[b - 1] <= '9') --b; v = digitsAround (b); }
+          if (v == 0) for (int i = 1; i < t.length() - 1 && v == 0; ++i) if (t[i] >= '0' && t[i] <= '9' && (t[i - 1] == ' ' || t[i - 1] == 'a')) { const int d = digitsAround (i); if (d >= 60 && d <= 300) v = d; i += 2; }
+          if (v >= 60 && v <= 300) { p.bpm = v; note (juce::String (v) + " BPM"); } }
+        // tonalidad: "la menor", "do# mayor", "a minor", "am"
+        { struct K { const char* w; int r; }; static const K ks[] { { "do#", 1 }, { "reb", 1 }, { "re#", 3 }, { "mib", 3 }, { "fa#", 6 }, { "solb", 6 }, { "sol#", 8 }, { "lab", 8 }, { "la#", 10 }, { "sib", 10 },
+              { "do", 0 }, { "re", 2 }, { "mi", 4 }, { "fa", 5 }, { "sol", 7 }, { "la", 9 }, { "si", 11 } };
+          static const char* en[] { "c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b" };
+          const bool mn = has (t, "menor") || has (t, "minor"), mj = has (t, "mayor") || has (t, "major");
+          if (mn || mj) { for (auto& k : ks) if (has (t, (juce::String (" ") + k.w + " " + (mn ? "menor" : "mayor")).toRawUTF8()) || has (t, (juce::String (" en ") + k.w + " ").toRawUTF8())) { p.root = k.r; break; }
+              if (p.root < 0) for (int r = 11; r >= 0; --r) if (has (t, (juce::String (" ") + en[r] + (mn ? " minor" : " major")).toRawUTF8())) { p.root = r; break; }
+              if (p.root < 0) for (auto& k : ks) if (has (t, (juce::String (" ") + k.w + " ").toRawUTF8())) { p.root = k.r; break; }
+              p.major = mj && ! mn; p.minorSet = true; if (p.root >= 0) note (juce::String ("Tonalidad: ") + en[p.root] + (p.major ? " mayor" : " menor")); } }
+        if (! p.minorSet) { if (has (t, "feliz") || has (t, "alegre") || has (t, "happy") || has (t, "euforic") || has (t, "uplifting") || has (t, "brillante") || has (t, "luminos")) { p.major = true; note ("\xc3\x81nimo alegre: tonalidad mayor"); }
+                            else if (has (t, "oscur") || has (t, "dark") || has (t, "triste") || has (t, "sad") || has (t, "tenebros") || has (t, "agresiv")) note ("\xc3\x81nimo oscuro: tonalidad menor"); }
+        if (has (t, "agresiv") || has (t, "duro") || has (t, "brutal") || has (t, "pesado") || has (t, "heavy")) { p.energy = 1; note ("Energ\xc3\xada alta"); }
+        if (has (t, "suave") || has (t, "chill") || has (t, "relaj") || has (t, "calm")) { p.energy = -1; note ("Energ\xc3\xada baja"); }
+        if (has (t, "solo bateria") || has (t, "solo drums") || has (t, "solo la bateria") || has (t, "un ritmo") || has (t, "beat de")) { p.role = 0; note ("Solo bater\xc3\xada"); }
+        else if (has (t, "solo bajo") || has (t, "solo el bajo") || has (t, "linea de bajo")) { p.role = 1; note ("Solo bajo"); }
+        else if (has (t, "melodia") && has (t, "solo")) { p.role = 2; note ("Solo melod\xc3\xada"); }
+        else if (has (t, "solo acordes") || has (t, "progresion")) { p.role = 3; note ("Solo acordes"); }
+        return p;
     }
 
     inline te::MidiClip* insert (te::Edit& e, te::AudioTrack& t, double startBeat, int bars, const std::vector<N>& notes, const juce::String& name)

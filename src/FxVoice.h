@@ -9,7 +9,8 @@ namespace injfx
 struct PVShift
 {
     static constexpr int N = 2048, OS = 4, STEP = N / OS, LAT = N - STEP, H = N / 2;
-    float inF[N] {}, outF[N] {}, accum[2 * N] {}, lastPh[H + 1] {}, sumPh[H + 1] {}, anaM[H + 1] {}, anaF[H + 1] {}, synM[H + 1] {}, synF[H + 1] {}; int rover = LAT; double sr = 44100.0;
+    float inF[N] {}, outF[N] {}, accum[2 * N] {}, lastPh[H + 1] {}, sumPh[H + 1] {}, anaM[H + 1] {}, anaF[H + 1] {}, synM[H + 1] {}, synF[H + 1] {}, env[H + 2] {}; int rover = LAT; double sr = 44100.0;
+    bool keepFormants = false; float formantRatio = 1.f;   // keepFormants: la envolvente espectral se queda en su sitio (o se mueve formantRatio) en lugar de seguir al tono
     std::complex<float> w[N];
     static const std::vector<std::complex<float>>& twid() { static std::vector<std::complex<float>> t = [] { std::vector<std::complex<float>> v ((size_t) N / 2); for (int k = 0; k < N / 2; ++k) v[(size_t) k] = std::polar (1.f, (float) (-2.0 * 3.14159265358979 * k / N)); return v; }(); return t; }
     static const std::vector<float>& win() { static std::vector<float> t = [] { std::vector<float> v ((size_t) N); for (int k = 0; k < N; ++k) v[(size_t) k] = (float) (-.5 * std::cos (2.0 * 3.14159265358979 * k / N) + .5); return v; }(); return t; }
@@ -23,6 +24,14 @@ struct PVShift
     {
         inF[rover] = x; const float y = outF[rover - LAT]; ++rover; if (rover >= N) { rover = LAT; frame (ratio); } return y;
     }
+    // envolvente espectral por cepstrum: log-magnitud -> cepstrum -> se queda con las primeras quefrencias (~0,9 ms) -> exp
+    void spectralEnvelope()
+    {
+        for (int k = 0; k <= H; ++k) { const float l = std::log (anaM[k] + 1e-6f); w[k] = { l, 0.f }; if (k > 0 && k < H) w[N - k] = { l, 0.f }; }
+        fft (w); const int Lq = juce::jlimit (8, 120, (int) (.0009 * sr));
+        for (int q = 0; q < N; ++q) { const int d = std::min (q, N - q); const float lift = d <= Lq ? 1.f : (d < Lq + 8 ? .5f + .5f * std::cos (3.14159265f * (float) (d - Lq) / 8.f) : 0.f); w[q] *= lift; }
+        fft (w); for (int k = 0; k <= H; ++k) env[k] = std::exp (juce::jlimit (-30.f, 30.f, w[k].real() / (float) N)); env[H + 1] = env[H];
+    }
     void frame (float ratio)
     {
         const float pi = 3.14159265f, expct = 2.f * pi * STEP / N, fpb = (float) (sr / N); const auto& W = win();
@@ -33,7 +42,14 @@ struct PVShift
             long qpd = (long) (t / pi); if (qpd >= 0) qpd += qpd & 1; else qpd -= qpd & 1; t -= pi * (float) qpd; t = OS * t / (2.f * pi); anaM[k] = mag; anaF[k] = (float) k * fpb + t * fpb;
         }
         std::fill (std::begin (synM), std::end (synM), 0.f); std::fill (std::begin (synF), std::end (synF), 0.f);
-        for (int k = 0; k <= H; ++k) { const int idx = (int) ((float) k * ratio); if (idx >= 0 && idx <= H) { synM[idx] += anaM[k]; synF[idx] = anaF[k] * ratio; } }
+        const bool useEnv = keepFormants && std::abs (ratio - formantRatio) > .002f;
+        if (useEnv) spectralEnvelope();
+        for (int k = 0; k <= H; ++k)
+        {
+            const int idx = (int) ((float) k * ratio); if (idx < 0 || idx > H) continue;
+            float g = 1.f; if (useEnv) { const float pos = (float) idx / formantRatio; const int i0 = (int) pos; const float fr = pos - (float) i0; const float e = i0 >= H ? env[H] : env[i0] * (1.f - fr) + env[i0 + 1] * fr; g = juce::jlimit (.1f, 8.f, e / std::max (env[k], 1e-9f)); }
+            synM[idx] += anaM[k] * g; synF[idx] = anaF[k] * ratio;
+        }
         for (int k = 0; k <= H; ++k)
         {
             float t = synF[k] - (float) k * fpb; t /= fpb; t = 2.f * pi * t / OS; t += (float) k * expct; sumPh[k] += t; const float ph = sumPh[k]; w[k] = { synM[k] * std::cos (ph), synM[k] * std::sin (ph) };
@@ -66,8 +82,8 @@ public:
     }
     void paintVisual (juce::Graphics& g, juce::Rectangle<float> r) override
     {
-        const float st = v (pSt) + v (pFine); const auto bar = r.reduced (24.f, 26.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (bar, 6.f); g.setColour (theme::barLine); g.drawVerticalLine ((int) bar.getCentreX(), bar.getY(), bar.getBottom());
-        const float x = bar.getCentreX() + st / 24.f * bar.getWidth() * .5f; g.setColour (theme::accent); g.fillRoundedRectangle (std::min (x, bar.getCentreX()), bar.getY(), std::max (4.f, std::abs (x - bar.getCentreX())), bar.getHeight(), 6.f);
+        const float st = v (pSt) + v (pFine); const auto bar = r.reduced (24.f, 26.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (bar, 2.f); g.setColour (theme::barLine); g.drawVerticalLine ((int) bar.getCentreX(), bar.getY(), bar.getBottom());
+        const float x = bar.getCentreX() + st / 24.f * bar.getWidth() * .5f; g.setColour (theme::accent); g.fillRoundedRectangle (std::min (x, bar.getCentreX()), bar.getY(), std::max (4.f, std::abs (x - bar.getCentreX())), bar.getHeight(), 2.f);
         label (g, fmtValue ({ "", "", 0, 0, 0, 0, fSemi, "" }, st), r.reduced (10.f, 4.f), juce::Justification::centredTop, 13.f, true, theme::text);
     }
 private:
@@ -123,7 +139,7 @@ public:
         static const char* nn[] { "Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si" }; const float f = meterA.load(), t = meterB.load(), s = meterC.load();
         const auto name = [&] (float hz) { const int m = juce::roundToInt (69.f + 12.f * std::log2 (hz / 440.f)); return juce::String (nn[((m % 12) + 12) % 12]) + juce::String (m / 12 - 1); };
         label (g, f > 0.f ? name (f) + juce::String::fromUTF8 ("  →  ") + name (t) : juce::String::fromUTF8 ("Sin tono"), { r.getX(), r.getY() + 6.f, r.getWidth(), 30.f }, juce::Justification::centred, 24.f, true, f > 0.f ? theme::text : theme::textDim);
-        const auto bar = juce::Rectangle<float> (r.getX() + 40.f, r.getBottom() - 30.f, r.getWidth() - 80.f, 10.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (bar, 5.f); g.setColour (theme::barLine); g.drawVerticalLine ((int) bar.getCentreX(), bar.getY() - 3.f, bar.getBottom() + 3.f);
+        const auto bar = juce::Rectangle<float> (r.getX() + 40.f, r.getBottom() - 30.f, r.getWidth() - 80.f, 10.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (bar, 2.f); g.setColour (theme::barLine); g.drawVerticalLine ((int) bar.getCentreX(), bar.getY() - 3.f, bar.getBottom() + 3.f);
         const float x = bar.getCentreX() + juce::jlimit (-1.f, 1.f, s / 1.f) * bar.getWidth() * .5f; g.setColour (theme::accent); g.fillEllipse (x - 7.f, bar.getCentreY() - 7.f, 14.f, 14.f);
         label (g, juce::String::fromUTF8 ("Corrección"), { bar.getX(), bar.getBottom() + 2.f, 100.f, 12.f }, juce::Justification::left, 10.f);
     }

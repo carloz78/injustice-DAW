@@ -4,7 +4,7 @@
 // Utilidad: ganancia y fase, mid/side, analizador de espectro y medidor de sonoridad (LUFS).
 namespace injfx
 {
-inline void drawToggle (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& t, bool on) { g.setColour (on ? theme::accent : theme::bgBar); g.fillRoundedRectangle (r, 8.f); label (g, t, r, juce::Justification::centred, 12.f, true, on ? juce::Colour (0xff1a1a1a) : theme::text); }
+inline void drawToggle (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& t, bool on) { g.setColour (on ? theme::accent : theme::bgBar); g.fillRoundedRectangle (r, 3.f); label (g, t, r, juce::Justification::centred, 12.f, true, on ? juce::Colour (0xff1a1a1a) : theme::text); }
 
 //==============================================================================
 class InjGainPhase : public InjFx
@@ -95,8 +95,8 @@ public:
     void paintVisual (juce::Graphics& g, juce::Rectangle<float> r) override
     {
         std::vector<float> db; analyse (db); const float slope = v (pSlope), flo = v (pFloor), smo = juce::jlimit (0.f, .97f, v (pSmooth) * .95f); const float binHz = (float) sr / (float) N;
-        const auto plot = r.reduced (12.f, 14.f).withTrimmedBottom (14.f); for (float f : { 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f }) { const float x = plot.getX() + std::log10 (f / 20.f) / 3.f * plot.getWidth(); g.setColour (juce::Colour (0xff2a2b30)); g.drawVerticalLine ((int) x, plot.getY(), plot.getBottom()); label (g, f >= 1000.f ? juce::String (f / 1000.f, 0) + "k" : juce::String ((int) f), { x - 16.f, plot.getBottom() + 1.f, 32.f, 12.f }, juce::Justification::centred, 9.f); }
-        for (float d = 0.f; d > flo + 1.f; d -= 20.f) { const float y = plot.getY() + (d / flo) * plot.getHeight(); g.setColour (juce::Colour (0xff2a2b30)); g.drawHorizontalLine ((int) y, plot.getX(), plot.getRight()); label (g, juce::String ((int) d), { plot.getX() + 2.f, y + 1.f, 30.f, 12.f }, juce::Justification::left, 9.f); }
+        const auto plot = r.reduced (12.f, 14.f).withTrimmedBottom (14.f); for (float f : { 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f }) { const float x = plot.getX() + std::log10 (f / 20.f) / 3.f * plot.getWidth(); g.setColour (theme::gridLine); g.drawVerticalLine ((int) x, plot.getY(), plot.getBottom()); label (g, f >= 1000.f ? juce::String (f / 1000.f, 0) + "k" : juce::String ((int) f), { x - 16.f, plot.getBottom() + 1.f, 32.f, 12.f }, juce::Justification::centred, 9.f); }
+        for (float d = 0.f; d > flo + 1.f; d -= 20.f) { const float y = plot.getY() + (d / flo) * plot.getHeight(); g.setColour (theme::gridLine); g.drawHorizontalLine ((int) y, plot.getX(), plot.getRight()); label (g, juce::String ((int) d), { plot.getX() + 2.f, y + 1.f, 30.f, 12.f }, juce::Justification::left, 9.f); }
         juce::Path p; float peakF = 0.f, peakV = -999.f; const int W = (int) plot.getWidth();
         for (int x = 0; x <= W; ++x)
         {
@@ -151,7 +151,7 @@ public:
     void paintVisual (juce::Graphics& g, juce::Rectangle<float> r) override
     {
         const float im = iA.load(), mo = mA.load(), sh = sA.load(), tg = v (pTarget), pk = pA.load();
-        label (g, im > -100.f ? juce::String (im, 1) : juce::String::fromUTF8 ("\xe2\x80\x94"), { r.getX() + 14.f, r.getY() + 8.f, 200.f, 56.f }, juce::Justification::left, 44.f, true, im > -100.f && im > tg + 1.f ? juce::Colour (0xffff7a70) : theme::text);
+        label (g, im > -100.f ? juce::String (im, 1) : juce::String::fromUTF8 ("\xe2\x80\x94"), { r.getX() + 14.f, r.getY() + 8.f, 200.f, 56.f }, juce::Justification::left, 44.f, true, im > -100.f && im > tg + 1.f ? theme::record : theme::text);
         label (g, juce::String::fromUTF8 ("LUFS integrado"), { r.getX() + 16.f, r.getY() + 62.f, 200.f, 14.f }, juce::Justification::left, 11.f);
         if (im > -100.f) label (g, juce::String (im - tg > 0 ? "+" : "") + juce::String (im - tg, 1) + " LU vs objetivo", { r.getX() + 16.f, r.getY() + 78.f, 220.f, 14.f }, juce::Justification::left, 11.f, true, theme::text);
         label (g, pk > -100.f ? "Pico " + juce::String (pk, 1) + " dB" : juce::String ("Pico  ") + juce::String::fromUTF8 ("\xe2\x80\x94"), { r.getX() + 16.f, r.getY() + 96.f, 200.f, 14.f }, juce::Justification::left, 11.f);

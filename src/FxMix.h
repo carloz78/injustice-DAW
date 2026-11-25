@@ -98,7 +98,7 @@ public:
         for (int b = 0; b < 3; ++b)
         {
             const auto z = juce::Rectangle<float> (xs[b] + 2.f, r.getY() + 6.f, xs[b + 1] - xs[b] - 4.f, r.getHeight() - 12.f); const auto col = theme::trackColours[b == 0 ? 0 : b == 1 ? 1 : 3];
-            g.setColour (col.withAlpha (.12f)); g.fillRoundedRectangle (z, 6.f); g.setColour (col.withAlpha (.8f)); g.fillRoundedRectangle (z.withHeight (juce::jlimit (0.f, 1.f, m[b] / 18.f) * z.getHeight()), 6.f);
+            g.setColour (col.withAlpha (.12f)); g.fillRoundedRectangle (z, 2.f); g.setColour (col.withAlpha (.8f)); g.fillRoundedRectangle (z.withHeight (juce::jlimit (0.f, 1.f, m[b] / 18.f) * z.getHeight()), 6.f);
             label (g, juce::String::fromUTF8 (nm[b]) + "  " + grText (m[b]) + " dB", z.reduced (8.f, 4.f), juce::Justification::bottomLeft, 11.f, true, theme::text);
         }
     }
@@ -140,7 +140,7 @@ public:
     }
     void paintVisual (juce::Graphics& gr, juce::Rectangle<float> r) override
     {
-        const float g = meterA.load(); barH (gr, r.reduced (16.f, 14.f), g, g > .7f ? theme::accent : juce::Colour (0xff8a8a90));
+        const float g = meterA.load(); barH (gr, r.reduced (16.f, 14.f), g, g > .7f ? theme::accent : theme::textDim);
         label (gr, g > .7f ? "Abierta" : "Cerrada", r.reduced (24.f, 0.f), juce::Justification::centredLeft, 12.f, true, juce::Colour (0xff1a1a1a).withAlpha (g > .7f ? 1.f : 0.f)); label (gr, dbText (lin2db (g)) + " dB", r.reduced (24.f, 0.f), juce::Justification::centredRight, 12.f, true, theme::text);
     }
 private:
@@ -176,7 +176,7 @@ public:
         }
         meterA.store (mg);
     }
-    void paintVisual (juce::Graphics& g, juce::Rectangle<float> r) override { barH (g, r.reduced (16.f, 14.f), meterA.load() / 12.f, juce::Colour (0xffff7a70)); label (g, juce::String::fromUTF8 ("Reducción  ") + grText (meterA.load()) + " dB", r.reduced (24.f, 0.f), juce::Justification::centredLeft, 12.f, true, theme::text); }
+    void paintVisual (juce::Graphics& g, juce::Rectangle<float> r) override { barH (g, r.reduced (16.f, 14.f), meterA.load() / 12.f, theme::record); label (g, juce::String::fromUTF8 ("Reducción  ") + grText (meterA.load()) + " dB", r.reduced (24.f, 0.f), juce::Justification::centredLeft, 12.f, true, theme::text); }
 private:
     static inline const Spec S[] = {
         { "freq", "Frecuencia", 3000.f, 12000.f, 6500.f, 6000.f, fHz, "" }, { "thr", "Umbral", -50.f, 0.f, -28.f, 0.f, fDb, "" }, { "amt", "Reducción máx.|Máx.", 0.f, 24.f, 10.f, 0.f, fDb, "" },
@@ -250,8 +250,8 @@ public:
     }
     void paintVisual (juce::Graphics& g, juce::Rectangle<float> r) override
     {
-        const auto b = r.reduced (24.f, 18.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (b.withHeight (14.f).withY (r.getCentreY() - 7.f), 7.f); const float c = juce::jlimit (-1.f, 1.f, meterA.load()), cx = b.getCentreX() + c * b.getWidth() * .5f;
-        g.setColour (c < 0.f ? juce::Colour (0xffff7a70) : theme::accent); g.fillEllipse (cx - 8.f, r.getCentreY() - 8.f, 16.f, 16.f);
+        const auto b = r.reduced (24.f, 18.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (b.withHeight (14.f).withY (r.getCentreY() - 7.f), 2.f); const float c = juce::jlimit (-1.f, 1.f, meterA.load()), cx = b.getCentreX() + c * b.getWidth() * .5f;
+        g.setColour (c < 0.f ? theme::record : theme::accent); g.fillRoundedRectangle (cx - 4.f, r.getCentreY() - 10.f, 8.f, 20.f, 1.5f);
         label (g, juce::String::fromUTF8 ("-1  fase invertida"), { b.getX(), r.getY() + 4.f, 200.f, 14.f }); label (g, "+1  mono", { b.getRight() - 200.f, r.getY() + 4.f, 200.f, 14.f }, juce::Justification::centredRight); label (g, juce::String::fromUTF8 ("Correlación"), { b.getX(), r.getBottom() - 18.f, 120.f, 14.f });
     }
 private:

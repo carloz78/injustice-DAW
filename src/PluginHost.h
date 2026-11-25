@@ -56,8 +56,8 @@ namespace pluginhost
         EditorWindow (te::Plugin::WindowState& s, std::unique_ptr<te::Plugin::EditorComponent> ed)
             : DocumentWindow (s.plugin.getName(), theme::bgBar2, DocumentWindow::closeButton | DocumentWindow::minimiseButton), state (s)
         {
-            setUsingNativeTitleBar (true); const bool rs = ed->allowWindowResizing(); setContentOwned (ed.release(), true);
-            setResizable (rs, false); centreAroundComponent (nullptr, getWidth(), getHeight()); setVisible (true); setAlwaysOnTop (false);
+            setUsingNativeTitleBar (true); const bool rs = ed->allowWindowResizing(); auto* cc = ed->getBoundsConstrainer(); setContentOwned (ed.release(), true);
+            setResizable (rs, false); if (rs && cc != nullptr) setConstrainer (cc); centreAroundComponent (nullptr, getWidth(), getHeight()); setVisible (true); setAlwaysOnTop (false); theme::darkTitleBar (this);
         }
         void closeButtonPressed() override { state.closeWindowExplicitly(); }
     private:
@@ -172,7 +172,7 @@ class ListContent : public juce::Component, private juce::TableListBoxModel
             addAndMakeVisible (table); table.setModel (this); table.setRowHeight (30); table.setColour (juce::ListBox::backgroundColourId, theme::bgBar);
             auto& h = table.getHeader(); h.addColumn ("Nombre", 1, 300); h.addColumn ("Fabricante", 2, 200); h.addColumn ("Tipo", 3, 110); h.addColumn ("Formato", 4, 90); h.setStretchToFitActive (true);
             table.setMultipleSelectionEnabled (false);
-            h.setColour (juce::TableHeaderComponent::backgroundColourId, juce::Colour (0xff202020)); h.setColour (juce::TableHeaderComponent::textColourId, theme::text); h.setColour (juce::TableHeaderComponent::outlineColourId, juce::Colour (0xff313131)); h.setColour (juce::TableHeaderComponent::highlightColourId, theme::accent.withAlpha (.4f));
+            h.setColour (juce::TableHeaderComponent::backgroundColourId, theme::bgBar2); h.setColour (juce::TableHeaderComponent::textColourId, theme::text); h.setColour (juce::TableHeaderComponent::outlineColourId, juce::Colour (0xff313131)); h.setColour (juce::TableHeaderComponent::highlightColourId, theme::accent.withAlpha (.4f));
             engine.getPluginManager().knownPluginList.addChangeListener (&relay); relay.owner = this;
             refresh();
         }
@@ -243,9 +243,9 @@ class ListContent : public juce::Component, private juce::TableListBoxModel
         void paintRowBackground (juce::Graphics& g, int row, int w, int h, bool sel) override
         {
             const bool ours = row < shown.size() && isOurs (shown.getReference (row));
-            g.fillAll (sel ? theme::accent : ours ? juce::Colour (0xff232323) : (row % 2 ? juce::Colour (0xff161616) : theme::bgBar));
+            g.fillAll (sel ? theme::accent : ours ? theme::panel : (row % 2 ? theme::bgGridAlt : theme::bgBar));
             if (ours && ! sel) { g.setColour (theme::accentHi); g.fillRect (0, 0, 3, h); }
-            if (ours && (row + 1 >= shown.size() || ! isOurs (shown.getReference (row + 1)))) { g.setColour (juce::Colour (0xff484848)); g.fillRect (0, h - 1, w, 1); }
+            if (ours && (row + 1 >= shown.size() || ! isOurs (shown.getReference (row + 1)))) { g.setColour (theme::barLine); g.fillRect (0, h - 1, w, 1); }
         }
         void paintCell (juce::Graphics& g, int row, int col, int w, int h, bool) override
         {

@@ -71,21 +71,21 @@ protected:
     {
         const auto box = juce::Rectangle<float> (16.f, 64.f, 220.f, 190.f); plotBox (g, box);
         auto X = [&] (float db) { return box.getX() + (db + 60.f) / 60.f * box.getWidth(); }; auto Y = [&] (float db) { return box.getBottom() - (db + 60.f) / 60.f * box.getHeight(); };
-        g.setColour (juce::Colour (0xff2a2b30)); for (int k = 1; k < 5; ++k) { g.drawVerticalLine ((int) (box.getX() + k * 44), box.getY(), box.getBottom()); g.drawHorizontalLine ((int) (box.getY() + k * 38), box.getX(), box.getRight()); }
+        g.setColour (theme::gridLine); for (int k = 1; k < 5; ++k) { g.drawVerticalLine ((int) (box.getX() + k * 44), box.getY(), box.getBottom()); g.drawHorizontalLine ((int) (box.getY() + k * 38), box.getX(), box.getRight()); }
         g.setColour (theme::barLine); g.drawLine (box.getX(), box.getBottom(), box.getRight(), box.getY(), 1.f);
         const float T = fx.v (InjComp::pThr), R = fx.v (InjComp::pRatio), KW = fx.v (InjComp::pKnee);
         if (inDb > -60.f) { g.setColour (theme::accent.withAlpha (.25f)); g.drawLine (X (inDb), box.getBottom(), X (inDb), box.getY(), 1.f); }
         juce::Path p; for (int k = 0; k <= 110; ++k) { const float x = -60.f + k * 60.f / 110.f, y = InjComp::curve (x, T, R, KW); if (k == 0) p.startNewSubPath (X (x), Y (y)); else p.lineTo (X (x), Y (y)); }
         g.setColour (theme::accent); g.strokePath (p, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.fillEllipse (X (T) - 6.f, Y (T) - 6.f, 12.f, 12.f); g.setColour (theme::boxFill); g.drawEllipse (X (T) - 6.f, Y (T) - 6.f, 12.f, 12.f, 2.f);
-        g.setColour (juce::Colour (0xffa8a8ad)); g.setFont (uiFont (11.f)); g.drawText ("Salida", (int) box.getX() + 8, (int) box.getY() + 4, 60, 14, juce::Justification::left);
+        g.setColour (theme::textDim); g.setFont (uiFont (11.f)); g.drawText ("Salida", (int) box.getX() + 8, (int) box.getY() + 4, 60, 14, juce::Justification::left);
         g.drawText ("Entrada", (int) box.getRight() - 68, (int) box.getBottom() - 18, 60, 14, juce::Justification::right); g.drawText ("Umbral", (int) X (T) + 8, (int) Y (T) + 6, 60, 14, juce::Justification::left);
         // reducción de ganancia
-        const float by = 270.f; g.setFont (uiFont (12.f)); g.setColour (juce::Colour (0xffa8a8ad)); g.drawText (juce::String::fromUTF8 ("Reducción de ganancia"), 16, (int) by, 300, 16, juce::Justification::left);
+        const float by = 270.f; g.setFont (uiFont (12.f)); g.setColour (theme::textDim); g.drawText (juce::String::fromUTF8 ("Reducción de ganancia"), 16, (int) by, 300, 16, juce::Justification::left);
         g.setColour (theme::text); g.setFont (uiFont (12.f, true)); g.drawText ((gr < .05f ? juce::String ("0.0") : "-" + juce::String (gr, 1)) + " dB", getWidth() - 16 - 120, (int) by, 120, 16, juce::Justification::right);
-        const auto bar = juce::Rectangle<float> (16.f, by + 22.f, (float) getWidth() - 32.f, 14.f); g.setColour (theme::boxFill); g.fillRoundedRectangle (bar, 7.f);
-        const float w = juce::jlimit (0.f, 1.f, gr / 24.f) * bar.getWidth(); if (w > 1.f) { g.setColour (theme::accent); g.fillRoundedRectangle (bar.withLeft (bar.getRight() - std::max (w, 14.f)), 7.f); }
-        g.setColour (juce::Colour (0xff8a8a90)); g.setFont (uiFont (11.f)); const char* lb[] { "0", "-6", "-12", "-18", "-24" };
+        const auto bar = juce::Rectangle<float> (16.f, by + 22.f, (float) getWidth() - 32.f, 14.f); g.setColour (theme::boxFill); g.fillRoundedRectangle (bar, 2.f);
+        const float w = juce::jlimit (0.f, 1.f, gr / 24.f) * bar.getWidth(); if (w > 1.f) { g.setColour (theme::accent); g.fillRoundedRectangle (bar.withLeft (bar.getRight() - std::max (w, 14.f)), 2.f); }
+        g.setColour (theme::textDim); g.setFont (uiFont (11.f)); const char* lb[] { "0", "-6", "-12", "-18", "-24" };
         for (int k = 0; k < 5; ++k) g.drawText (lb[k], (int) (bar.getRight() - k * bar.getWidth() / 4.f) - 20 + (k == 0 ? -10 : (k == 4 ? 10 : 0)), (int) bar.getBottom() + 3, 40, 14, juce::Justification::centred);
     }
 private:
@@ -186,12 +186,12 @@ protected:
         const char* nm[] { "Entrada", "Reducción", "Salida" };
         for (int k = 0; k < 3; ++k)
         {
-            const auto r = juce::Rectangle<float> (16.f + k * 50.f, 66.f, 22.f, 150.f); g.setColour (theme::boxFill); g.fillRoundedRectangle (r, 6.f);
-            juce::Graphics::ScopedSaveState ss (g); juce::Path clip; clip.addRoundedRectangle (r, 6.f); g.reduceClipRegion (clip);
-            if (k == 1) { const float h = juce::jlimit (0.f, 1.f, gr / 12.f) * r.getHeight(); g.setColour (juce::Colour (0xffff7a70)); g.fillRect (r.withHeight (h)); }
+            const auto r = juce::Rectangle<float> (16.f + k * 50.f, 66.f, 22.f, 150.f); g.setColour (theme::boxFill); g.fillRoundedRectangle (r, 2.f);
+            juce::Graphics::ScopedSaveState ss (g); juce::Path clip; clip.addRoundedRectangle (r, 2.f); g.reduceClipRegion (clip);
+            if (k == 1) { const float h = juce::jlimit (0.f, 1.f, gr / 12.f) * r.getHeight(); g.setColour (theme::record); g.fillRect (r.withHeight (h)); }
             else { const float db = k == 0 ? inDb : outDb, h = juce::jlimit (0.f, 1.f, (db + 48.f) / 48.f) * r.getHeight(); g.setColour (theme::accent); g.fillRect (r.withTop (r.getBottom() - h)); }
         }
-        g.setColour (juce::Colour (0xffa8a8ad)); g.setFont (uiFont (11.f));
+        g.setColour (theme::textDim); g.setFont (uiFont (11.f));
         for (int k = 0; k < 3; ++k) g.drawText (juce::String::fromUTF8 (nm[k]), (int) (16 + k * 50 - 14), 222, 50, 14, juce::Justification::centred);
         g.setFont (uiFont (12.f, true)); g.setColour (theme::text);
         g.drawText ((gr < .05f ? juce::String ("0.0") : "-" + juce::String (gr, 1)) + " dB", 16, 244, 120, 16, juce::Justification::left);

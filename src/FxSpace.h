@@ -89,7 +89,7 @@ public:
 protected:
     void paintBody (juce::Graphics& g) override
     {
-        const auto r = juce::Rectangle<float> (16.f, 112.f, 568.f, 56.f); plotBox (g, r); g.saveState(); juce::Path clip; clip.addRoundedRectangle (r, 10.f); g.reduceClipRegion (clip);
+        const auto r = juce::Rectangle<float> (16.f, 112.f, 568.f, 56.f); plotBox (g, r); g.saveState(); juce::Path clip; clip.addRoundedRectangle (r, 3.f); g.reduceClipRegion (clip);
         const float T = fx.v (InjReverb::pTime), pre = fx.v (InjReverb::pPre) * .001f, tmax = std::max (3.f, T * 1.25f + pre); juce::Path p, fill; const float base = r.getBottom() - 4.f, hgt = r.getHeight() - 10.f;
         p.startNewSubPath (r.getX(), base);
         for (int x = 0; x <= 284; ++x)

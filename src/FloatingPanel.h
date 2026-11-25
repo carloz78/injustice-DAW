@@ -74,15 +74,16 @@ public:
         using namespace theme;
         g.addTransform (juce::AffineTransform::scale (scale));
         auto r = juce::Rectangle<float> (0, 0, (float) designW, (float) designH).reduced (1);
-        g.setColour (juce::Colour (0xff1b1b1b)); 
-        g.setColour (juce::Colour (0xff2b2b2b)); g.fillRoundedRectangle (r, 3.f);
-        g.setColour (barLine); g.drawRoundedRectangle (r, 3.f, 1.2f);
-        g.setColour (juce::Colour (0xff232428)); g.fillRect (r.getX(), r.getY(), r.getWidth(), (float) kHead); g.setColour (juce::Colour (0xff17181b)); g.fillRect (r.getX(), (float) kHead, r.getWidth(), 1.f);
-        icons::draw (g, icon, { 14.f, 4.f, 40.f, 40.f }, text);
-        g.setColour (text); g.setFont (juce::FontOptions (15.f, juce::Font::bold)); g.drawText (title, 62, 0, 400, kHead, juce::Justification::centredLeft);
-        const auto mx = maxR(), cx = closeR(); g.setColour (textDim.brighter (.3f));
-        g.drawRect (mx.getCentreX() - 8.f, mx.getCentreY() - 8.f, 16.f, 16.f, 1.8f);
-        g.drawLine (cx.getCentreX() - 8, cx.getCentreY() - 8, cx.getCentreX() + 8, cx.getCentreY() + 8, 1.8f); g.drawLine (cx.getCentreX() + 8, cx.getCentreY() - 8, cx.getCentreX() - 8, cx.getCentreY() + 8, 1.8f);
+        g.setColour (juce::Colours::black.withAlpha (.35f)); g.fillRoundedRectangle (r.expanded (1.f), 4.f);   // sombra de apoyo
+        g.setColour (bgBar2); g.fillRoundedRectangle (r, 3.f);
+        g.setColour (barLine.withAlpha (.8f)); g.drawRoundedRectangle (r.reduced (.5f), 3.f, 1.f);
+        { juce::Path tb; tb.addRoundedRectangle (r.getX(), r.getY(), r.getWidth(), (float) kHead, 3.f, 3.f, true, true, false, false); g.setColour (bgBar); g.fillPath (tb); }
+        g.setColour (seam); g.fillRect (r.getX(), (float) kHead, r.getWidth(), 1.f); g.setColour (edgeLight); g.fillRect (r.getX() + 3.f, r.getY() + 1.f, r.getWidth() - 6.f, 1.f);
+        icons::draw (g, icon, { 12.f, 6.f, 36.f, 36.f }, iconIdle);
+        g.setColour (text); g.setFont (fonts::ui (14.f, true)); g.drawText (title, 52, 0, 400, kHead, juce::Justification::centredLeft);
+        const auto mx = maxR(), cx = closeR(); g.setColour (textDim.brighter (.25f));
+        g.drawRect (mx.getCentreX() - 6.f, mx.getCentreY() - 6.f, 12.f, 12.f, 1.3f);
+        g.drawLine (cx.getCentreX() - 6, cx.getCentreY() - 6, cx.getCentreX() + 6, cx.getCentreY() + 6, 1.4f); g.drawLine (cx.getCentreX() + 6, cx.getCentreY() - 6, cx.getCentreX() - 6, cx.getCentreY() + 6, 1.4f);
         paintBody (g);
     }
     void mouseDown (const juce::MouseEvent& e0) override

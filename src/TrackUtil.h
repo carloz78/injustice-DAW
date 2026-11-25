@@ -187,4 +187,38 @@ namespace trackutil
         c->state.setProperty ("injSCAmount", amount, nullptr); c->state.setProperty ("injSCRelease", releaseMs, nullptr);
         return true;
     }
+    // ---- plantillas de pista: una pista con su instrumento, sus efectos, volumen, color y nombre (sin clips) ----
+    inline juce::File templatesDir() { return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("INJUSTICE DAW").getChildFile ("Track Templates"); }
+    inline bool isOwnPlugin (te::Plugin* p) { return p != nullptr && ! dynamic_cast<te::VolumeAndPanPlugin*> (p) && ! dynamic_cast<te::LevelMeterPlugin*> (p); }
+    // Copia el instrumento y los efectos (todo menos volumen y medidor) de una pista a otra, al principio de la cadena y en el mismo orden.
+    inline int copyPlugins (te::Edit& e, te::AudioTrack& src, te::AudioTrack& dst)
+    {
+        int n = 0;
+        for (auto* p : src.pluginList.getPlugins())
+        {
+            if (! isOwnPlugin (p)) continue; auto xml = p->state.createXml(); if (xml == nullptr) continue;
+            te::EditItemID::remapIDs (*xml, e); if (dst.pluginList.insertPlugin (juce::ValueTree::fromXml (*xml), n) != nullptr) ++n;
+        }
+        return n;
+    }
+    inline bool saveTemplate (te::AudioTrack& t, const juce::String& name, const juce::File& dir = templatesDir())
+    {
+        const auto nm = juce::File::createLegalFileName (name.trim()); if (nm.isEmpty()) return false; dir.createDirectory();
+        juce::XmlElement root ("INJTRACK"); root.setAttribute ("name", t.getName()); root.setAttribute ("colour", (int) t.state.getProperty ("injColour", 0)); root.setAttribute ("icon", t.state.getProperty ("injIcon", "").toString());
+        if (auto* v = t.getVolumePlugin()) { root.setAttribute ("vol", (double) v->getVolumeDb()); root.setAttribute ("pan", (double) v->getPan()); }
+        for (auto* p : t.pluginList.getPlugins()) if (isOwnPlugin (p)) if (auto xml = p->state.createXml()) root.addChildElement (xml.release());
+        return root.writeTo (dir.getChildFile (nm + ".injtrack"));
+    }
+    inline juce::Array<juce::File> listTemplates (const juce::File& dir = templatesDir()) { return dir.findChildFiles (juce::File::findFiles, false, "*.injtrack"); }
+    // Crea una pista nueva (al final) a partir de una plantilla. Devuelve null si el archivo no sirve.
+    inline te::AudioTrack* loadTemplate (te::Edit& e, const juce::File& f)
+    {
+        auto xml = juce::XmlDocument::parse (f); if (xml == nullptr || ! xml->hasTagName ("INJTRACK")) return nullptr;
+        auto p = e.insertNewAudioTrack (te::TrackInsertPoint::getEndOfTracks (e), nullptr); auto* t = p.get(); if (t == nullptr) return nullptr;
+        t->setName (xml->getStringAttribute ("name", f.getFileNameWithoutExtension())); t->state.setProperty ("injColour", xml->getIntAttribute ("colour", 0), &e.getUndoManager());
+        if (xml->getStringAttribute ("icon").isNotEmpty()) t->state.setProperty ("injIcon", xml->getStringAttribute ("icon"), &e.getUndoManager());
+        if (auto* v = t->getVolumePlugin()) { if (xml->hasAttribute ("vol")) v->setVolumeDb ((float) xml->getDoubleAttribute ("vol")); if (xml->hasAttribute ("pan")) v->setPan ((float) xml->getDoubleAttribute ("pan")); }
+        int n = 0; for (auto* c : xml->getChildIterator()) { te::EditItemID::remapIDs (*c, e); if (t->pluginList.insertPlugin (juce::ValueTree::fromXml (*c), n) != nullptr) ++n; }
+        return t;
+    }
 }

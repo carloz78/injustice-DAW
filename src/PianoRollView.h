@@ -1,4 +1,5 @@
 #pragma once
+#include "Harmony.h"
 #include "Theme.h"
 #include "TimeSig.h"
 #include "Icons.h"
@@ -38,7 +39,7 @@ public:
     {
         using namespace theme;
         const int W = getWidth(), H = getHeight(), gb = gridBottom();
-        g.fillAll (juce::Colour (0xff242424));
+        g.fillAll (bgBar2);
         drawToolbar (g, W);
         if (! clip) { g.setColour (textDim); g.setFont (juce::FontOptions (14.f)); g.drawText (juce::String::fromUTF8 ("Dibuja un clip MIDI en la Playlist (herramienta lápiz) y haz doble clic en él."), getLocalBounds().withTrimmedTop (kBarH), juce::Justification::centred); return; }
 
@@ -46,42 +47,42 @@ public:
         for (int p = 0; p <= 127; ++p)
         {
             const float y = ny (p); if (y > gb || y + kNoteH < kTop) continue;
-            g.setColour (isBlack (p) ? juce::Colour (0xff222222) : juce::Colour (0xff2a2a2a)); g.fillRect ((float) kKeyW, y, (float) W, (float) kNoteH);
-            if (scaleRoot() >= 0) { const int k = scaleKind (p); if (k == 0) { g.setColour (juce::Colour (0xff1b1b1b).withAlpha (.55f)); g.fillRect ((float) kKeyW, y, (float) W, (float) kNoteH); } else { g.setColour (accent.withAlpha (k == 2 ? .22f : .07f)); g.fillRect ((float) kKeyW, y, (float) W, (float) kNoteH); } }
-            g.setColour (juce::Colour (0xff1f1f1f)); g.fillRect ((float) kKeyW, y + kNoteH - 1.f, (float) W, 1.f);
-            if (p % 12 == 0) { g.setColour (juce::Colour (0xff424242)); g.fillRect ((float) kKeyW, y + kNoteH - 1.f, (float) W, 1.f); }
+            g.setColour (isBlack (p) ? bgGridAlt : bgGrid); g.fillRect ((float) kKeyW, y, (float) W, (float) kNoteH);
+            if (scaleRoot() >= 0) { const int k = scaleKind (p); if (k == 0) { g.setColour (bgBar.withAlpha (.5f)); g.fillRect ((float) kKeyW, y, (float) W, (float) kNoteH); } else { g.setColour (accent.withAlpha (k == 2 ? .16f : .05f)); g.fillRect ((float) kKeyW, y, (float) W, (float) kNoteH); } }
+            g.setColour (juce::Colour (0xff1a1b1f)); g.fillRect ((float) kKeyW, y + kNoteH - 1.f, (float) W, 1.f);
+            if (p % 12 == 0) { g.setColour (barLine); g.fillRect ((float) kKeyW, y + kNoteH - 1.f, (float) W, 1.f); }
         }
         const float xe = bx (clipLenBeats());   // fuera del clip: color sólido más oscuro
-        g.setColour (juce::Colour (0xff1b1b1b)); g.fillRect (xe, (float) kTop, (float) W, (float) (gb - kTop));
+        g.setColour (bgBar.withAlpha (.78f)); g.fillRect (xe, (float) kTop, (float) W, (float) (gb - kTop));
         const double step = ppb * quantum >= 9 ? quantum : (ppb >= 9 ? 1.0 : 4.0);
         for (double b = std::floor (xb ((float) kKeyW) / step) * step; bx (b) < W; b += step)
         {
             const bool bar = std::fmod (std::round (b * 1000) / 1000, timesig::bar()) == 0.0, beat = std::fmod (std::round (b * 1000) / 1000, 1.0) == 0.0;
-            g.setColour (bar ? juce::Colour (0xff505050) : (beat ? juce::Colour (0xff353535) : juce::Colour (0xff2e2e2e)));
+            g.setColour (bar ? juce::Colour (0xff454851) : (beat ? barLine.withAlpha (.55f) : gridLine.withAlpha (.8f)));
             g.fillRect (bx (b), (float) kTop, 1.f, (float) (gb - kTop));
         }
         for (auto& gn : ghostNotes())
         {
             juce::Rectangle<float> r (bx (gn.start), ny (gn.pitch) + 2.f, std::max (3.f, (float) (gn.len * ppb) - 1.f), (float) kNoteH - 4.f);
-            g.setColour (pink.withAlpha (.16f)); g.fillRect (r); g.setColour (pink.withAlpha (.4f)); g.drawRect (r, 1.f);
+            g.setColour (textDim.withAlpha (.14f)); g.fillRect (r); g.setColour (textDim.withAlpha (.35f)); g.drawRect (r, 1.f);
         }
-        if (hoverPitch >= 0 && hover.x >= kKeyW) { g.setColour (juce::Colours::white.withAlpha (.05f)); g.fillRect ((float) kKeyW, ny (hoverPitch), (float) W, (float) kNoteH); }
+        if (hoverPitch >= 0 && hover.x >= kKeyW) { g.setColour (juce::Colours::white.withAlpha (.035f)); g.fillRect ((float) kKeyW, ny (hoverPitch), (float) W, (float) kNoteH); }
         for (auto* n : clip->getSequence().getNotes()) drawNote (g, *n);
         if (cutShown && tool == "cut" && cutGX >= kKeyW)
         {
-            const juce::Colour blue (0xff3da5ff); const float x = cutGX, w = 1.4f + juce::jmin (2.5f, std::abs (cutGV) / 500.f), y0 = (float) kTop, hh = (float) (gb - kTop);
+            const juce::Colour blue = accentHi; const float x = cutGX, w = 1.4f + juce::jmin (2.5f, std::abs (cutGV) / 500.f), y0 = (float) kTop, hh = (float) (gb - kTop);
             if (std::abs (cutGV) > 30.f) { const float tail = juce::jlimit (-60.f, 60.f, -cutGV * .045f); g.setColour (blue.withAlpha (.16f)); g.fillRect (std::min (x, x + tail), y0, std::abs (tail), hh); }
             g.setColour (blue.withAlpha (.2f)); g.fillRect (x - w * 3.f, y0, w * 6.f, hh); g.setColour (blue.withAlpha (.45f)); g.fillRect (x - w * 1.5f, y0, w * 3.f, hh); g.setColour (juce::Colours::white); g.fillRect (x - w * .5f, y0, w, hh);
         }
-        if (mode == Mode::rubber && ! rubber.isEmpty()) { g.setColour (juce::Colour (0xffff3b45).withAlpha (.16f)); g.fillRect (rubber); g.setColour (juce::Colour (0xffff3b45)); g.drawRect (rubber, 1.5f); }
+        if (mode == Mode::rubber && ! rubber.isEmpty()) { g.setColour (accent.withAlpha (.12f)); g.fillRect (rubber); g.setColour (accent); g.drawRect (rubber, 1.f); }
         g.restoreState();
 
-        if (hoverPitch >= 0 && hover.x >= kKeyW && (tool == "pencil" || tool == "brush")) { auto lb = juce::Rectangle<float> (hover.x + 14.f, hover.y - 26.f, 42.f, 20.f); g.setColour (juce::Colour (0xff111111).withAlpha (.92f)); g.fillRoundedRectangle (lb, 3.f); g.setColour (juce::Colours::white); g.setFont (juce::FontOptions (12.f, juce::Font::bold)); g.drawText (pitchName (hoverPitch), lb.toNearestInt(), juce::Justification::centred); }
+        if (hoverPitch >= 0 && hover.x >= kKeyW && (tool == "pencil" || tool == "brush")) { auto lb = juce::Rectangle<float> (hover.x + 14.f, hover.y - 26.f, 42.f, 20.f); g.setColour (boxFill.withAlpha (.95f)); g.fillRoundedRectangle (lb, rad); g.setColour (boxLine); g.drawRoundedRectangle (lb.reduced (.5f), rad, 1.f); g.setColour (text); g.setFont (fonts::digits (12.f)); g.drawText (pitchName (hoverPitch), lb.toNearestInt(), juce::Justification::centred); }
         drawRuler (g, W); drawKeyboard (g, gb); if (kVelH > 0) { if (lane == 0) drawVelocity (g, W, H, gb); else drawLane (g, W, H, gb); icons::draw (g, icons::Chevron, laneLabelR().withX ((float) kKeyW - 26.f).withWidth (22.f), theme::textDim); }
 
         const double hb = timeToBeats (edit.getTransport().getPosition().inSeconds()) - clipStartBeat();
         const float px = bx (hb);
-        if (hb >= 0 && px >= kKeyW + 8 && px <= W) { g.setColour (juce::Colour (0xffdadada)); g.fillRect (px - .5f, (float) kBarH + 2.f, 1.f, (float) (H - kBarH - 2)); g.setColour (accentHi); g.fillRect (px - 4.f, (float) kBarH + kRulerH - 6.f, 9.f, 6.f); }
+        if (hb >= 0 && px >= kKeyW + 8 && px <= W) { g.setColour (accentHi.withAlpha (.9f)); g.fillRect (px - .5f, (float) kBarH + 2.f, 1.f, (float) (H - kBarH - 2)); { juce::Path fl; const float fy = (float) kBarH + kRulerH - 9.f; fl.addTriangle (px - 5.f, fy, px + 5.f, fy, px, fy + 9.f); g.setColour (accentHi); g.fillPath (fl); } }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -352,72 +353,74 @@ private:
 
     void drawNote (juce::Graphics& g, te::MidiNote& n)
     {
+        using namespace theme;
         juce::Rectangle<float> r (bx (n.getStartBeat().inBeats()), ny (n.getNoteNumber()) + 1.f, std::max (3.f, (float) (n.getLengthBeats().inBeats() * ppb) - 1.f), (float) kNoteH - 2.f);
         const bool s = isSel (n); const float vel = juce::jlimit (0.f, 1.f, n.getVelocity() / 127.f);
-        juce::Colour tc = juce::Colour (0xffffa070); if (auto* at = dynamic_cast<te::AudioTrack*> (clip->getTrack())) { int ix = 0; for (auto* t2 : te::getAudioTracks (clip->edit)) { if (t2 == at) break; ++ix; } tc = trackutil::colourOf (at, ix); }
-        const juce::Colour base = s ? juce::Colour (0xffff5a63) : tc.darker (.45f).interpolatedWith (tc, vel * .85f + .15f);
-        const bool mu = n.isMute(); g.setColour (mu ? juce::Colour (0xff555555).withAlpha (s ? .9f : .6f) : base); g.fillRoundedRectangle (r, 2.f);
-        g.setColour (juce::Colours::white.withAlpha (.22f)); g.fillRect (r.getX() + 1.f, r.getY() + 1.f, std::max (0.f, r.getWidth() - 2.f), 1.f);
-        g.setColour (juce::Colours::black.withAlpha (.35f)); g.drawRoundedRectangle (r.reduced (.5f), 2.f, 1.f);
-        if (s) { g.setColour (juce::Colour (0xffffb0b5)); g.drawRoundedRectangle (r.reduced (.5f), 2.f, 1.5f); }
+        const juce::Colour tc = hostColour();
+        const juce::Colour base = s ? accent.interpolatedWith (juce::Colours::white, .12f) : tc.darker (.55f).interpolatedWith (tc, vel * .8f + .1f);
+        const bool mu = n.isMute(); if (mu) g.setColour (textFaint.withAlpha (s ? .9f : .55f)); else g.setGradientFill (juce::ColourGradient (base.brighter (.05f), 0.f, r.getY(), base.darker (.05f), 0.f, r.getBottom(), false)); g.fillRoundedRectangle (r, rad);
+        g.setColour (juce::Colours::white.withAlpha (.06f)); g.fillRect (r.getX() + 1.f, r.getY() + 1.f, std::max (0.f, r.getWidth() - 2.f), 1.f);
+        g.setColour (juce::Colours::black.withAlpha (.45f)); g.drawRoundedRectangle (r.reduced (.5f), rad, 1.f);
+        if (s) { g.setColour (accentHi); g.drawRoundedRectangle (r.reduced (.5f), rad, 1.4f); }
         if ((bool) n.state.getProperty ("injSlide", false)) { juce::Path tp; tp.addTriangle (r.getX() + 1.f, r.getY() + 1.f, r.getX() + 9.f, r.getY() + 1.f, r.getX() + 1.f, r.getBottom() - 1.f); g.setColour (juce::Colours::white.withAlpha (.9f)); g.fillPath (tp); }
         if (mu) { g.saveState(); g.reduceClipRegion (r.toNearestInt()); g.setColour (juce::Colours::black.withAlpha (.35f)); for (float xx = r.getX() - r.getHeight(); xx < r.getRight(); xx += 6.f) g.drawLine (xx, r.getBottom(), xx + r.getHeight(), r.getY(), 1.f); g.restoreState(); }
-        if (r.getWidth() >= 28.f && kNoteH >= 14) { g.setColour (juce::Colour (0xff1a1a1a).withAlpha (.85f)); g.setFont (juce::FontOptions (juce::jmin (12.f, kNoteH - 6.f), juce::Font::bold)); g.drawText (pitchName (n.getNoteNumber()), r.reduced (4.f, 0.f), juce::Justification::centredLeft, false); }
+        if (r.getWidth() >= 28.f && kNoteH >= 14) { g.setColour (juce::Colours::black.withAlpha (.7f)); g.setFont (fonts::ui (juce::jmin (11.f, kNoteH - 6.f), true)); g.drawText (pitchName (n.getNoteNumber()), r.reduced (4.f, 0.f), juce::Justification::centredLeft, false); }
     }
     void drawRuler (juce::Graphics& g, int W)
     {
-        g.setColour (juce::Colour (0xff242424)); g.fillRect (kKeyW, kBarH, W, kRulerH);
-        g.setColour (juce::Colour (0xff424242)); g.fillRect (kKeyW, kTop - 1, W, 1);
-        g.setFont (juce::FontOptions (12.f));
-        for (int bt = 0; ; ++bt) { const float tx = bx ((double) bt); if (tx > W) break; if (tx < kKeyW + 4) continue; if (ppb >= 20.0) { g.setColour (juce::Colour (0xff3a3b40)); g.fillRect (tx, (float) kBarH + 20.f, 1.f, 8.f); } }
+        g.setColour (theme::bgBar); g.fillRect (kKeyW, kBarH, W, kRulerH);
+        g.setColour (theme::seam); g.fillRect (kKeyW, kTop - 1, W, 1);
+        g.setFont (theme::fonts::digits (11.f));
+        for (int bt = 0; ; ++bt) { const float tx = bx ((double) bt); if (tx > W) break; if (tx < kKeyW + 4) continue; if (ppb >= 20.0) { g.setColour (theme::barLine); g.fillRect (tx, (float) kBarH + 21.f, 1.f, 7.f); } }
         for (int bar = 0; ; ++bar)
         {
             const float x = bx (bar * timesig::bar()); if (x > W) break; if (x < kKeyW + 4) continue;
-            g.setColour (juce::Colour (0xff505050)); g.fillRect (x, (float) kBarH + 6.f, 1.f, (float) kRulerH - 6.f);
-            g.setColour (theme::text); g.drawText (juce::String (bar + 1), juce::Rectangle<float> (x + 6, (float) kBarH + 4.f, 40, 20).toNearestInt(), juce::Justification::centredLeft);
+            g.setColour (juce::Colour (0xff575a64)); g.fillRect (x, (float) kBarH + 5.f, 1.f, (float) kRulerH - 5.f);
+            g.setColour (theme::textDim); g.drawText (juce::String (bar + 1), juce::Rectangle<float> (x + 6, (float) kBarH + 4.f, 40, 20).toNearestInt(), juce::Justification::centredLeft);
         }
-        g.setColour (juce::Colour (0xff242424)); g.fillRect (0, kBarH, kKeyW, kRulerH);
+        g.setColour (theme::bgBar); g.fillRect (0, kBarH, kKeyW, kRulerH);
+        g.setColour (theme::seam); g.fillRect (kKeyW - 1, kBarH, 1, kRulerH);
     }
     void drawKeyboard (juce::Graphics& g, int gb)
     {
         g.saveState(); g.reduceClipRegion (0, kTop, kKeyW, gb - kTop);
-        g.setColour (juce::Colour (0xff242424)); g.fillRect (0, kTop, kKeyW, gb - kTop);
+        g.setColour (theme::bgBar); g.fillRect (0, kTop, kKeyW, gb - kTop);
         for (int p = 0; p <= 127; ++p)
         {
             const float y = ny (p); if (y > gb || y + kNoteH < kTop || isBlack (p)) continue;
-            g.setColour (p == litKey ? juce::Colour (0xffe0b4f5) : (p == hoverPitch ? juce::Colour (0xffe3d2f3) : juce::Colour (0xffececec))); g.fillRect (6.f, y, (float) kKeyW - 10, (float) kNoteH - 1.f);
-            g.setColour (juce::Colour (0xffb6b6b6)); g.fillRect (6.f, y + kNoteH - 1.f, (float) kKeyW - 10, 1.f);
-            if (p % 12 == 0 || p == hoverPitch) { g.setColour (juce::Colour (0xff2e2e2e)); g.setFont (juce::FontOptions (13.f, juce::Font::bold)); g.drawText (pitchName (p), juce::Rectangle<float> (6.f, y, (float) kKeyW - 14, (float) kNoteH).toNearestInt(), juce::Justification::centredRight); }
+            g.setColour (p == litKey ? theme::accentHi : (p == hoverPitch ? juce::Colour (0xfff3e6d6) : juce::Colour (0xffe4e5e8))); g.fillRect (6.f, y, (float) kKeyW - 10, (float) kNoteH - 1.f);
+            g.setColour (juce::Colour (0xffa4a7ae)); g.fillRect (6.f, y + kNoteH - 1.f, (float) kKeyW - 10, 1.f);
+            if (p % 12 == 0 || p == hoverPitch) { g.setColour (juce::Colour (0xff3a3d46)); g.setFont (theme::fonts::digits (11.f)); g.drawText (pitchName (p), juce::Rectangle<float> (6.f, y, (float) kKeyW - 14, (float) kNoteH).toNearestInt(), juce::Justification::centredRight); }
         }
         for (int p = 0; p <= 127; ++p)
         {
             const float y = ny (p); if (y > gb || y + kNoteH < kTop || ! isBlack (p)) continue;
-            g.setColour (p == litKey ? juce::Colour (0xffb87d40) : (p == hoverPitch ? juce::Colour (0xff4a4a4a) : juce::Colour (0xff111111))); g.fillRoundedRectangle (6.f, y + 1, 58.f, (float) kNoteH - 2.f, 3.f);
-            if (p == hoverPitch) { g.setColour (juce::Colours::white); g.setFont (juce::FontOptions (12.f, juce::Font::bold)); g.drawText (pitchName (p), juce::Rectangle<float> (6.f, y, 52.f, (float) kNoteH).toNearestInt(), juce::Justification::centredRight); }
-            g.setColour (juce::Colour (0xff606060)); g.drawRoundedRectangle (6.5f, y + 1.5f, 57.f, (float) kNoteH - 3.f, 3.f, 1.f);
+            { const juce::Rectangle<float> bk (6.f, y + 1, 58.f, (float) kNoteH - 2.f); if (p == litKey) g.setColour (theme::accentDim); else g.setGradientFill (juce::ColourGradient (p == hoverPitch ? juce::Colour (0xff3d4048) : juce::Colour (0xff2c2e35), bk.getX(), 0.f, juce::Colour (0xff0e0f12), bk.getRight(), 0.f, false)); g.fillRoundedRectangle (bk, theme::rad); }
+            if (p == hoverPitch) { g.setColour (theme::text); g.setFont (theme::fonts::digits (11.f)); g.drawText (pitchName (p), juce::Rectangle<float> (6.f, y, 52.f, (float) kNoteH).toNearestInt(), juce::Justification::centredRight); }
+            g.setColour (juce::Colour (0xff050506)); g.drawRoundedRectangle (6.5f, y + 1.5f, 57.f, (float) kNoteH - 3.f, theme::rad, 1.f);
         }
         g.restoreState();
     }
     juce::Colour hostColour() const { juce::Colour tc (0xffffa070); if (clip) if (auto* at = dynamic_cast<te::AudioTrack*> (clip->getTrack())) { int ix = 0; for (auto* t2 : te::getAudioTracks (clip->edit)) { if (t2 == at) break; ++ix; } tc = trackutil::colourOf (at, ix); } return tc; }
     void drawVelocity (juce::Graphics& g, int W, int H, int gb)
     {
-        g.setColour (juce::Colour (0xff424242)); g.fillRect (0, gb, W, 1);
-        g.setColour (juce::Colour (0xff202020)); g.fillRect (kKeyW, gb + 1, W - kKeyW, kVelH - 1);
-        g.setColour (juce::Colour (0xff242424)); g.fillRect (0, gb + 1, kKeyW, kVelH - 1);
-        g.setColour (theme::text); g.setFont (juce::FontOptions (14.f)); g.drawText ("Velocity", 12, gb + 6, kKeyW - 12, 22, juce::Justification::centredLeft);
+        g.setColour (theme::seam); g.fillRect (0, gb, W, 1);
+        g.setColour (theme::boxFill); g.fillRect (kKeyW, gb + 1, W - kKeyW, kVelH - 1);
+        g.setColour (theme::bgBar); g.fillRect (0, gb + 1, kKeyW, kVelH - 1);
+        g.setColour (theme::textDim); g.setFont (theme::fonts::label (13.f)); g.drawText ("Velocity", 12, gb + 6, kKeyW - 12, 22, juce::Justification::centredLeft);
         const float top = (float) gb + 34.f, bot = (float) H - 10.f;   // escala 127 .. 0
-        g.setFont (juce::FontOptions (12.f));
+        g.setFont (theme::fonts::digits (10.f));
         for (int v : { 127, 96, 64, 32, 0 })
         {
             const float y = bot - (bot - top) * (float) v / 127.f;
             g.setColour (theme::textDim); g.drawText (juce::String (v), juce::Rectangle<float> (4, y - 8, (float) kKeyW - 22, 16).toNearestInt(), juce::Justification::centredRight); g.fillRect ((float) kKeyW - 14, y, 8.f, 1.f);
-            g.setColour (juce::Colour (0xff2a2a2a)); g.fillRect ((float) kKeyW, y, (float) (W - kKeyW), 1.f);
+            g.setColour (theme::gridLine); g.fillRect ((float) kKeyW, y, (float) (W - kKeyW), 1.f);
         }
         g.saveState(); g.reduceClipRegion (kKeyW, gb + 1, W - kKeyW, kVelH);
         for (auto* n : clip->getSequence().getNotes())
         {
             const float x = bx (n->getStartBeat().inBeats()), y = bot - (bot - top) * (float) n->getVelocity() / 127.f; const bool s = isSel (*n);
-            g.setColour (s ? juce::Colour (0xffff5a63) : hostColour()); g.fillRect (x - 1.f, y, 2.f, bot - y); g.fillEllipse (x - 4.5f, y - 4.5f, 9.f, 9.f);
+            g.setColour (s ? theme::accentHi : hostColour()); g.fillRect (x - .5f, y, 1.f, bot - y); g.fillRect (x - 3.f, y - 1.f, 7.f, 3.f);
         }
         g.restoreState();
     }
@@ -438,18 +441,18 @@ private:
     void drawToolbar (juce::Graphics& g, int W)
     {
         using namespace theme;
-        g.setColour (juce::Colour (0xff1f1f1f)); g.fillRect (0, 0, W, kBarH);
-        g.setColour (juce::Colour (0xff323232)); g.fillRect (0, kBarH - 1, W, 1);
+        g.setColour (bgBar); g.fillRect (0, 0, W, kBarH);
+        g.setColour (seam); g.fillRect (0, kBarH - 1, W, 1); g.setColour (edgeLight); g.fillRect (0, 0, W, 1);
         icons::draw (g, icons::PianoRoll, { 6.f, 8.f, 36.f, 36.f }, iconIdle);
         const juce::String who = clip ? clip->getName() : juce::String ("sin clip");
-        g.setColour (textDim); g.setFont (juce::FontOptions (13.f)); g.drawText (who, juce::Rectangle<float> (44, 8, 290, 36).toNearestInt(), juce::Justification::centredLeft);
+        g.setColour (text); g.setFont (fonts::label (13.f)); g.drawText (who, juce::Rectangle<float> (44, 8, 290, 36).toNearestInt(), juce::Justification::centredLeft);
         for (auto& b : btns())
         {
             const bool active = b.id == tool, hot = b.r.contains (hover);
-            if (active || hot || b.id == "quant" || b.id == "scale") { g.setColour (active ? accent : (hot ? panelHi : boxFill)); g.fillRoundedRectangle (b.r, 3.f); if (! active) { g.setColour (boxLine); g.drawRoundedRectangle (b.r.reduced (.5f), 3.f, 1.f); } }
-            if (b.id == "quant") { g.setColour (text); g.setFont (juce::FontOptions (14.f)); g.drawText (quantLabel(), b.r.withTrimmedRight (22).toNearestInt(), juce::Justification::centred); icons::draw (g, icons::Chevron, { b.r.getRight() - 28.f, b.r.getY(), 26.f, b.r.getHeight() }, textDim); }
-            else if (b.id == "scale") { g.setColour (scaleRoot() >= 0 ? accentHi : text); g.setFont (juce::FontOptions (14.f)); g.drawText (scaleLabel(), b.r.withTrimmedRight (22).toNearestInt(), juce::Justification::centred); icons::draw (g, icons::Chevron, { b.r.getRight() - 28.f, b.r.getY(), 26.f, b.r.getHeight() }, textDim); }
-            else icons::draw (g, b.icon, b.r, active ? juce::Colour (0xff1a1a1a) : iconIdle);
+            if (active || hot || b.id == "quant" || b.id == "scale") { g.setColour (active ? accent.withAlpha (.2f) : (hot ? panelHi : boxFill)); g.fillRoundedRectangle (b.r, rad); g.setColour (active ? accent : boxLine); g.drawRoundedRectangle (b.r.reduced (.5f), rad, 1.f); }
+            if (b.id == "quant") { g.setColour (text); g.setFont (fonts::digits (13.f)); g.drawText (quantLabel(), b.r.withTrimmedRight (22).toNearestInt(), juce::Justification::centred); icons::draw (g, icons::Chevron, { b.r.getRight() - 28.f, b.r.getY(), 26.f, b.r.getHeight() }, textDim); }
+            else if (b.id == "scale") { g.setColour (scaleRoot() >= 0 ? accentHi : text); g.setFont (fonts::label (13.f)); g.drawText (scaleLabel(), b.r.withTrimmedRight (22).toNearestInt(), juce::Justification::centred); icons::draw (g, icons::Chevron, { b.r.getRight() - 28.f, b.r.getY(), 26.f, b.r.getHeight() }, textDim); }
+            else icons::draw (g, b.icon, b.r, active ? accentHi : iconIdle);
         }
     }
     void toolbarClick (const juce::MouseEvent& e)
@@ -471,14 +474,16 @@ private:
             { "Pentatónica menor", { 0, 3, 5, 7, 10 } }, { "Frigia", { 0, 1, 3, 5, 7, 8, 10 } }, { "Frigia dominante", { 0, 1, 4, 5, 7, 8, 10 } }, { "Dórica", { 0, 2, 3, 5, 7, 9, 10 } }, { "Cromática", { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 } } };
         return d;
     }
-    int scaleRoot() const { return clip ? (int) clip->state.getProperty ("injScaleRoot", -1) : -1; }
+    bool ownScale() const { return clip != nullptr && clip->state.hasProperty ("injScaleRoot"); }   // si el clip no tiene escala propia se usa la tonalidad del proyecto
+    int scaleRoot() const { if (! clip) return -1; if (ownScale()) return (int) clip->state.getProperty ("injScaleRoot", -1); const auto k = harmony::getKey (edit); return k.active() ? k.root : -1; }
     int scaleType() const { return clip ? (int) clip->state.getProperty ("injScaleType", 1) : 1; }
     bool ghostOn() const { return clip == nullptr || (bool) clip->state.getProperty ("injGhost", true); }
-    juce::String scaleLabel() const { const int r = scaleRoot(); return r < 0 ? juce::String ("Escala") : juce::String::fromUTF8 (kNoteNames[r]) + " " + juce::String::fromUTF8 (scaleDefs()[(size_t) juce::jlimit (0, (int) scaleDefs().size() - 1, scaleType())].name).toLowerCase(); }
+    juce::String scaleLabel() const { const int r = scaleRoot(); if (r >= 0 && ! ownScale()) return harmony::keyText (harmony::getKey (edit)); return r < 0 ? juce::String ("Escala") : juce::String::fromUTF8 (kNoteNames[r]) + " " + juce::String::fromUTF8 (scaleDefs()[(size_t) juce::jlimit (0, (int) scaleDefs().size() - 1, scaleType())].name).toLowerCase(); }
     // 0 = fuera de la escala, 1 = dentro, 2 = tónica
     int scaleKind (int pitch) const
     {
-        const int r = scaleRoot(); if (r < 0) return 1; const int pc = ((pitch - r) % 12 + 12) % 12;
+        const int r = scaleRoot(); if (r < 0) return 1; if (! ownScale()) { const auto k = harmony::getKey (edit); return harmony::isRoot (k, pitch) ? 2 : (harmony::inScale (k, pitch) ? 1 : 0); }
+        const int pc = ((pitch - r) % 12 + 12) % 12;
         if (pc == 0) return 2; for (int i : scaleDefs()[(size_t) juce::jlimit (0, (int) scaleDefs().size() - 1, scaleType())].iv) if (i == pc) return 1; return 0;
     }
 public:
@@ -514,7 +519,7 @@ private:
     }
     void quantMenu (juce::Rectangle<float> r)
     {
-        juce::PopupMenu m; m.addItem (1, "1/4", true, snap && quantum == 1.0); m.addItem (2, "1/8", true, snap && quantum == .5); m.addItem (3, "1/16", true, snap && quantum == .25); m.addItem (4, "1/32", true, snap && quantum == .125); m.addSeparator(); m.addItem (5, "Libre (sin imán)", true, ! snap);
+        juce::PopupMenu m; m.addItem (1, "1/4", true, snap && quantum == 1.0); m.addItem (2, "1/8", true, snap && quantum == .5); m.addItem (3, "1/16", true, snap && quantum == .25); m.addItem (4, "1/32", true, snap && quantum == .125); m.addSeparator(); m.addItem (5, juce::String::fromUTF8 ("Libre (sin imán)"), true, ! snap);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (r.toNearestInt())), [this] (int c)
         { if (c >= 1 && c <= 4) { quantum = c == 1 ? 1.0 : c == 2 ? .5 : c == 3 ? .25 : .125; snap = true; } else if (c == 5) snap = false; repaint(); });
     }
@@ -595,16 +600,16 @@ private:
     }
     void drawLane (juce::Graphics& g, int W, int H, int gb)
     {
-        g.setColour (juce::Colour (0xff424242)); g.fillRect (0, gb, W, 1);
-        g.setColour (juce::Colour (0xff202020)); g.fillRect (kKeyW, gb + 1, W - kKeyW, kVelH - 1);
-        g.setColour (juce::Colour (0xff242424)); g.fillRect (0, gb + 1, kKeyW, kVelH - 1);
-        g.setColour (theme::text); g.setFont (juce::FontOptions (13.f)); g.drawText (lane == 2 ? "Pitch bend" : juce::String::fromUTF8 ("Modulación"), 10, gb + 6, kKeyW - 28, 22, juce::Justification::centredLeft);
+        g.setColour (theme::seam); g.fillRect (0, gb, W, 1);
+        g.setColour (theme::boxFill); g.fillRect (kKeyW, gb + 1, W - kKeyW, kVelH - 1);
+        g.setColour (theme::bgBar); g.fillRect (0, gb + 1, kKeyW, kVelH - 1);
+        g.setColour (theme::textDim); g.setFont (theme::fonts::label (13.f)); g.drawText (lane == 2 ? "Pitch bend" : juce::String::fromUTF8 ("Modulación"), 10, gb + 6, kKeyW - 28, 22, juce::Justification::centredLeft);
         const float top = (float) gb + 34.f, bot = (float) H - 10.f; const float mx = (float) laneMax();
         auto yOf = [&] (int v) { return bot - (bot - top) * (float) v / mx; };
-        g.setFont (juce::FontOptions (12.f));
+        g.setFont (theme::fonts::digits (10.f));
         if (lane == 2) { const int rg = bendRange(); const char* nm[] { "+", "", "-" }; const float ys[] { top, (top + bot) * .5f, bot };
             for (int k = 0; k < 3; ++k) { g.setColour (theme::textDim); g.drawText (k == 1 ? juce::String ("0") : juce::String (nm[k]) + juce::String (rg), juce::Rectangle<float> (4, ys[k] - 8, (float) kKeyW - 22, 16).toNearestInt(), juce::Justification::centredRight); g.fillRect ((float) kKeyW - 14, ys[k], 8.f, 1.f); g.setColour (k == 1 ? juce::Colour (0xff3a3a3a) : juce::Colour (0xff2a2a2a)); g.fillRect ((float) kKeyW, ys[k], (float) (W - kKeyW), 1.f); } }
-        else for (int v : { 127, 96, 64, 32, 0 }) { const float y = yOf (v); g.setColour (theme::textDim); g.drawText (juce::String (v), juce::Rectangle<float> (4, y - 8, (float) kKeyW - 22, 16).toNearestInt(), juce::Justification::centredRight); g.fillRect ((float) kKeyW - 14, y, 8.f, 1.f); g.setColour (juce::Colour (0xff2a2a2a)); g.fillRect ((float) kKeyW, y, (float) (W - kKeyW), 1.f); }
+        else for (int v : { 127, 96, 64, 32, 0 }) { const float y = yOf (v); g.setColour (theme::textDim); g.drawText (juce::String (v), juce::Rectangle<float> (4, y - 8, (float) kKeyW - 22, 16).toNearestInt(), juce::Justification::centredRight); g.fillRect ((float) kKeyW - 14, y, 8.f, 1.f); g.setColour (theme::gridLine); g.fillRect ((float) kKeyW, y, (float) (W - kKeyW), 1.f); }
         g.saveState(); g.reduceClipRegion (kKeyW, gb + 1, W - kKeyW, kVelH);
         auto evs = eventsOfType (laneType()); const juce::Colour hc = hostColour();
         if (evs.empty()) { g.setColour (theme::textDim.withAlpha (.7f)); g.setFont (juce::FontOptions (13.f)); g.drawText (juce::String::fromUTF8 ("Dibuja con el lápiz aquí; clic derecho borra"), kKeyW + 12, gb + 8, 360, 20, juce::Justification::centredLeft); }
@@ -613,7 +618,7 @@ private:
             juce::Path pth; float lx = (float) kKeyW, ly = yOf (laneRest()); pth.startNewSubPath (lx, ly);
             for (auto* ce : evs) { const float x = bx (ce->getBeatPosition().inBeats()), y = yOf (ce->getControllerValue()); pth.lineTo (x, ly); pth.lineTo (x, y); ly = y; lx = x; }
             pth.lineTo ((float) W, ly); g.setColour (hc.withAlpha (.95f)); g.strokePath (pth, juce::PathStrokeType (1.6f));
-            if (evs.size() < 160) for (auto* ce : evs) g.fillEllipse (bx (ce->getBeatPosition().inBeats()) - 3.f, yOf (ce->getControllerValue()) - 3.f, 6.f, 6.f);
+            if (evs.size() < 160) for (auto* ce : evs) g.fillRect (bx (ce->getBeatPosition().inBeats()) - 2.5f, yOf (ce->getControllerValue()) - 2.5f, 5.f, 5.f);
         }
         g.restoreState();
     }
@@ -768,7 +773,7 @@ public:
         m.addItem (4, "Legato"); m.addItem (5, "Staccato"); m.addItem (6, "Unir notas iguales"); m.addItem (7, "Cortar en 2"); m.addItem (8, "Cortar en 4"); m.addItem (9, "Cortar en 8"); m.addSeparator();
         m.addItem (10, "Voltear en el tiempo"); m.addItem (11, "Voltear de agudo a grave"); m.addItem (12, "Octava arriba"); m.addItem (13, "Octava abajo"); m.addSeparator();
         m.addItem (14, "Velocidad aleatoria"); m.addItem (15, "Crescendo"); m.addItem (16, "Decrescendo"); m.addSeparator();
-        m.addItem (17, "Tonos aleatorios (en la escala)"); m.addItem (18, "Ajustar notas a la escala"); m.addItem (19, "Invertir el acorde"); m.addItem (20, "Estirar x2 (m\xc3\xa1s lento)"); m.addItem (21, "Encoger x0.5 (m\xc3\xa1s r\xc3\xa1pido)");
+        m.addItem (17, "Tonos aleatorios (en la escala)"); m.addItem (18, "Ajustar notas a la escala"); m.addItem (19, "Invertir el acorde"); m.addItem (20, juce::String::fromUTF8 ("Estirar x2 (m\xc3\xa1s lento)")); m.addItem (21, juce::String::fromUTF8 ("Encoger x0.5 (m\xc3\xa1s r\xc3\xa1pido)"));
         { juce::PopupMenu rat; for (int k = 0; k < 5; ++k) rat.addItem (410 + k, "x" + juce::String (std::array<int, 5> { 2, 3, 4, 6, 8 }[(size_t) k]));
           m.addSeparator(); m.addItem (400, "Velocidad +10 %"); m.addItem (401, "Velocidad -10 %"); m.addSubMenu (juce::String::fromUTF8 ("Ratchet (repetir la nota)"), rat); m.addSeparator();
           m.addItem (420, juce::String::fromUTF8 ("Silenciar / activar notas  (M)")); m.addItem (421, juce::String::fromUTF8 ("Slide: deslizar desde la nota anterior"));

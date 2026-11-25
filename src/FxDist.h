@@ -9,7 +9,7 @@ inline float softAlg (float x) { return x / std::sqrt (1.f + x * x); }
 inline float cubicClip (float x) { const float u = juce::jlimit (-1.f, 1.f, x); return 1.5f * (u - u * u * u / 3.f); }
 inline void drawTransfer (juce::Graphics& g, juce::Rectangle<float> r, const std::function<float (float)>& f, float xScale)
 {
-    g.setColour (juce::Colour (0xff2a2b30)); for (int k = 1; k < 4; ++k) { g.drawVerticalLine ((int) (r.getX() + r.getWidth() * k / 4.f), r.getY(), r.getBottom()); g.drawHorizontalLine ((int) (r.getY() + r.getHeight() * k / 4.f), r.getX(), r.getRight()); }
+    g.setColour (theme::gridLine); for (int k = 1; k < 4; ++k) { g.drawVerticalLine ((int) (r.getX() + r.getWidth() * k / 4.f), r.getY(), r.getBottom()); g.drawHorizontalLine ((int) (r.getY() + r.getHeight() * k / 4.f), r.getX(), r.getRight()); }
     g.setColour (theme::barLine); g.drawLine (r.getX(), r.getBottom(), r.getRight(), r.getY(), 1.f); juce::Path p;
     for (int k = 0; k <= 160; ++k) { const float x = -1.f + k * (2.f / 160.f), y = juce::jlimit (-1.f, 1.f, f (x * xScale)); const float px = r.getCentreX() + x * r.getWidth() * .5f, py = r.getCentreY() - y * (r.getHeight() * .5f - 4.f); if (k == 0) p.startNewSubPath (px, py); else p.lineTo (px, py); }
     g.setColour (theme::accent); g.strokePath (p, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
@@ -179,8 +179,8 @@ public:
         for (int b = 0; b < 3; ++b)
         {
             const auto z = juce::Rectangle<float> (r.getX() + b * cw + 14.f, r.getY() + 10.f, cw - 28.f, r.getHeight() - 36.f); const bool kill = gs[b] <= -59.5f; const auto col = theme::trackColours[b == 0 ? 0 : b == 1 ? 1 : 3];
-            barV (g, z, kill ? 0.f : (gs[b] + 60.f) / 66.f, col); label (g, kill ? juce::String ("Apagado") : juce::String (gs[b], 1) + " dB", { z.getX(), z.getBottom() + 4.f, z.getWidth(), 14.f }, juce::Justification::centred, 11.f, true, kill ? juce::Colour (0xffff7a70) : theme::text);
-            label (g, nm[b], z.reduced (6.f, 6.f), juce::Justification::topLeft, 11.f, true, juce::Colour (0xff1a1a1a).withAlpha (kill ? 0.f : 1.f));
+            barV (g, z, kill ? 0.f : (gs[b] + 60.f) / 66.f, col.darker (.35f)); label (g, kill ? juce::String ("Apagado") : juce::String (gs[b], 1) + " dB", { z.getX(), z.getBottom() + 4.f, z.getWidth(), 14.f }, juce::Justification::centred, 11.f, true, kill ? theme::record : theme::text);
+            label (g, nm[b], z.reduced (6.f, 6.f), juce::Justification::topLeft, 11.f, true, theme::text.withAlpha (kill ? .45f : 1.f));
         }
     }
 private:
@@ -220,8 +220,8 @@ public:
     }
     void paintVisual (juce::Graphics& g, juce::Rectangle<float> r) override
     {
-        const float f = meterA.load() > 1.f ? meterA.load() : v (pCut), x = r.getX() + 16.f + std::log10 (std::max (20.f, f) / 20.f) / 3.f * (r.getWidth() - 32.f); const auto bar = r.reduced (16.f, 24.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (bar, 6.f);
-        g.setColour (theme::accent); g.fillRoundedRectangle (bar.withWidth (std::max (6.f, x - bar.getX())), 6.f); label (g, juce::String::fromUTF8 ("Corte actual  ") + fmtValue ({ "", "", 0, 0, 0, 0, fHz, "" }, f), r.reduced (24.f, 4.f), juce::Justification::topLeft, 11.f, true, theme::text);
+        const float f = meterA.load() > 1.f ? meterA.load() : v (pCut), x = r.getX() + 16.f + std::log10 (std::max (20.f, f) / 20.f) / 3.f * (r.getWidth() - 32.f); const auto bar = r.reduced (16.f, 24.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (bar, 2.f);
+        g.setColour (theme::accent); g.fillRoundedRectangle (bar.withWidth (std::max (6.f, x - bar.getX())), 2.f); label (g, juce::String::fromUTF8 ("Corte actual  ") + fmtValue ({ "", "", 0, 0, 0, 0, fHz, "" }, f), r.reduced (24.f, 4.f), juce::Justification::topLeft, 11.f, true, theme::text);
     }
 private:
     static inline const Spec S[] = { { "mode", "Tipo", 0.f, 2.f, 0.f, 0.f, fChoice, "Pasa bajos|Pasa altos|Pasa banda" }, { "cut", "Corte base|Corte", 30.f, 16000.f, 400.f, 1000.f, fHz, "" }, { "res", "Resonancia", 0.f, 1.f, .4f, 0.f, fPct, "" },

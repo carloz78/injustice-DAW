@@ -47,7 +47,7 @@ public:
     void paintVisual (juce::Graphics& gr, juce::Rectangle<float> r) override
     {
         const float w = (r.getWidth() - 16.f) / 16.f; const int cur = (int) meterA.load();
-        for (int k = 0; k < 16; ++k) { const bool on = v (pStep0 + k) > .5f; const auto c = juce::Rectangle<float> (r.getX() + 8.f + k * w + 2.f, r.getY() + 14.f, w - 4.f, r.getHeight() - 28.f); gr.setColour (on ? (k % 4 == 0 ? theme::accent : theme::accent.withAlpha (.8f)) : theme::bgBar); gr.fillRoundedRectangle (c, 5.f); if (k == cur) { gr.setColour (theme::text); gr.drawRoundedRectangle (c.expanded (1.f), 5.f, 2.f); } }
+        for (int k = 0; k < 16; ++k) { const bool on = v (pStep0 + k) > .5f; const auto c = juce::Rectangle<float> (r.getX() + 8.f + k * w + 2.f, r.getY() + 14.f, w - 4.f, r.getHeight() - 28.f); gr.setColour (on ? (k % 4 == 0 ? theme::accent : theme::accent.withAlpha (.8f)) : theme::bgBar); gr.fillRoundedRectangle (c, 2.f); if (k == cur) { gr.setColour (theme::text); gr.drawRoundedRectangle (c.expanded (1.f), 5.f, 2.f); } }
     }
 private:
     static inline const Spec S[] = { { "grid", "Rejilla", 0.f, 2.f, 1.f, 0.f, fChoice, "1/8|1/16|1/32" }, { "smooth", "Suavizado", .2f, 30.f, 3.f, 5.f, fMs, "" }, { "mix", "Mezcla", 0.f, 1.f, 1.f, 0.f, fPct, "" },
@@ -221,8 +221,8 @@ public:
     }
     void paintVisual (juce::Graphics& g, juce::Rectangle<float> r) override
     {
-        const juce::Colour cols[] { theme::bgBar, juce::Colour (0xffffb020), theme::accent, juce::Colour (0xff4fc3f7), juce::Colour (0xff6b6e78) };
-        const float w = (r.getWidth() - 16.f) / 16.f; for (int k = 0; k < 16; ++k) { const int a = actionFor (k); g.setColour (cols[a]); g.fillRoundedRectangle (r.getX() + 8.f + k * w + 2.f, r.getY() + 12.f, w - 4.f, r.getHeight() - 24.f, 5.f); }
+        const juce::Colour cols[] { theme::bgBar, theme::accentHi, theme::accent, theme::trackColours[0], juce::Colour (0xff6b6e78) };
+        const float w = (r.getWidth() - 16.f) / 16.f; for (int k = 0; k < 16; ++k) { const int a = actionFor (k); g.setColour (cols[a]); g.fillRoundedRectangle (r.getX() + 8.f + k * w + 2.f, r.getY() + 12.f, w - 4.f, r.getHeight() - 24.f, 2.f); }
     }
 private:
     static inline const Spec S[] = { { "type", "Tipo", 0.f, 4.f, 0.f, 0.f, fChoice, "Mixto|Repetir|Reverso|Lento|Corte" }, { "grid", "Rejilla", 0.f, 2.f, 1.f, 0.f, fChoice, "1/8|1/16|1/32" }, { "chance", "Probabilidad", 0.f, 1.f, .3f, 0.f, fPct, "" },

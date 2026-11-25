@@ -96,7 +96,7 @@ public:
     }
     void paintVisual (juce::Graphics& g, juce::Rectangle<float> r) override
     {
-        const float f = meterA.load(), mid = r.getCentreY(); const auto bar = r.reduced (16.f, 14.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (bar, 8.f);
+        const float f = meterA.load(), mid = r.getCentreY(); const auto bar = r.reduced (16.f, 14.f); g.setColour (theme::bgBar); g.fillRoundedRectangle (bar, 2.f);
         juce::Path tri; tri.startNewSubPath (bar.getX() + 6.f, bar.getBottom() - 6.f); tri.lineTo (bar.getRight() - 6.f, bar.getY() + 6.f); tri.lineTo (bar.getRight() - 6.f, bar.getBottom() - 6.f); tri.closeSubPath(); g.setColour (theme::barLine); g.fillPath (tri);
         const float x = bar.getX() + 6.f + f * (bar.getWidth() - 12.f); g.setColour (theme::accent); g.fillRoundedRectangle (x - 2.f, bar.getY() + 4.f, 4.f, bar.getHeight() - 8.f, 2.f); (void) mid;
     }

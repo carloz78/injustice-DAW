@@ -117,6 +117,255 @@ inline void runNew (te::Edit& edit, int& fails)
     { Rig r (edit, InjLufs::xmlTypeName); auto* lf = dynamic_cast<InjLufs*> (r.fx); r.run (stereoOf (sine (1000, db2lin (-23.f), 5.0), sine (1000, db2lin (-23.f), 5.0))); chk (std::abs (lf->integrated() + 23.f) < .4f, "LUFS: un seno de 1 kHz a -23 dBFS en estereo mide " + juce::String (lf->integrated(), 2) + " LUFS");
       r.run (stereoOf (sine (1000, db2lin (-80.f), 3.0), sine (1000, db2lin (-80.f), 3.0))); chk (std::abs (lf->integrated() + 23.f) < .4f && lf->momentary() < -60.f, "LUFS: el silencio no baja la medida integrada (puerta)");
       Rig q (edit, InjLufs::xmlTypeName); auto* lq = dynamic_cast<InjLufs*> (q.fx); q.run (stereoOf (sine (1000, db2lin (-10.f), 2.0), sine (1000, db2lin (-10.f), 2.0))); chk (lq->momentary() > r.fx->specs()[0].lo + 0.f && std::abs (lq->momentary() + 10.f) < .5f, "LUFS: el momentaneo marca " + juce::String (lq->momentary(), 2) + " con -10 dBFS"); }
+    // ---- Punch Comp (compresor FET con panel de equipo)
+    { auto in = sine (1000, .5f, 1.5);
+      Rig a (edit, InjPunch::xmlTypeName); a.set (InjPunch::pIn, 6.f); a.set (InjPunch::pAtk, 0.f); a.set (InjPunch::pRel, 3.f); a.set (InjPunch::pOut, 0.f); a.set (InjPunch::pRatio, 3.f); auto oa = a.run (in);
+      const float ga = a.fx->meterA.load(); chk (ga > 6.f, "punch comp: con entrada alta y 4:1 comprime (" + juce::String (ga, 1) + " dB)");
+      Rig b (edit, InjPunch::xmlTypeName); b.set (InjPunch::pIn, 6.f); b.set (InjPunch::pAtk, 0.f); b.set (InjPunch::pRel, 3.f); b.set (InjPunch::pOut, 0.f); b.set (InjPunch::pRatio, 6.f); b.run (in);
+      chk (b.fx->meterA.load() > ga + 1.f, "punch comp: 20:1 comprime mas que 4:1 (" + juce::String (b.fx->meterA.load(), 1) + " vs " + juce::String (ga, 1) + " dB)");
+      Rig c (edit, InjPunch::xmlTypeName); c.set (InjPunch::pIn, 6.f); c.set (InjPunch::pRatio, 0.f); c.run (in); chk (c.fx->meterA.load() < .3f, "punch comp: 1:1 no comprime");
+      Rig d (edit, InjPunch::xmlTypeName); d.set (InjPunch::pIn, 8.f); d.set (InjPunch::pOut, 0.f); d.set (InjPunch::pByp, 1.f); auto od = d.run (in); chk (std::abs (rmsDb (od, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) < .05, "punch comp: bypass deja el sonido igual");
+      auto lo = sine (60, .5f, 1.5); Rig e0 (edit, InjPunch::xmlTypeName); e0.set (InjPunch::pIn, 6.f); e0.set (InjPunch::pRatio, 3.f); e0.run (lo); Rig e1 (edit, InjPunch::xmlTypeName); e1.set (InjPunch::pIn, 6.f); e1.set (InjPunch::pRatio, 3.f); e1.set (InjPunch::pDet, 1.f); e1.run (lo);
+      chk (e0.fx->meterA.load() > 6.f && e1.fx->meterA.load() < e0.fx->meterA.load() - 4.f, "punch comp: el filtro HP del detector ignora los graves (" + juce::String (e0.fx->meterA.load(), 1) + " dB libre, " + juce::String (e1.fx->meterA.load(), 1) + " dB con HP)");
+      Rig f0 (edit, InjPunch::xmlTypeName); f0.set (InjPunch::pIn, 6.f); f0.set (InjPunch::pOut, 4.f); auto of0 = f0.run (in); Rig f1 (edit, InjPunch::xmlTypeName); f1.set (InjPunch::pIn, 6.f); f1.set (InjPunch::pOut, 4.f); f1.set (InjPunch::pSat, 3.f); auto of1 = f1.run (in);
+      float dif = 0.f; for (int i = 20000; i < 40000; ++i) dif = std::max (dif, std::abs (of0.getSample (0, i) - of1.getSample (0, i))); chk (dif > .02f, "punch comp: la saturacion NUKE cambia la onda (" + juce::String (dif, 3) + ")");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800 && ed->getHeight() > 250, "punch comp: la ventana con el panel se crea (" + juce::String (ed != nullptr ? ed->getWidth() : 0) + "x" + juce::String (ed != nullptr ? ed->getHeight() : 0) + ")"); }
+    // ---- FET Compressor (panel de equipo)
+    { auto in = sine (1000, .5f, 1.5); auto qin = sine (1000, .01f, 1.5);
+      Rig a (edit, InjFet::xmlTypeName); a.set (InjFet::pIn, 30.f); a.set (InjFet::pAtk, 5.f); a.set (InjFet::pRel, 4.f); a.set (InjFet::pRatio, 0.f); a.run (in); const float g4 = a.fx->meterA.load();
+      Rig b (edit, InjFet::xmlTypeName); b.set (InjFet::pIn, 30.f); b.set (InjFet::pAtk, 5.f); b.set (InjFet::pRel, 4.f); b.set (InjFet::pRatio, 3.f); b.run (in); const float g20 = b.fx->meterA.load();
+      chk (g4 > 8.f && g20 > g4 + 1.f, "fet: 20:1 comprime mas que 4:1 (" + juce::String (g20, 1) + " vs " + juce::String (g4, 1) + " dB)");
+      Rig c (edit, InjFet::xmlTypeName); c.set (InjFet::pIn, 6.f); c.set (InjFet::pOut, 24.f); c.run (qin); chk (c.fx->meterA.load() < .3f, "fet: con poca entrada no comprime");
+      Rig d (edit, InjFet::xmlTypeName); d.set (InjFet::pIn, 0.f); d.set (InjFet::pOut, 24.f); auto od = d.run (qin); chk (std::abs (rmsDb (od, 1.0, 1.4) - rmsDb (qin, 1.0, 1.4)) < .1, "fet: entrada 0 y salida 24 dejan el nivel igual");
+      Rig e (edit, InjFet::xmlTypeName); e.set (InjFet::pIn, 30.f); e.set (InjFet::pOut, 12.f); auto oe = e.run (in); Rig f (edit, InjFet::xmlTypeName); f.set (InjFet::pIn, 30.f); f.set (InjFet::pOut, 36.f); auto of = f.run (in);
+      chk (std::abs ((rmsDb (of, 1.0, 1.4) - rmsDb (oe, 1.0, 1.4)) - 24.0) < 1.0, "fet: la salida sube 24 dB al pasar de 12 a 36 (" + juce::String (rmsDb (of, 1.0, 1.4) - rmsDb (oe, 1.0, 1.4), 1) + ")");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800 && ed->getHeight() > 250, "fet: la ventana con el panel se crea"); }
+    // ---- Glue Comp
+    { auto in = sine (1000, .5f, 1.5);
+      Rig a (edit, InjGlue::xmlTypeName); a.set (InjGlue::pThr, -24.f); a.set (InjGlue::pRatio, 1.f); a.set (InjGlue::pAtk, 1.f); a.set (InjGlue::pRel, .3f); a.set (InjGlue::pMk, 0.f); auto oa = a.run (in);
+      const double g = rmsDb (oa, 1.0, 1.4) - rmsDb (in, 1.0, 1.4); chk (std::abs (g + 13.5) < 1.5, "glue: -24 dB, 4:1, entrada -6 dB baja ~13.5 dB (" + juce::String (g, 2) + ")");
+      Rig b (edit, InjGlue::xmlTypeName); b.set (InjGlue::pThr, -24.f); b.set (InjGlue::pRatio, 2.f); b.set (InjGlue::pAtk, 1.f); b.set (InjGlue::pRel, .3f); b.run (in); chk (b.fx->meterA.load() > a.fx->meterA.load() + 1.f, "glue: 10:1 comprime mas que 4:1");
+      Rig c (edit, InjGlue::xmlTypeName); c.set (InjGlue::pIn, 0.f); c.set (InjGlue::pThr, -30.f); auto oc = c.run (in); chk (std::abs (rmsDb (oc, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) < .05, "glue: con IN apagado no toca la senal");
+      Rig d (edit, InjGlue::xmlTypeName); d.set (InjGlue::pThr, 0.f); d.set (InjGlue::pMk, 6.f); auto od = d.run (in); chk (std::abs ((rmsDb (od, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) - 6.0) < .3, "glue: la ganancia de salida suma 6 dB");
+      Rig e (edit, InjGlue::xmlTypeName); e.set (InjGlue::pThr, 0.f); e.set (InjGlue::pFade, 1.f); auto oe = e.run (sine (1000, .5f, 6.0)); chk (rmsDb (oe, 5.5, 5.9) < rmsDb (oe, 0.1, .5) - 30.0, "glue: el fundido baja la senal a silencio en 5 s");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getHeight() > 600 && ed->getWidth() > 400, "glue: la ventana con el panel se crea"); }
+    // ---- Optical Comp
+    { auto in = sine (1000, .5f, 1.5);
+      Rig a (edit, InjOptical::xmlTypeName); a.set (InjOptical::pPeak, 50.f); a.set (InjOptical::pGain, 0.f); a.set (InjOptical::pOut, 10.f); a.run (in); const float gc = a.fx->meterA.load();
+      Rig b (edit, InjOptical::xmlTypeName); b.set (InjOptical::pPeak, 50.f); b.set (InjOptical::pGain, 0.f); b.set (InjOptical::pLimit, 1.f); b.run (in); const float gl = b.fx->meterA.load();
+      chk (gc > 6.f && gl > gc + 2.f, "optical: Limit comprime mas que Compress (" + juce::String (gl, 1) + " vs " + juce::String (gc, 1) + " dB)");
+      Rig c (edit, InjOptical::xmlTypeName); c.set (InjOptical::pPeak, 0.f); c.set (InjOptical::pGain, 0.f); c.set (InjOptical::pOut, 10.f); auto oc = c.run (in); chk (std::abs (rmsDb (oc, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) < .4, "optical: sin Peak Reduction casi no toca la senal (" + juce::String (rmsDb (oc, 1.0, 1.4) - rmsDb (in, 1.0, 1.4), 2) + ")");
+      Rig d (edit, InjOptical::xmlTypeName); d.set (InjOptical::pPeak, 0.f); d.set (InjOptical::pGain, 40.f); auto od = d.run (in); chk (std::abs ((rmsDb (od, 1.0, 1.4) - rmsDb (oc, 1.0, 1.4)) - 10.0) < .6, "optical: Gain 40 suma 10 dB");
+      Rig e (edit, InjOptical::xmlTypeName); e.set (InjOptical::pPeak, 0.f); e.set (InjOptical::pGain, 0.f); e.set (InjOptical::pOut, 5.f); auto oe = e.run (in); chk (std::abs ((rmsDb (oc, 1.0, 1.4) - rmsDb (oe, 1.0, 1.4)) - 12.0) < .6, "optical: Output 5 baja 12 dB");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800, "optical: la ventana con el panel se crea"); }
+    // ---- Dual Comp
+    { auto in = sine (1000, .5f, 1.5); auto qin = sine (1000, .01f, 1.5);
+      Rig a (edit, InjDual::xmlTypeName); a.set (InjDual::pIn0, 12.f); a.set (InjDual::pIn1, 12.f); a.set (InjDual::pThr0, -30.f); a.set (InjDual::pThr1, -30.f); a.set (InjDual::pTc0, 0.f); a.set (InjDual::pTc1, 0.f); a.run (in);
+      chk (a.fx->meterA.load() > 6.f && a.fx->meterB.load() > 6.f, "dual: izquierda-derecha comprime los dos canales (" + juce::String (a.fx->meterA.load(), 1) + " y " + juce::String (a.fx->meterB.load(), 1) + " dB)");
+      Rig b (edit, InjDual::xmlTypeName); b.set (InjDual::pIn0, 12.f); b.set (InjDual::pIn1, 12.f); b.set (InjDual::pThr0, -30.f); b.set (InjDual::pThr1, -30.f); b.set (InjDual::pTc0, 0.f); b.set (InjDual::pTc1, 0.f); b.set (InjDual::pMode, 1.f); b.run (in);
+      chk (b.fx->meterA.load() > 6.f && b.fx->meterB.load() < .3f, "dual: lateral-vertical con senal mono solo comprime el centro (" + juce::String (b.fx->meterA.load(), 1) + " y " + juce::String (b.fx->meterB.load(), 1) + " dB)");
+      Rig c (edit, InjDual::xmlTypeName); c.set (InjDual::pIn0, 0.f); c.set (InjDual::pIn1, 0.f); c.set (InjDual::pThr0, 0.f); c.set (InjDual::pThr1, 0.f); auto oc = c.run (qin); chk (std::abs (rmsDb (oc, 1.0, 1.4) - rmsDb (qin, 1.0, 1.4)) < .1, "dual: entrada 0 y umbral 0 dejan el nivel igual");
+      Rig d (edit, InjDual::xmlTypeName); d.set (InjDual::pIn0, 12.f); d.set (InjDual::pThr0, -30.f); d.set (InjDual::pOn, 0.f); auto od = d.run (in); chk (std::abs (rmsDb (od, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) < .01, "dual: apagado deja la senal intacta");
+      Rig e (edit, InjDual::xmlTypeName); e.set (InjDual::pIn0, 12.f); e.set (InjDual::pThr0, -30.f); e.set (InjDual::pTc0, 0.f); e.run (in); const float r1 = e.fx->meterA.load();
+      Rig f (edit, InjDual::xmlTypeName); f.set (InjDual::pIn0, 12.f); f.set (InjDual::pThr0, -10.f); f.set (InjDual::pTc0, 0.f); f.run (in); chk (r1 > f.fx->meterA.load() + 3.f, "dual: un umbral mas bajo comprime mas");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 700 && ed->getHeight() > 350, "dual: la ventana con el panel se crea"); }
+    // ---- Pulso EQ
+    { auto gainAt = [&] (std::initializer_list<std::pair<int, float>> ps, float hz) { auto in = sine (hz, .1f, 1.5); Rig r (edit, InjPulso::xmlTypeName); for (auto& q : ps) r.set (q.first, q.second); auto o = r.run (in); return rmsDb (o, 1.0, 1.4) - rmsDb (in, 1.0, 1.4); };
+      chk (gainAt ({ { InjPulso::pHfB, 10.f }, { InjPulso::pKcs, 3.f } }, 8000.f) > 10.f, "pulso: boost de agudos a 8 kHz sube mas de 10 dB");
+      chk (gainAt ({ { InjPulso::pHfA, 10.f }, { InjPulso::pAsel, 1.f } }, 14000.f) < -8.f, "pulso: atten de agudos a 10 kHz baja mas de 8 dB");
+      chk (gainAt ({ { InjPulso::pLfB, 10.f }, { InjPulso::pCps, 2.f } }, 50.f) > 8.f && std::abs (gainAt ({ { InjPulso::pLfB, 10.f }, { InjPulso::pCps, 2.f } }, 1000.f)) < .6f, "pulso: boost de graves a 60 Hz sube y no toca los 1000 Hz");
+      chk (gainAt ({ { InjPulso::pHfB, 10.f }, { InjPulso::pKcs, 2.f }, { InjPulso::pBw, 10.f } }, 3500.f) > gainAt ({ { InjPulso::pHfB, 10.f }, { InjPulso::pKcs, 2.f }, { InjPulso::pBw, 1.f } }, 3500.f) + 3.f, "pulso: ancho de banda amplio abre mas que el estrecho");
+      chk (std::abs (gainAt ({ { InjPulso::pHfB, 10.f }, { InjPulso::pIn, 0.f } }, 5000.f)) < .01f && std::abs (gainAt ({ { InjPulso::pHfB, 10.f }, { InjPulso::pOn, 0.f } }, 5000.f)) < .01f, "pulso: fuera y apagado dejan la senal intacta");
+      Rig w (edit, InjPulso::xmlTypeName); auto ed = w.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 900 && ed->getHeight() > 250, "pulso: la ventana con el panel se crea"); }
+    // ---- Classic EQ
+    { auto gainAt = [&] (std::initializer_list<std::pair<int, float>> ps, float hz) { auto in = sine (hz, .1f, 1.5); Rig r (edit, InjClassic::xmlTypeName); for (auto& q : ps) r.set (q.first, q.second); auto o = r.run (in); return rmsDb (o, 1.0, 1.4) - rmsDb (in, 1.0, 1.4); };
+      chk (std::abs (gainAt ({ { InjClassic::pHmG, 9.f }, { InjClassic::pHmF, 1.f } }, 1000.f) - 9.f) < .8f, "classic: HMF +9 dB a 1 kHz sube 9 dB (" + juce::String (gainAt ({ { InjClassic::pHmG, 9.f }, { InjClassic::pHmF, 1.f } }, 1000.f), 1) + ")");
+      chk (gainAt ({ { InjClassic::pLfG, -9.f }, { InjClassic::pLfF, 2.f }, { InjClassic::pLfShelf, 1.f } }, 40.f) < -6.f, "classic: LF shelf -9 dB baja los graves");
+      chk (gainAt ({ { InjClassic::pHfG, 9.f }, { InjClassic::pHfF, 3.f }, { InjClassic::pHfShelf, 1.f } }, 16000.f) > 6.f && gainAt ({ { InjClassic::pHfG, 9.f }, { InjClassic::pHfF, 3.f }, { InjClassic::pHfShelf, 0.f } }, 16000.f) < gainAt ({ { InjClassic::pHfG, 9.f }, { InjClassic::pHfF, 3.f }, { InjClassic::pHfShelf, 1.f } }, 16000.f) - 3.f, "classic: HF shelf sube los agudos mas que el pico");
+      chk (std::abs (gainAt ({ { InjClassic::pHmG, 9.f }, { InjClassic::pIn, 0.f } }, 1000.f)) < .01f, "classic: fuera deja la senal intacta");
+      Rig w (edit, InjClassic::xmlTypeName); auto ed = w.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 250 && ed->getHeight() > 650, "classic: la ventana con el panel se crea (" + juce::String (ed != nullptr ? ed->getWidth() : 0) + "x" + juce::String (ed != nullptr ? ed->getHeight() : 0) + ")"); }
+    // ---- Airlift EQ
+    { auto gainAt = [&] (std::initializer_list<std::pair<int, float>> ps, float hz) { auto in = sine (hz, .1f, 1.5); Rig r (edit, InjAirlift::xmlTypeName); for (auto& q : ps) r.set (q.first, q.second); auto o = r.run (in); return rmsDb (o, 1.0, 1.4) - rmsDb (in, 1.0, 1.4); };
+      chk (gainAt ({ { InjAirlift::p25, 10.f } }, 2500.f) > 12.f, "airlift: 2.5 kHz al maximo sube mas de 12 dB");
+      chk (gainAt ({ { InjAirlift::pAir, 10.f }, { InjAirlift::pAirF, 3.f } }, 16000.f) > 10.f && gainAt ({ { InjAirlift::pAir, 10.f }, { InjAirlift::pAirF, 0.f } }, 16000.f) < .3f, "airlift: la banda de aire sube los agudos y apagada no hace nada");
+      chk (gainAt ({ { InjAirlift::pSub, 10.f } }, 25.f) > 8.f && std::abs (gainAt ({ { InjAirlift::pSub, 10.f } }, 3000.f)) < .5f, "airlift: sub sube los graves y deja los medios (" + juce::String (gainAt ({ { InjAirlift::pSub, 10.f } }, 25.f), 1) + " y " + juce::String (gainAt ({ { InjAirlift::pSub, 10.f } }, 3000.f), 1) + ")");
+      chk (std::abs (gainAt ({ { InjAirlift::p160, 10.f }, { InjAirlift::pIn, 0.f } }, 160.f)) < .01f, "airlift: fuera deja la senal intacta");
+      { auto in = sine (1000, .9f, 1.0); Rig r (edit, InjAirlift::xmlTypeName); r.run (in); chk (r.fx->meterA.load() > -2.f, "airlift: el medidor de pico sigue la salida (" + juce::String (r.fx->meterA.load(), 1) + " dB)"); }
+      Rig w (edit, InjAirlift::xmlTypeName); auto ed = w.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 250 && ed->getHeight() > 650, "airlift: la ventana con el panel se crea"); }
+    // ---- Black Brown EQ
+    { auto gainAt = [&] (std::initializer_list<std::pair<int, float>> ps, float hz) { auto in = sine (hz, .1f, 1.5); Rig r (edit, InjBlackBrown::xmlTypeName); for (auto& q : ps) r.set (q.first, q.second); auto o = r.run (in); return rmsDb (o, 1.0, 1.4) - rmsDb (in, 1.0, 1.4); };
+      chk (gainAt ({ { InjBlackBrown::pHmG, 9.f }, { InjBlackBrown::pHmF, 2000.f } }, 2000.f) > 8.f, "blackbrown: HMF +9 dB sube en su frecuencia");
+      chk (gainAt ({ { InjBlackBrown::pLfG, 12.f }, { InjBlackBrown::pLfF, 100.f } }, 30.f) > 8.f && std::abs (gainAt ({ { InjBlackBrown::pLfG, 12.f }, { InjBlackBrown::pLfF, 100.f } }, 3000.f)) < .5f, "blackbrown: LF shelf sube los graves y deja los medios");
+      chk (gainAt ({ { InjBlackBrown::pHpf, 4.f } }, 40.f) < -10.f && std::abs (gainAt ({ { InjBlackBrown::pHpf, 4.f } }, 2000.f)) < .3f, "blackbrown: HPF 160 Hz corta los graves");
+      chk (gainAt ({ { InjBlackBrown::pLpf, 2.f } }, 10000.f) < -10.f && std::abs (gainAt ({ { InjBlackBrown::pLpf, 2.f } }, 500.f)) < .3f, "blackbrown: LPF 3 kHz corta los agudos");
+      chk (gainAt ({ { InjBlackBrown::pHmG, 12.f }, { InjBlackBrown::pHmF, 2000.f }, { InjBlackBrown::pType, 1.f } }, 3000.f) > gainAt ({ { InjBlackBrown::pHmG, 12.f }, { InjBlackBrown::pHmF, 2000.f }, { InjBlackBrown::pType, 0.f } }, 3000.f) + .3f, "blackbrown: Brown es mas ancho que Black");
+      chk (std::abs (gainAt ({ { InjBlackBrown::pHmG, 9.f }, { InjBlackBrown::pBypass, 1.f } }, 2000.f)) < .01f && std::abs (gainAt ({ { InjBlackBrown::pHmG, 9.f }, { InjBlackBrown::pDyn, 1.f } }, 2000.f)) < .01f, "blackbrown: bypass y Dyn S-C dejan el audio intacto");
+      Rig w (edit, InjBlackBrown::xmlTypeName); auto ed = w.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 300 && ed->getHeight() > 650, "blackbrown: la ventana con el panel se crea"); }
+    // ---- Master EQ
+    { auto chGain = [&] (std::initializer_list<std::pair<int, float>> ps, float hz, int ch) { auto in = sine (hz, .1f, 1.5); Rig r (edit, InjMaster::xmlTypeName); for (auto& q : ps) r.set (q.first, q.second); auto o = r.run (in);
+          auto rms = [&] (const Buf& b) { double s = 0; int n = 0; for (int i = (int) (1.0 * SR); i < (int) (1.4 * SR); ++i) { const double x = b.getSample (ch, i); s += x * x; ++n; } return 10.0 * std::log10 (s / n + 1e-20); }; return rms (o) - rms (in); };
+      chk (chGain ({ { InjMaster::G (0, 0), 12.f }, { InjMaster::SH (0, 0), 0.f } }, 100.f, 0) > 8.f && std::abs (chGain ({ { InjMaster::G (0, 0), 12.f }, { InjMaster::SH (0, 0), 0.f } }, 100.f, 1)) < .1f, "master: el canal izquierdo se ecualiza sin tocar el derecho");
+      chk (chGain ({ { InjMaster::G (1, 2), 9.f }, { InjMaster::F (1, 2), 1.f } }, 3000.f, 1) > 7.f && std::abs (chGain ({ { InjMaster::G (1, 2), 9.f }, { InjMaster::F (1, 2), 1.f } }, 3000.f, 0)) < .1f, "master: el canal derecho se ecualiza sin tocar el izquierdo");
+      chk (chGain ({ { InjMaster::G (0, 1), 10.f }, { InjMaster::MU (0, 1), 1.f } }, 1500.f, 0) < .1f, "master: rango 'Fuera' anula la banda");
+      { const float a = (float) chGain ({ { InjMaster::G (0, 1), 6.f }, { InjMaster::F (0, 1), 1.f } }, 1500.f, 0), b2 = (float) chGain ({ { InjMaster::G (0, 1), 6.f }, { InjMaster::F (0, 1), 1.f }, { InjMaster::MU (0, 1), 2.f } }, 1500.f, 0); chk (std::abs (b2 - a * 1.5f) < .8f, "master: rango x1.5 multiplica la ganancia (" + juce::String (a, 1) + " -> " + juce::String (b2, 1) + ")"); }
+      chk (chGain ({ { InjMaster::HP (0), 3.f } }, 40.f, 0) < -8.f && std::abs (chGain ({ { InjMaster::HP (0), 3.f } }, 40.f, 1)) < .1f, "master: pasaaltos 100 Hz corta solo el canal izquierdo");
+      chk (chGain ({ { InjMaster::HP (0), 3.f }, { InjMaster::HPI (0), 0.f } }, 40.f, 0) > -.1f, "master: boton IN apagado deja pasar el pasaaltos");
+      chk (chGain ({ { InjMaster::LP (1), 1.f } }, 10000.f, 1) < -10.f, "master: pasabajos 3 kHz corta los agudos");
+      chk (std::abs (chGain ({ { InjMaster::OUT (0), 6.f } }, 1000.f, 0) - 6.f) < .2f, "master: salida +6 dB");
+      chk (std::abs (chGain ({ { InjMaster::G (0, 0), 12.f }, { InjMaster::pOn, 0.f } }, 100.f, 0)) < .01f, "master: apagado deja la senal intacta");
+      Rig w (edit, InjMaster::xmlTypeName); auto ed = w.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 900 && ed->getHeight() > 300, "master: la ventana con el panel se crea"); }
+    // ---- Dual Gate
+    { auto loud = sine (1000, .5f, 1.5); auto quiet = sine (1000, .01f, 1.5);
+      Rig a (edit, InjGateDS::xmlTypeName); a.set (InjGateDS::THR (0), -20.f); a.set (InjGateDS::THR (1), -20.f); auto oa = a.run (loud); chk (std::abs (rmsDb (oa, 1.0, 1.4) - rmsDb (loud, 1.0, 1.4)) < .6, "gate: la senal fuerte pasa");
+      Rig b (edit, InjGateDS::xmlTypeName); b.set (InjGateDS::THR (0), -20.f); b.set (InjGateDS::THR (1), -20.f); auto ob = b.run (quiet); chk (rmsDb (ob, 1.0, 1.4) < rmsDb (quiet, 1.0, 1.4) - 20.0, "gate: la senal por debajo del umbral se corta mas de 20 dB (" + juce::String (rmsDb (ob, 1.0, 1.4) - rmsDb (quiet, 1.0, 1.4), 1) + ")");
+      Rig c (edit, InjGateDS::xmlTypeName); c.set (InjGateDS::THR (0), -20.f); c.set (InjGateDS::INN (0), 0.f); c.set (InjGateDS::INN (1), 0.f); auto oc = c.run (quiet); chk (std::abs (rmsDb (oc, 1.0, 1.4) - rmsDb (quiet, 1.0, 1.4)) < .05, "gate: con IN apagado no toca la senal");
+      Rig d (edit, InjGateDS::xmlTypeName); d.set (InjGateDS::THR (0), -40.f); auto od = d.run (quiet); chk (d.fx->meterA.load() > -50.f, "gate: el medidor de la cadena lateral se mueve");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800, "gate: la ventana con el panel se crea"); }
+    // ---- De-Esser
+    { auto hi = sine (8000, .3f, 1.5); auto lo = sine (200, .3f, 1.5);
+      Rig a (edit, InjDeEsser::xmlTypeName); a.set (InjDeEsser::pFreq, 8000.f); a.set (InjDeEsser::pRange, 15.f); auto oa = a.run (hi); chk (rmsDb (oa, 1.0, 1.4) < rmsDb (hi, 1.0, 1.4) - 5.0, "de-esser: baja la sibilancia de 8 kHz (" + juce::String (rmsDb (oa, 1.0, 1.4) - rmsDb (hi, 1.0, 1.4), 1) + ")");
+      Rig b (edit, InjDeEsser::xmlTypeName); b.set (InjDeEsser::pFreq, 8000.f); b.set (InjDeEsser::pRange, 15.f); auto ob = b.run (lo); chk (std::abs (rmsDb (ob, 1.0, 1.4) - rmsDb (lo, 1.0, 1.4)) < .8, "de-esser: no toca los graves");
+      Rig c (edit, InjDeEsser::xmlTypeName); c.set (InjDeEsser::pFreq, 8000.f); c.set (InjDeEsser::pListen, 1.f); auto oc = c.run (lo); chk (rmsDb (oc, 1.0, 1.4) < rmsDb (lo, 1.0, 1.4) - 20.0, "de-esser: escuchar la cadena lateral solo deja la banda");
+      Rig d (edit, InjDeEsser::xmlTypeName); d.set (InjDeEsser::pOut, 6.f); d.set (InjDeEsser::pRange, 0.f); auto od = d.run (lo); chk (std::abs ((rmsDb (od, 1.0, 1.4) - rmsDb (lo, 1.0, 1.4)) - 6.0) < .4, "de-esser: la salida suma 6 dB");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800, "de-esser: la ventana con el panel se crea"); }
+    // ---- Tube Saturation
+    { using T = InjTubeSat; auto lo = sine (1000, .05f, 1.5), hi = sine (1000, .1f, 1.5), big = sine (1000, .4f, 1.5), tone10 = sine (10000, .05f, 1.5);
+      Rig a (edit, T::xmlTypeName); a.set (T::P (0, T::oDrive), 0.f); a.set (T::P (0, T::oOut), 5.f); auto oa = a.run (lo), ob = a.run (hi); chk (std::abs ((rmsDb (ob, 1.0, 1.4) - rmsDb (oa, 1.0, 1.4)) - 6.0) < .6, "tube sat: con drive 0 y senal baja es casi lineal");
+      Rig b (edit, T::xmlTypeName); b.set (T::P (0, T::oDrive), 10.f); auto oc = b.run (lo), od = b.run (big); chk (rmsDb (od, 1.0, 1.4) - rmsDb (oc, 1.0, 1.4) < 12.0, "tube sat: con drive 10 comprime la senal fuerte (" + juce::String (rmsDb (od, 1.0, 1.4) - rmsDb (oc, 1.0, 1.4), 1) + " dB de 18)");
+      Rig c (edit, T::xmlTypeName); c.set (T::P (0, T::oByp), 1.f); c.set (T::P (1, T::oByp), 1.f); auto oe = c.run (big); chk (std::abs (rmsDb (oe, 1.0, 1.4) - rmsDb (big, 1.0, 1.4)) < .05, "tube sat: bypass del canal deja pasar la senal");
+      Rig d (edit, T::xmlTypeName); d.set (T::pPower, 0.f); auto of = d.run (big); chk (std::abs (rmsDb (of, 1.0, 1.4) - rmsDb (big, 1.0, 1.4)) < .05, "tube sat: apagado no toca la senal");
+      Rig e1 (edit, T::xmlTypeName); for (int q = 0; q < 2; ++q) { e1.set (T::P (q, T::oDrive), 1.f); e1.set (T::P (q, T::oFilt), 0.f); } Rig e2 (edit, T::xmlTypeName); for (int q = 0; q < 2; ++q) { e2.set (T::P (q, T::oDrive), 1.f); e2.set (T::P (q, T::oFilt), 2.f); }
+      chk (rmsDb (e2.run (tone10), 1.0, 1.4) < rmsDb (e1.run (tone10), 1.0, 1.4) - 5.0, "tube sat: el filtro de 6 kHz baja un tono de 10 kHz");
+      Rig f1 (edit, T::xmlTypeName); Rig f2 (edit, T::xmlTypeName); for (int q = 0; q < 2; ++q) { f1.set (T::P (q, T::oOut), 0.f); f2.set (T::P (q, T::oOut), 10.f); } chk (rmsDb (f2.run (lo), 1.0, 1.4) - rmsDb (f1.run (lo), 1.0, 1.4) > 25.0, "tube sat: output de 0 a 10 cambia unos 30 dB");
+      Rig g1 (edit, T::xmlTypeName); g1.set (T::P (0, T::oDrive), 6.f); auto og1 = g1.run (big); Rig g2 (edit, T::xmlTypeName); g2.set (T::P (0, T::oDrive), 6.f); g2.set (T::P (0, T::oOver), 1.f); auto og2 = g2.run (big);
+      chk (rmsDb (og2, 1.0, 1.4) != rmsDb (og1, 1.0, 1.4), "tube sat: overdrive cambia el sonido"); float mx = 0; for (int i = 0; i < og1.getNumSamples(); ++i) mx = std::max (mx, std::abs (og1.getSample (0, i))); chk (std::isfinite (mx) && mx < 4.f, "tube sat: la salida es finita y acotada");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 500, "tube sat: la ventana con el panel se crea"); }
+    // ---- Tape Saturation
+    { using T = InjTapeSat; auto lo = sine (1000, .05f, 1.5), big = sine (1000, .4f, 1.5), t14 = sine (14000, .05f, 1.5), t10 = sine (10000, .02f, 1.5), sil = Buf (2, (int) (1.5 * SR));
+      sil.clear();
+      Rig a (edit, T::xmlTypeName); a.set (T::pDrive, 0.f); auto oa = a.run (lo); chk (std::abs (rmsDb (oa, 1.0, 1.4) - rmsDb (lo, 1.0, 1.4)) < .8, "tape: con drive 0 y senal baja no cambia el nivel (" + juce::String (rmsDb (oa, 1.0, 1.4) - rmsDb (lo, 1.0, 1.4), 2) + " dB)");
+      Rig b (edit, T::xmlTypeName); b.set (T::pDrive, 0.f); b.set (T::pOut, 12.f); chk (std::abs ((rmsDb (b.run (lo), 1.0, 1.4) - rmsDb (oa, 1.0, 1.4)) - 12.0) < .5, "tape: la salida suma 12 dB");
+      Rig c (edit, T::xmlTypeName); c.set (T::pDrive, 10.f); chk (rmsDb (c.run (big), 1.0, 1.4) - rmsDb (c.run (lo), 1.0, 1.4) < 14.0, "tape: con drive 10 comprime la senal fuerte");
+      Rig d (edit, T::xmlTypeName); d.set (T::pMix, 0.f); d.set (T::pDrive, 10.f); chk (std::abs (rmsDb (d.run (big), 1.0, 1.4) - rmsDb (big, 1.0, 1.4)) < .1, "tape: con mezcla 0 deja pasar la senal seca");
+      Rig e1 (edit, T::xmlTypeName); e1.set (T::pDrive, 0.f); e1.set (T::pSpeed, 0.f); Rig e2 (edit, T::xmlTypeName); e2.set (T::pDrive, 0.f); e2.set (T::pSpeed, 2.f); chk (rmsDb (e1.run (t14), 1.0, 1.4) < rmsDb (e2.run (t14), 1.0, 1.4) - 3.0, "tape: a 7.5 ips caen los agudos frente a 30 ips");
+      Rig f1 (edit, T::xmlTypeName); f1.set (T::pDrive, 0.f); Rig f2 (edit, T::xmlTypeName); f2.set (T::pDrive, 0.f); f2.set (T::pHF, 6.f); const double hfd = rmsDb (f2.run (t10), 1.0, 1.4) - rmsDb (f1.run (t10), 1.0, 1.4); chk (hfd > 4.0 && hfd < 7.5, "tape: recorte de agudos +6 sube un tono de 10 kHz (" + juce::String (hfd, 1) + " dB)");
+      Rig h1 (edit, T::xmlTypeName); Rig h2 (edit, T::xmlTypeName); h2.set (T::pHum, 1.f); chk (rmsDb (h1.run (sil), 0.5, 1.4) < -100.0 && rmsDb (h2.run (sil), 0.5, 1.4) > -75.0, "tape: el zumbido solo suena si se enciende");
+      Rig i1 (edit, T::xmlTypeName); i1.set (T::pType, 1.f); i1.set (T::pDrive, 8.f); auto oi = i1.run (big); float mx = 0; for (int q = 0; q < oi.getNumSamples(); ++q) mx = std::max (mx, std::abs (oi.getSample (0, q))); chk (std::isfinite (mx) && mx < 3.f, "tape: la salida es finita y acotada");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 500, "tape: la ventana con el panel se crea"); }
+    // ---- Spring Reverb
+    { using T = InjSpring; auto tone = sine (1000, .2f, 1.5), burst = noise (.4f, .3, 3); burst.setSize (2, (int) (2.0 * SR), true); for (int c = 0; c < 2; ++c) burst.clear (c, (int) (.3 * SR), burst.getNumSamples() - (int) (.3 * SR));
+      Rig a (edit, T::xmlTypeName); a.set (T::pMix, 0.f); chk (std::abs (rmsDb (a.run (tone), 1.0, 1.4) - rmsDb (tone, 1.0, 1.4)) < .1, "spring: con mix 0 deja pasar la senal seca");
+      Rig b (edit, T::xmlTypeName); b.set (T::pMix, 6.f); auto ob = b.run (burst); const double tail = rmsDb (ob, .45, .9); chk (tail > -60.0 && tail < rmsDb (burst, 0.0, .3) - 6.0, "spring: deja una cola tras el golpe (" + juce::String (tail, 1) + " dB)");
+      Rig c (edit, T::xmlTypeName); c.set (T::pMix, 0.f); auto oc = c.run (burst); chk (rmsDb (oc, .45, .9) < -100.0, "spring: sin mezcla no hay cola");
+      Rig d (edit, T::xmlTypeName); d.set (T::pMix, 8.f); d.set (T::pEffect, 0.f); auto od = d.run (burst); chk (rmsDb (od, .6, .9) < -90.0, "spring: con el efecto parado no hay cola (" + juce::String (rmsDb (od, .6, .9), 1) + " dB)");
+      Rig e1 (edit, T::xmlTypeName); e1.set (T::pMix, 0.f); e1.set (T::pOut, 0.f); Rig e2 (edit, T::xmlTypeName); e2.set (T::pMix, 0.f); e2.set (T::pOut, 10.f); chk (std::abs ((rmsDb (e2.run (tone), 1.0, 1.4) - rmsDb (e1.run (tone), 1.0, 1.4)) - 24.0) < .5, "spring: output de 0 a 10 cambia 24 dB");
+      auto hiB = sine (6000, .4f, .3); hiB.setSize (2, (int) (2.0 * SR), true); for (int c = 0; c < 2; ++c) hiB.clear (c, (int) (.3 * SR), hiB.getNumSamples() - (int) (.3 * SR));
+      Rig f1 (edit, T::xmlTypeName); f1.set (T::pMix, 8.f); f1.set (T::pTone, 0.f); Rig f2 (edit, T::xmlTypeName); f2.set (T::pMix, 8.f); f2.set (T::pTone, 10.f); const double tl = rmsDb (f1.run (hiB), .4, .9), th = rmsDb (f2.run (hiB), .4, .9); chk (th > tl + 6.0, "spring: tone abierto deja pasar mas agudos en la cola (" + juce::String (th - tl, 1) + " dB)");
+      Rig g (edit, T::xmlTypeName); g.set (T::pGain, 10.f); g.set (T::pMix, 10.f); auto og = g.run (noise (.9f, 2.0, 5)); float mx = 0; for (int i = 0; i < og.getNumSamples(); ++i) mx = std::max (mx, std::abs (og.getSample (0, i))); chk (std::isfinite (mx) && mx < 8.f, "spring: la salida es finita y acotada (" + juce::String (mx, 2) + ")");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800, "spring: la ventana con el panel se crea"); }
+    // ---- Tape Echo
+    { using T = InjTapeEcho; auto setTime = [] (Rig& r, int mode, float rate) { r.set (T::pMode, (float) mode); r.set (T::pRate, rate); r.set (T::pInt, 0.f); r.set (T::pRev, 0.f); r.set (T::pBal, .5f); r.set (T::pEcho, 10.f); };
+      auto firstEcho = [&] (Rig& r) { auto o = r.run (impulse (1.5, .5f, 1000)); std::vector<int> at; for (int i = 4000; i < o.getNumSamples() - 2; ++i) { const float a = std::abs (o.getSample (0, i)); if (a > .03f && a >= std::abs (o.getSample (0, i - 1)) && a >= std::abs (o.getSample (0, i + 1)) && (at.empty() || i - at.back() > 200)) at.push_back (i - 1000); } return at; };
+      Rig a (edit, T::xmlTypeName); setTime (a, 0, 5.f); auto ea = firstEcho (a); const int exp1 = (int) std::lround (.34 * std::exp (-1.92 * .5) * SR);
+      chk (! ea.empty() && std::abs (ea[0] - exp1) < 80, "tape echo: modo 1 repite a un tiempo base (" + juce::String (ea.empty() ? -1 : ea[0]) + " de " + juce::String (exp1) + " muestras)");
+      Rig b (edit, T::xmlTypeName); setTime (b, 5, 5.f); auto eb = firstEcho (b); chk (eb.size() >= 3 && std::abs (eb[1] - 2 * exp1) < 120 && std::abs (eb[2] - 3 * exp1) < 160, "tape echo: modo 6 suena las tres cabezas a 1x, 2x y 3x (" + juce::String ((int) eb.size()) + " ecos)");
+      Rig c (edit, T::xmlTypeName); setTime (c, 3, 5.f); auto ec = firstEcho (c); chk (ec.size() == 2, "tape echo: modo 4 suena las cabezas 1 y 2 (" + juce::String ((int) ec.size()) + " ecos)");
+      Rig d (edit, T::xmlTypeName); setTime (d, 0, 9.f); d.set (T::pInt, 0.f); auto od = d.run (impulse (1.5, .5f, 1000)); Rig e (edit, T::xmlTypeName); setTime (e, 0, 9.f); e.set (T::pInt, 7.f); auto oe = e.run (impulse (1.5, .5f, 1000));
+      chk (rmsDb (oe, .6, 1.4) > rmsDb (od, .6, 1.4) + 15.0, "tape echo: intensity alarga las repeticiones");
+      Rig f (edit, T::xmlTypeName); setTime (f, 5, 9.f); f.set (T::pInt, 10.f); f.set (T::pRev, 10.f); auto of = f.run (noise (.8f, 4.0, 7)); float mx = 0; for (int i = 0; i < of.getNumSamples(); ++i) mx = std::max (mx, std::abs (of.getSample (0, i))); chk (std::isfinite (mx) && mx < 12.f, "tape echo: con intensity 10 la salida sigue acotada (" + juce::String (mx, 2) + ")");
+      auto tone = sine (1000, .2f, 1.5); Rig g (edit, T::xmlTypeName); g.set (T::pEcho, 0.f); g.set (T::pRev, 0.f); g.set (T::pBal, 0.f); chk (std::abs (rmsDb (g.run (tone), 1.0, 1.4) - rmsDb (tone, 1.0, 1.4)) < .1, "tape echo: con el deslizador en DIRECT solo pasa la senal directa");
+      Rig h (edit, T::xmlTypeName); h.set (T::pPower, 0.f); h.set (T::pEcho, 10.f); chk (std::abs (rmsDb (h.run (tone), 1.0, 1.4) - rmsDb (tone, 1.0, 1.4)) < .1, "tape echo: apagado no toca la senal");
+      Rig i1 (edit, T::xmlTypeName); i1.set (T::pBal, 0.f); i1.set (T::pEcho, 0.f); i1.set (T::pRev, 0.f); i1.set (T::pOut, 10.f); chk (std::abs ((rmsDb (i1.run (tone), 1.0, 1.4) - rmsDb (tone, 1.0, 1.4)) - 12.0) < .5, "tape echo: output volume 10 suma 12 dB");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800, "tape echo: la ventana con el panel se crea"); }
+    // ---- Phaser doble, Flanger, Chorus
+    { using T = InjPhaserDual; auto s = sine (1000, .3f, 2.0);
+      Rig a (edit, T::xmlTypeName); a.set (T::pPower, 0.f); chk (std::abs (rmsDb (a.run (s), .5, 1.8) - rmsDb (s, .5, 1.8)) < .05, "phaser: apagado no toca la senal");
+      Rig b (edit, T::xmlTypeName); b.set (T::pRate1, 4.f); b.set (T::pDepthA, 10.f); b.set (T::pSwA, 0.f); b.set (T::pFbA, 6.f); b.set (T::pIn, 1.f); auto ob = b.run (noise (.3f, 3.0, 11)); double lo = 1e9, hi = -1e9;
+      for (double t0 = .5; t0 < 2.8; t0 += .05) { const double r = rmsDb (ob, t0, t0 + .05); lo = std::min (lo, r); hi = std::max (hi, r); }
+      chk (hi - lo > .6 && finite (ob), "phaser: el barrido modula el nivel (" + juce::String (hi - lo, 1) + " dB)");
+      Rig c (edit, T::xmlTypeName); c.set (T::pMan1, 1.f); c.set (T::pSwA, 2.f); c.set (T::pSwB, 2.f); c.set (T::pDepthA, 10.f); c.set (T::pDepthB, 10.f); c.set (T::pPed, .1f); auto nz = noise (.3f, 1.5, 13); const double p1 = rmsDb (c.run (nz), .3, 1.4);
+      Rig d (edit, T::xmlTypeName); d.set (T::pMan1, 1.f); d.set (T::pSwA, 2.f); d.set (T::pSwB, 2.f); d.set (T::pDepthA, 10.f); d.set (T::pDepthB, 10.f); d.set (T::pPed, .9f); auto od = d.run (nz); const double p2 = rmsDb (od, .3, 1.4);
+      chk (std::abs (rmsDb (nz, .3, 1.4) - p1) > .1 && std::isfinite (p2), "phaser: el modo pedal fija el barrido y cambia el sonido");
+      Rig e (edit, T::xmlTypeName); e.set (T::pFbA, 10.f); e.set (T::pFbB, 10.f); e.set (T::pRate1, 10.f); auto oe = e.run (noise (.9f, 2.0, 5)); float mx = 0; for (int i = 0; i < oe.getNumSamples(); ++i) mx = std::max (mx, std::abs (oe.getSample (0, i))); chk (std::isfinite (mx) && mx < 10.f, "phaser: con realimentacion a tope la salida es acotada (" + juce::String (mx, 2) + ")");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 900, "phaser: la ventana con el panel se crea"); }
+    { using T = InjFlangerPro; auto s5 = sine (500, .3f, 1.5), s10 = sine (1000, .3f, 1.5);
+      auto setup = [] (Rig& r) { r.set (T::pManual, 4.f); r.set (T::pWidth, 0.f); r.set (T::pRegen, 0.f); r.set (T::pMix, 5.f); };
+      Rig a (edit, T::xmlTypeName); setup (a); const double n5 = rmsDb (a.run (s5), .6, 1.4); Rig b (edit, T::xmlTypeName); setup (b); const double n10 = rmsDb (b.run (s10), .6, 1.4); chk (n5 < n10 - 15.0, "flanger: el peine anula 500 Hz con 1 ms (" + juce::String (n10 - n5, 1) + " dB menos)");
+      Rig c (edit, T::xmlTypeName); setup (c); c.set (T::pInvert, 1.f); const double inv = rmsDb (c.run (s10), .6, 1.4); chk (inv < n10 - 15.0, "flanger: invert da la fase contraria");
+      Rig d (edit, T::xmlTypeName); d.set (T::pMix, 0.f); chk (std::abs (rmsDb (d.run (s10), .6, 1.4) - rmsDb (s10, .6, 1.4)) < .05, "flanger: con mix 0 solo pasa la seca");
+      Rig e (edit, T::xmlTypeName); e.set (T::pRegen, 10.f); e.set (T::pWidth, 10.f); e.set (T::pSpeed, 10.f); auto oe = e.run (noise (.8f, 3.0, 9)); float mx = 0; for (int i = 0; i < oe.getNumSamples(); ++i) mx = std::max (mx, std::abs (oe.getSample (0, i))); chk (std::isfinite (mx) && mx < 12.f, "flanger: regen a tope sigue acotado (" + juce::String (mx, 2) + ")");
+      Rig f (edit, T::xmlTypeName); f.set (T::pMode, 1.f); auto of = f.run (noise (.5f, 2.0, 3)); chk (finite (of) && rmsDb (of, .5, 1.8) > rmsDb (noise (.5f, 2.0, 3), .5, 1.8) - 1.0, "flanger: el modo doubler suena y es finito");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 900, "flanger: la ventana con el panel se crea"); }
+    { using T = InjChorusDim; auto nz = noise (.3f, 1.5, 21);
+      Rig a (edit, T::xmlTypeName); a.set (T::pMode, 0.f); chk (std::abs (rmsDb (a.run (nz), .3, 1.4) - rmsDb (nz, .3, 1.4)) < .05, "chorus: modo off deja pasar la seca");
+      Rig b (edit, T::xmlTypeName); b.set (T::pMode, 3.f); b.set (T::pBypass, 1.f); chk (std::abs (rmsDb (b.run (nz), .3, 1.4) - rmsDb (nz, .3, 1.4)) < .05, "chorus: bypass deja pasar la seca");
+      Rig c (edit, T::xmlTypeName); c.set (T::pMode, 3.f); auto oc = c.run (nz); double dif = 0.0; for (int i = 20000; i < 60000; ++i) { const double d = oc.getSample (0, i) - oc.getSample (1, i); dif += d * d; } dif = 10.0 * std::log10 (dif / 40000.0 + 1e-12);
+      chk (dif > -40.0 && finite (oc), "chorus: el modo 3 abre el estereo con una sola senal (" + juce::String (dif, 1) + " dB)");
+      Rig d (edit, T::xmlTypeName); d.set (T::pMode, 3.f); d.set (T::pPower, 0.f); chk (std::abs (rmsDb (d.run (nz), .3, 1.4) - rmsDb (nz, .3, 1.4)) < .05, "chorus: apagado no toca la senal");
+      chk (c.fx->meterA.load() > -60.f && c.fx->meterA.load() < 6.f, "chorus: el medidor de salida marca el nivel (" + juce::String (c.fx->meterA.load(), 1) + " dB)");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 900, "chorus: la ventana con el panel se crea"); }
+    // ---- Injustice Analyzer
+    { using T = InjAnalyzer; Rig r (edit, T::xmlTypeName); auto in = stereoOf (sine (997, db2lin (-23.f), 6.0), sine (997, db2lin (-23.f), 6.0)); auto o = r.run (in); auto* an = dynamic_cast<T*> (r.fx);
+      chk (maxDiff (o, in) < 1e-7, "analyzer: no cambia el sonido"); const double li = an->loudness().integrated(); chk (std::abs (li + 23.0) < .3, "analyzer: LUFS integrado de un tono a -23 dBFS (" + juce::String (li, 2) + ")");
+      chk (an->choice ("top") == 1 && an->choice ("bands") == 3 && an->choice ("detection") == 3, "analyzer: ajustes por defecto como en el plugin VST3"); an->setChoice ("range", 5); an->setFlag ("compact", true); chk (an->choice ("range") == 5 && an->compactUi.load(), "analyzer: los ajustes se cambian y se leen");
+      an->setFlag ("compact", false); auto ed = r.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 600 && ed->allowWindowResizing(), "analyzer: la ventana se crea y se puede redimensionar");
+    }
+    // ---- Injustice Tune
+    { using T = InjTunePro; auto st = [&] (Rig& r, float key, float scale, float speed, float tol) { r.set (T::pKey, key); r.set (T::pScale, scale); r.set (T::pSpeed, speed); r.set (T::pHuman, 0.f); r.set (T::pTol, tol); };
+      Rig r (edit, T::xmlTypeName); st (r, 0.f, 0.f, 0.f, 0.f); auto o = r.run (sine (450, .4f, 2.0));
+      chk (std::abs (r.fx->meterA.load() - 450.f) < 6.f && r.fx->getLatencySeconds() > 0.0, "injustice tune: detecta 450 Hz (" + juce::String (r.fx->meterA.load(), 1) + ")");
+      chk (amp (o, 440, 1.0, 1.9) > amp (o, 450, 1.0, 1.9) * 1.5 && finite (o), "injustice tune: cromatica, lleva 450 Hz a La 440");
+      chk (dynamic_cast<T*> (r.fx)->noteOut.load() == 69, "injustice tune: la nota destino mostrada es La (" + juce::String (dynamic_cast<T*> (r.fx)->noteOut.load()) + ")");
+      Rig m (edit, T::xmlTypeName); st (m, 0.f, 1.f, 0.f, 0.f); auto om = m.run (sine (270, .4f, 2.0)); chk (amp (om, 262, 1.0, 1.9) > amp (om, 270, 1.0, 1.9) * 1.5, "injustice tune: Do mayor lleva 270 Hz a Do4 (261,6 Hz)");
+      Rig rf (edit, T::xmlTypeName); st (rf, 0.f, 0.f, 0.f, 0.f); rf.set (T::pRef, 432.f); auto orf = rf.run (sine (440, .4f, 2.0)); chk (amp (orf, 432, 1.0, 1.9) > amp (orf, 440, 1.0, 1.9) * 1.5, "injustice tune: referencia 432 Hz lleva 440 Hz a 432 Hz");
+      Rig tl (edit, T::xmlTypeName); st (tl, 0.f, 0.f, 0.f, 100.f); auto ot = tl.run (sine (450, .4f, 2.0)); chk (amp (ot, 450, 1.0, 1.9) > amp (ot, 440, 1.0, 1.9) * 1.5, "injustice tune: la tolerancia de nota deja pasar una desafinacion pequena");
+      Rig cu (edit, T::xmlTypeName); st (cu, 0.f, 11.f, 0.f, 0.f); cu.set (T::pMask, 1.f); auto oc = cu.run (sine (300, .4f, 2.0)); chk (amp (oc, 262, 1.0, 1.9) > amp (oc, 300, 1.0, 1.9) * 1.5, "injustice tune: escala personalizada solo Do lleva 300 Hz a 261,6 Hz");
+      Rig b (edit, T::xmlTypeName); st (b, 0.f, 0.f, 0.f, 0.f); b.set (T::pBypass, 1.f); auto in = sine (450, .4f, 1.0); auto ob = b.run (in); const int lat = (int) std::lround (b.fx->getLatencySeconds() * SR); float md = 0.f; for (int i = 4000; i < 30000; ++i) md = std::max (md, std::abs (ob.getSample (0, i + lat - 1) - in.getSample (0, i)));
+      chk (md < 1e-5f, "injustice tune: bypass deja la senal igual (con latencia " + juce::String (lat) + " muestras)");
+      Rig m0 (edit, T::xmlTypeName); st (m0, 0.f, 0.f, 0.f, 0.f); m0.set (T::pMix, 0.f); auto o0 = m0.run (in); md = 0.f; for (int i = 4000; i < 30000; ++i) md = std::max (md, std::abs (o0.getSample (0, i + lat - 1) - in.getSample (0, i))); chk (md < 1e-5f, "injustice tune: mezcla 0 deja la senal igual");
+      Rig fo (edit, T::xmlTypeName); st (fo, 0.f, 0.f, 0.f, 0.f); fo.set (T::pForm, 12.f); auto of = fo.run (noise (.3f, 1.0)); Rig fn (edit, T::xmlTypeName); fn.set (T::pForm, -12.f); auto ofn = fn.run (sine (200, .4f, 1.0)); float pk = 0.f; for (int i = 0; i < of.getNumSamples(); ++i) pk = std::max (pk, std::abs (of.getSample (0, i)));
+      chk (finite (of) && finite (ofn) && pk < 6.f, "injustice tune: formante a los extremos da audio finito y acotado (pico " + juce::String (pk, 2) + ")");
+      Rig nz (edit, T::xmlTypeName); nz.run (noise (.3f, 1.0)); chk (nz.fx->meterA.load() == 0.f && dynamic_cast<T*> (nz.fx)->noteOut.load() == -1, "injustice tune: con ruido no detecta tono");
+      Rig vb (edit, T::xmlTypeName); st (vb, 0.f, 0.f, 0.f, 0.f); vb.set (T::pVib, 100.f); auto ov = vb.run (sine (440, .4f, 2.0)); chk (finite (ov) && rmsDb (ov, 1.0, 1.9) > -16.0, "injustice tune: el vibrato no rompe la senal (" + juce::String (rmsDb (ov, 1.0, 1.9), 1) + " dB)");
+      Rig ab (edit, T::xmlTypeName); auto* tp = dynamic_cast<T*> (ab.fx); ab.set (T::pSpeed, 77.f); tp->switchSlot (1); ab.set (T::pSpeed, 10.f); tp->switchSlot (0); const float sA = tp->v (T::pSpeed); tp->switchSlot (1); const float sB = tp->v (T::pSpeed);
+      chk (std::abs (sA - 77.f) < .01f && std::abs (sB - 10.f) < .01f, "injustice tune: A y B guardan ajustes distintos (" + juce::String (sA, 0) + " / " + juce::String (sB, 0) + ")");
+      bool ok = true; { auto ps = ab.fx->presets(); chk (ps.size() >= 5, "injustice tune: tiene presets"); for (auto& pr : ps) for (size_t i = 0; i < pr.v.size(); ++i) ok = ok && pr.v[i] >= ab.fx->specs()[i].lo && pr.v[i] <= ab.fx->specs()[i].hi; chk (ok, "injustice tune: valores de preset dentro de rango"); }
+      auto ed = ab.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800 && ed->getHeight() > 400, "injustice tune: la ventana con el panel se crea"); }
+    // ---- Attack Shaper
+    { auto in = sine (1000, .3f, 1.5); auto burst = sine (1000, .5f, 0.4);
+      Rig a (edit, InjAttackShaper::xmlTypeName); auto oa = a.run (in); chk (std::abs (rmsDb (oa, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) < .3, "attack shaper: en plano no cambia la senal");
+      Rig b (edit, InjAttackShaper::xmlTypeName); for (int c = 0; c < 4; ++c) b.set (InjAttackShaper::ATK (c), 6.f); auto ob = b.run (burst);
+      Rig c (edit, InjAttackShaper::xmlTypeName); for (int k = 0; k < 4; ++k) c.set (InjAttackShaper::ATK (k), -6.f); auto oc = c.run (burst);
+      chk (rmsDb (ob, 0.0, 0.02) > rmsDb (oc, 0.0, 0.02) + 2.0, "attack shaper: el ataque +6 sube el inicio frente a -6 (" + juce::String (rmsDb (ob, 0.0, 0.02) - rmsDb (oc, 0.0, 0.02), 1) + " dB)");
+      Rig d (edit, InjAttackShaper::xmlTypeName); d.set (InjAttackShaper::pPower, 0.f); d.set (InjAttackShaper::ATK (0), 6.f); auto od = d.run (burst); chk (std::abs (rmsDb (od, 0.0, 0.02) - rmsDb (burst, 0.0, 0.02)) < .05, "attack shaper: apagado no toca la senal");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800, "attack shaper: la ventana con el panel se crea"); }
+    // ---- Cobalt Limiter
+    { auto in = sine (1000, .5f, 1.5);
+      Rig a (edit, InjCobalt::xmlTypeName); a.set (InjCobalt::INP (0), 12.f); a.set (InjCobalt::INP (1), 12.f); a.set (InjCobalt::MODE (0), 2.f); a.set (InjCobalt::MODE (1), 2.f); a.set (InjCobalt::ATK (0), .02f); a.set (InjCobalt::ATK (1), .02f); auto oa = a.run (in);
+      chk (a.fx->meterA.load() > 8.f && a.fx->meterB.load() > 8.f, "cobalt: LIMIT comprime los dos lados (" + juce::String (a.fx->meterA.load(), 1) + " dB)");
+      Rig b (edit, InjCobalt::xmlTypeName); b.set (InjCobalt::INP (0), 12.f); b.set (InjCobalt::INP (1), 12.f); b.set (InjCobalt::MODE (0), 0.f); b.set (InjCobalt::MODE (1), 0.f); b.run (in); chk (b.fx->meterA.load() < a.fx->meterA.load() - 1.f, "cobalt: COMP 1 comprime menos que LIMIT");
+      Rig c (edit, InjCobalt::xmlTypeName); c.set (InjCobalt::INN (0), 0.f); c.set (InjCobalt::INN (1), 0.f); auto oc = c.run (in); chk (std::abs (rmsDb (oc, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) < .05, "cobalt: con IN apagado no toca la senal");
+      Rig d (edit, InjCobalt::xmlTypeName); d.set (InjCobalt::OUT (0), 6.f); d.set (InjCobalt::OUT (1), 6.f); d.set (InjCobalt::INP (0), -20.f); d.set (InjCobalt::INP (1), -20.f); auto od = d.run (sine (1000, .05f, 1.5)); chk (std::abs ((rmsDb (od, 1.0, 1.4) - rmsDb (sine (1000, .05f, 1.5), 1.0, 1.4)) - (-14.0)) < .6, "cobalt: entrada -20 y salida +6 dan -14 dB");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800, "cobalt: la ventana con el panel se crea"); }
+    // ---- Multiband
+    { auto lo = sine (100, .3f, 1.5), mid = sine (1000, .3f, 1.5), hi = sine (8000, .3f, 1.5), loud = sine (1000, .5f, 1.5);
+      Rig a (edit, InjMband::xmlTypeName); for (int b = 0; b < 3; ++b) a.set (InjMband::THR (b), 20.f);
+      auto o1 = a.run (lo); auto o2 = a.run (mid); auto o3 = a.run (hi);
+      chk (std::abs (rmsDb (o1, 1.0, 1.4) - rmsDb (lo, 1.0, 1.4)) < 1.5 && std::abs (rmsDb (o2, 1.0, 1.4) - rmsDb (mid, 1.0, 1.4)) < 1.5 && std::abs (rmsDb (o3, 1.0, 1.4) - rmsDb (hi, 1.0, 1.4)) < 1.5, "multiband: sin compresion suma plano en graves, medios y agudos");
+      Rig b (edit, InjMband::xmlTypeName); b.set (InjMband::THR (1), -30.f); b.run (loud); chk (b.fx->meterA.load() < 1.f && static_cast<InjMband*> (b.fx)->grMeter[1].load() > 6.f, "multiband: solo comprime la banda media con un tono de 1 kHz");
+      Rig c (edit, InjMband::xmlTypeName); c.set (InjMband::MODE (2), 1.f); auto oc = c.run (hi); chk (rmsDb (oc, 1.0, 1.4) < rmsDb (hi, 1.0, 1.4) - 20.0, "multiband: MUTE en la banda aguda silencia los 8 kHz");
+      Rig d (edit, InjMband::xmlTypeName); d.set (InjMband::pPow, 0.f); d.set (InjMband::THR (1), -30.f); auto od = d.run (loud); chk (std::abs (rmsDb (od, 1.0, 1.4) - rmsDb (loud, 1.0, 1.4)) < .05, "multiband: apagado no toca la senal");
+      Rig e (edit, InjMband::xmlTypeName); e.set (InjMband::pOut, 6.f); for (int k = 0; k < 3; ++k) e.set (InjMband::THR (k), 20.f); auto oe = e.run (mid); chk (std::abs ((rmsDb (oe, 1.0, 1.4) - rmsDb (mid, 1.0, 1.4)) - 6.0) < 1.5, "multiband: la ganancia de salida suma 6 dB");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getWidth() > 800, "multiband: la ventana con el panel se crea"); }
+    // ---- Stack Comp
+    { auto in = sine (1000, .5f, 1.5);
+      Rig a (edit, InjStack::xmlTypeName); a.set (InjStack::pThr, -24.f); a.set (InjStack::pRatio, 3.f); a.set (InjStack::pAtk, 1.f); a.set (InjStack::pRel, .3f); a.set (InjStack::pMk, 0.f); a.set (InjStack::pMix, 100.f); auto oa = a.run (in);
+      const double g = rmsDb (oa, 1.0, 1.4) - rmsDb (in, 1.0, 1.4); chk (std::abs (g + 13.5) < 2.0, "stack: -24 dB, 4:1 baja ~13.5 dB (" + juce::String (g, 2) + ")");
+      Rig b (edit, InjStack::xmlTypeName); b.set (InjStack::pThr, -24.f); b.set (InjStack::pRatio, 5.f); b.set (InjStack::pAtk, 1.f); b.run (in); chk (b.fx->meterA.load() > a.fx->meterA.load() + 1.f, "stack: inf:1 comprime mas que 4:1");
+      Rig c (edit, InjStack::xmlTypeName); c.set (InjStack::pIn, 0.f); c.set (InjStack::pThr, -30.f); auto oc = c.run (in); chk (std::abs (rmsDb (oc, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) < .05, "stack: con IN apagado no toca la senal");
+      Rig d (edit, InjStack::xmlTypeName); d.set (InjStack::pThr, -24.f); d.set (InjStack::pRatio, 3.f); d.set (InjStack::pAtk, 1.f); d.set (InjStack::pMix, 0.f); auto od = d.run (in); chk (std::abs (rmsDb (od, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) < .1, "stack: mezcla 0 deja el sonido seco");
+      Rig e (edit, InjStack::xmlTypeName); e.set (InjStack::pThr, 10.f); e.set (InjStack::pMk, 6.f); auto oe = e.run (in); chk (std::abs ((rmsDb (oe, 1.0, 1.4) - rmsDb (in, 1.0, 1.4)) - 6.0) < .3, "stack: la ganancia de salida suma 6 dB");
+      auto ed = a.fx->createEditor(); chk (ed != nullptr && ed->getHeight() > 600, "stack: la ventana con el panel se crea"); }
     // ---- mejoras del ecualizador y del compresor
     { Rig r (edit, InjEq::xmlTypeName); r.set (InjEq::pHp, 100.f); auto lo = sine (30, .1f, 1.0); const double g = rmsDb (r.run (lo), .3, .9) - rmsDb (lo, .3, .9); Rig r2 (edit, InjEq::xmlTypeName); r2.set (InjEq::pHp, 100.f); auto mid = sine (1000, .1f, 1.0); const double g2 = rmsDb (r2.run (mid), .3, .9) - rmsDb (mid, .3, .9);
       chk (g < -30.0 && std::abs (g2) < .3, "ecualizador: el corte de graves de 24 dB quita 30 Hz (" + juce::String (g, 1) + " dB) y no toca 1 kHz");

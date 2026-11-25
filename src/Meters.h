@@ -64,16 +64,17 @@ public:
         for (int c = 0; c < 2; ++c) { shelf[c] = makeShelf (fs); hp[c] = makeHP (fs); }
         resetLoudness();
     }
-    void resetLoudness() { subAcc = 0; subCount = 0; subs.clear(); blocks.clear(); peak = 0.f; }
+    void resetLoudness() { subAcc = 0; subCount = 0; subs.clear(); blocks.clear(); shorts.clear(); peak = 0.f; tpeak = 0.f; for (auto& h : tph) h = Hist4(); }
     void feed (const float* l, const float* r, int n)
     {
         for (int i = 0; i < n; ++i)
         {
             const float a = l[i], b = r[i];
             peak = std::max (peak, std::max (std::abs (a), std::abs (b)));
+            tpeak = std::max (tpeak, std::max (truePeakStep (tph[0], a), truePeakStep (tph[1], b)));
             const double ya = hp[0].process (shelf[0].process (a)), yb = hp[1].process (shelf[1].process (b));
             subAcc += ya * ya + yb * yb;
-            if (++subCount >= hop) { pushSub (subAcc / subCount); subAcc = 0; subCount = 0; }
+            if (++subCount >= hop) { pushSub (subAcc / subCount); subAcc = 0; subCount = 0; if (subs.size() >= 30) { double q = 0; for (size_t k = subs.size() - 30; k < subs.size(); ++k) q += subs[k]; if (shorts.size() < 200000) shorts.push_back (q / 30.0); } }
             sLR = sLR * corrDecay + a * b; sLL = sLL * corrDecay + a * a; sRR = sRR * corrDecay + b * b;
             hist[(size_t) hw] = 0.5f * (a + b); hw = (hw + 1) % kFFT;
             scope[(size_t) sw * 2] = a; scope[(size_t) sw * 2 + 1] = b; sw = (sw + 1) % kScope;
@@ -90,6 +91,17 @@ public:
         return n ? toLUFS (s / n) : -200.f;
     }
     float peakDb() const { return peak <= 1e-6f ? -120.f : 20.f * std::log10 (peak); }
+    // Pico real: interpola 4x entre muestras (sinc ventaneada) para ver los picos que quedan entre ellas; llega con unos 8 muestras de retraso.
+    float truePeakDb() const { const float t = std::max (tpeak, peak); return t <= 1e-6f ? -120.f : 20.f * std::log10 (t); }
+    // Rango de sonoridad (LRA, EBU R128 / Tech 3342): percentiles 10 y 95 de la sonoridad de corto plazo con puerta absoluta (-70) y relativa (-20).
+    float lra() const
+    {
+        std::vector<double> v; for (double e : shorts) if (toLUFS (e) > -70.f) v.push_back (e); if (v.size() < 2) return 0.f;
+        double s = 0; for (double e : v) s += e; const float rel = toLUFS (s / (double) v.size()) - 20.f;
+        std::vector<float> l; for (double e : v) if (toLUFS (e) >= rel) l.push_back (toLUFS (e)); if (l.size() < 2) return 0.f;
+        std::sort (l.begin(), l.end()); auto pct = [&] (double p) { const double k = p * (double) (l.size() - 1); const size_t i = (size_t) k; const double f = k - (double) i; return i + 1 < l.size() ? l[i] * (1.0 - f) + l[i + 1] * f : (double) l[i]; };
+        return (float) std::max (0.0, pct (0.95) - pct (0.10));
+    }
     float correlation() const { return juce::jlimit (-1.f, 1.f, sLR / std::sqrt (sLL * sRR + 1e-20f)); }
     // Espectro en dB con 0 dB = seno a plena escala. out tiene kFFT/2 valores (bin k = k*sr/kFFT).
     void spectrum (std::vector<float>& out)
@@ -117,6 +129,15 @@ private:
         const double f0 = 38.13547087602444, Q = 0.5003270373238773, K = std::tan (juce::MathConstants<double>::pi * f0 / fs), a0 = 1.0 + K / Q + K * K; Biquad b;
         b.b0 = 1; b.b1 = -2; b.b2 = 1; b.a1 = 2.0 * (K * K - 1.0) / a0; b.a2 = (1.0 - K / Q + K * K) / a0; return b;
     }
+    struct Hist4 { float h[16] {}; };
+    static float truePeakStep (Hist4& H, float x)
+    {   // sobremuestreo 4x con sinc ventaneada de 16 puntos (la muestra mas nueva entra por el final; se interpola entre h[7] y h[8])
+        static const auto coef = [] { std::array<std::array<float, 16>, 3> c {}; for (int k = 1; k < 4; ++k) for (int i = 0; i < 16; ++i)
+            { const double d = (double) (i - 7) - (double) k * .25, w = std::abs (d) < 8.0 ? .5 * (1.0 + std::cos (juce::MathConstants<double>::pi * d / 8.0)) : 0.0, sc = std::abs (d) < 1e-9 ? 1.0 : std::sin (juce::MathConstants<double>::pi * d) / (juce::MathConstants<double>::pi * d); c[(size_t) k - 1][(size_t) i] = (float) (sc * w); } return c; }();
+        for (int i = 0; i < 15; ++i) H.h[i] = H.h[i + 1]; H.h[15] = x; float m = std::abs (H.h[7]);
+        for (int k = 0; k < 3; ++k) { float y = 0.f; for (int i = 0; i < 16; ++i) y += H.h[i] * coef[(size_t) k][(size_t) i]; m = std::max (m, std::abs (y)); }
+        return m;
+    }
     void pushSub (double z)
     {
         subs.push_back (z); if (subs.size() > 64) subs.erase (subs.begin());
@@ -125,7 +146,7 @@ private:
     float meanLast (size_t n) const { if (subs.size() < n) { if (subs.empty()) return -200.f; n = subs.size(); } double s = 0; for (size_t i = subs.size() - n; i < subs.size(); ++i) s += subs[i]; return toLUFS (s / (double) n); }
 
     double sr = 44100.0, subAcc = 0; int hop = 4410, subCount = 0, hw = 0, sw = 0; float corrDecay = 0.99f, sLR = 0, sLL = 0, sRR = 0, peak = 0;
-    Biquad shelf[2], hp[2]; std::vector<double> subs, blocks; std::vector<float> hist, scope;
+    Biquad shelf[2], hp[2]; Hist4 tph[2]; float tpeak = 0.f; std::vector<double> subs, blocks, shorts; std::vector<float> hist, scope;
     juce::dsp::FFT fft; std::vector<float> window;
 };
 
@@ -135,7 +156,7 @@ class MetersPanel : public FloatingPanel, private juce::Timer
 public:
     MetersPanel (te::Edit& e) : edit (e)
     {
-        title = "Medidores"; icon = icons::Sliders; setDesign (780, 470); startTimerHz (30);
+        title = "Medidores"; icon = icons::Sliders; setDesign (780, 506); startTimerHz (30);
     }
     ~MetersPanel() override { stopTimer(); }
     void attach()    // busca o crea la toma de audio al final de la cadena del Master
@@ -212,19 +233,19 @@ protected:
         g.setColour (textDim); g.drawText ("-1", juce::Rectangle<float> (cr.getX() + 4, cr.getBottom() + 1, 24, 12), juce::Justification::centredLeft); g.drawText ("+1", juce::Rectangle<float> (cr.getRight() - 28, cr.getBottom() + 1, 24, 12), juce::Justification::centredRight);
         // volumen
         auto num = [] (float v, int d = 1) { return v < -150.f ? juce::String::fromUTF8 ("–∞") : juce::String (v, d); };
-        const char* names[] { "M", "S", "I", "Pico" }; const float vals[] { engine.momentary(), engine.shortTerm(), engine.integrated(), engine.peakDb() };
-        for (int i = 0; i < 4; ++i)
+        const char* names[] { "M", "S", "I", "LRA", "Pico real" }; const float vals[] { engine.momentary(), engine.shortTerm(), engine.integrated(), engine.lra(), engine.truePeakDb() };
+        for (int i = 0; i < 5; ++i)
         {
             auto row = rowR (i); g.setColour (i == 2 ? panelHi : boxFill); g.fillRoundedRectangle (row, 3.f);
             g.setColour (textDim); g.setFont (juce::FontOptions (13.f)); g.drawText (names[i], row.withTrimmedLeft (10), juce::Justification::centredLeft);
-            const bool hot = i == 3 && vals[i] > -0.1f;
-            g.setColour (hot ? record : text); g.setFont (juce::FontOptions (20.f, juce::Font::bold)); g.drawText (num (vals[i]), row.withTrimmedRight (58), juce::Justification::centredRight);
-            g.setColour (textDim); g.setFont (juce::FontOptions (12.f)); g.drawText (i == 3 ? "dBFS" : "LUFS", row.withTrimmedRight (10), juce::Justification::centredRight);
+            const bool hot = i == 4 && vals[i] > -0.1f;
+            g.setColour (hot ? record : text); g.setFont (juce::FontOptions (20.f, juce::Font::bold)); g.drawText (i == 3 ? juce::String (vals[i], 1) : num (vals[i]), row.withTrimmedRight (58), juce::Justification::centredRight);
+            g.setColour (textDim); g.setFont (juce::FontOptions (12.f)); g.drawText (i == 4 ? "dBTP" : (i == 3 ? "LU" : "LUFS"), row.withTrimmedRight (10), juce::Justification::centredRight);
         }
     }
 private:
     static constexpr float kMinDb = -90.f, kMaxDb = 0.f;
-    juce::Rectangle<float> specR() const { return { 24.f, 64.f, 520.f, 382.f }; }
+    juce::Rectangle<float> specR() const { return { 24.f, 64.f, 520.f, 418.f }; }
     juce::Rectangle<float> scopeR() const { return { 560.f, 64.f, 196.f, 196.f }; }
     juce::Rectangle<float> corrR() const { return { 560.f, 270.f, 196.f, 18.f }; }
     juce::Rectangle<float> rowR (int i) const { return { 560.f, 306.f + (float) i * 36.f, 196.f, 32.f }; }

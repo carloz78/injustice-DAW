@@ -80,8 +80,8 @@ protected:
     float yg (float g, float h) const { return h * .5f - g / 18.f * (h * .5f - 8.f); }
     void paintBody (juce::Graphics& g) override
     {
-        const auto r = plot(); plotBox (g, r); g.saveState(); juce::Path clip; clip.addRoundedRectangle (r, 10.f); g.reduceClipRegion (clip);
-        g.setColour (juce::Colour (0xff2a2b30)); for (int k = 1; k < 8; ++k) g.drawVerticalLine ((int) (r.getX() + r.getWidth() * k / 8.f), r.getY(), r.getBottom());
+        const auto r = plot(); plotBox (g, r); g.saveState(); juce::Path clip; clip.addRoundedRectangle (r, 3.f); g.reduceClipRegion (clip);
+        g.setColour (theme::gridLine); for (int k = 1; k < 8; ++k) g.drawVerticalLine ((int) (r.getX() + r.getWidth() * k / 8.f), r.getY(), r.getBottom());
         for (float db : { -12.f, 12.f }) g.drawHorizontalLine ((int) (r.getY() + yg (db, r.getHeight())), r.getX(), r.getRight());
         g.setColour (theme::barLine); g.drawHorizontalLine ((int) (r.getY() + r.getHeight() * .5f), r.getX(), r.getRight());
         BQ bs[4]; for (int b = 0; b < 4; ++b) bs[b] = InjEq::band (b, fx.v (b * 3), fx.v (b * 3 + 1), fx.v (b * 3 + 2), 48000.0);
@@ -94,7 +94,7 @@ protected:
                 float m = -140.f; for (int k = k0; k <= k1; ++k) m = std::max (m, sp[(size_t) k]); m += 4.5f * std::log2 (f0 / 1000.f); float& sm = spSm[(size_t) std::min (x / 2, 599)]; sm = m > sm ? sm * .5f + m * .5f : sm * .88f + m * .12f;
                 const float y = r.getBottom() - juce::jlimit (0.f, 1.f, (sm + 90.f) / 80.f) * r.getHeight() * .85f; if (x == 0) { q.startNewSubPath (r.getX(), r.getBottom()); q.lineTo (r.getX(), y); } else q.lineTo (r.getX() + x, y);
             }
-            q.lineTo (r.getRight(), r.getBottom()); q.closeSubPath(); g.setColour (juce::Colour (0xff8a8a90).withAlpha (.20f)); g.fillPath (q);
+            q.lineTo (r.getRight(), r.getBottom()); q.closeSubPath(); g.setColour (theme::textDim.withAlpha (.20f)); g.fillPath (q);
         }
         juce::Path p, fill; const int W = (int) r.getWidth();
         for (int x = 0; x <= W; x += 2)
@@ -105,7 +105,7 @@ protected:
         fill.lineTo (r.getRight(), r.getBottom()); fill.lineTo (r.getX(), r.getBottom()); fill.closeSubPath();
         g.setColour (theme::accent.withAlpha (.12f)); g.fillPath (fill); g.setColour (theme::accent); g.strokePath (p, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.restoreState();
-        g.setColour (juce::Colour (0xffa8a8ad)); g.setFont (uiFont (11.f));
+        g.setColour (theme::textDim); g.setFont (uiFont (11.f));
         const std::pair<float, const char*> fl[] { { 20.f, "20" }, { 100.f, "100" }, { 1000.f, "1k" }, { 10000.f, "10k" } };
         for (auto& q : fl) g.drawText (q.second, (int) (r.getX() + fx_ (q.first, r.getWidth())) + 3, (int) r.getBottom() - 16, 40, 12, juce::Justification::left);
         g.drawText ("20k", (int) r.getRight() - 40, (int) r.getBottom() - 16, 34, 12, juce::Justification::right);
@@ -115,10 +115,10 @@ protected:
         const char* nm[] { "Graves", "Medios bajos", "Medios altos", "Agudos" }; const char* ty[] { "Estante bajo", "Campana", "Campana", "Estante alto" };
         for (int b = 0; b < 4; ++b)
         {
-            const auto card = juce::Rectangle<float> (16.f + b * 142.f, 254.f, 134.f, 150.f); g.setColour (theme::panel); g.fillRoundedRectangle (card, 10.f);
+            const auto card = juce::Rectangle<float> (16.f + b * 142.f, 254.f, 134.f, 150.f); g.setColour (theme::panel); g.fillRoundedRectangle (card, 3.f); g.setColour (theme::seam); g.drawRoundedRectangle (card.reduced (.5f), 3.f, 1.f);
             g.setColour (colOf (b)); g.fillEllipse (card.getX() + 14.f, card.getY() + 12.f, 10.f, 10.f);
             g.setColour (theme::text); g.setFont (uiFont (13.f, true)); g.drawText (juce::String::fromUTF8 (nm[b]), (int) card.getX() + 30, (int) card.getY() + 6, 100, 17, juce::Justification::left);
-            g.setColour (juce::Colour (0xffa8a8ad)); g.setFont (uiFont (11.f)); g.drawText (ty[b], (int) card.getX() + 30, (int) card.getY() + 22, 100, 14, juce::Justification::left);
+            g.setColour (theme::textDim); g.setFont (uiFont (11.f)); g.drawText (ty[b], (int) card.getX() + 30, (int) card.getY() + 22, 100, 14, juce::Justification::left);
         }
     }
     juce::Point<float> dotPos (int b) const { const auto r = plot(); return { r.getX() + fx_ (fx.v (b * 3), r.getWidth()), r.getY() + yg (fx.v (b * 3 + 1), r.getHeight()) }; }
@@ -217,8 +217,8 @@ public:
 protected:
     void paintBody (juce::Graphics& g) override
     {
-        const auto r = juce::Rectangle<float> (16.f, 110.f, 568.f, 116.f); plotBox (g, r); g.saveState(); juce::Path clip; clip.addRoundedRectangle (r, 10.f); g.reduceClipRegion (clip);
-        g.setColour (juce::Colour (0xff2a2b30)); for (int k = 1; k < 8; ++k) g.drawVerticalLine ((int) (r.getX() + r.getWidth() * k / 8.f), r.getY(), r.getBottom());
+        const auto r = juce::Rectangle<float> (16.f, 110.f, 568.f, 116.f); plotBox (g, r); g.saveState(); juce::Path clip; clip.addRoundedRectangle (r, 3.f); g.reduceClipRegion (clip);
+        g.setColour (theme::gridLine); for (int k = 1; k < 8; ++k) g.drawVerticalLine ((int) (r.getX() + r.getWidth() * k / 8.f), r.getY(), r.getBottom());
         for (int k = 1; k < 4; ++k) g.drawHorizontalLine ((int) (r.getY() + k * r.getHeight() / 4.f), r.getX(), r.getRight());
         const int type = fx.vi (InjFilter::pType), slope = fx.vi (InjFilter::pSlope); const float res = fx.v (InjFilter::pRes), fc = fx.v (InjFilter::pCut);
         auto Y = [&] (float db) { return r.getY() + 30.f - db * 2.2f; }; juce::Path p, fill;
@@ -230,7 +230,7 @@ protected:
         fill.lineTo (r.getRight(), r.getBottom()); fill.lineTo (r.getX(), r.getBottom()); fill.closeSubPath();
         g.setColour (theme::accent.withAlpha (.12f)); g.fillPath (fill); g.setColour (theme::accent); g.strokePath (p, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         const float cx = r.getX() + std::log10 (fc / 20.f) / 3.f * r.getWidth(); g.fillEllipse (cx - 7.f, Y (InjFilter::magDb (type, slope, res, fc, fc)) - 7.f, 14.f, 14.f);
-        g.restoreState(); g.setColour (juce::Colour (0xffa8a8ad)); g.setFont (uiFont (11.f));
+        g.restoreState(); g.setColour (theme::textDim); g.setFont (uiFont (11.f));
         const std::pair<float, const char*> fl[] { { 20.f, "20" }, { 100.f, "100" }, { 1000.f, "1k" }, { 10000.f, "10k" } };
         for (auto& q : fl) g.drawText (q.second, (int) (r.getX() + std::log10 (q.first / 20.f) / 3.f * r.getWidth()) + 3, (int) r.getBottom() - 14, 40, 12, juce::Justification::left);
         g.drawText ("20k", (int) r.getRight() - 40, (int) r.getBottom() - 14, 34, 12, juce::Justification::right);
@@ -335,13 +335,13 @@ public:
 protected:
     void paintBody (juce::Graphics& g) override
     {
-        const auto r = juce::Rectangle<float> (16.f, 112.f, 200.f, 200.f); plotBox (g, r); g.saveState(); juce::Path clip; clip.addRoundedRectangle (r, 10.f); g.reduceClipRegion (clip);
-        g.setColour (juce::Colour (0xff2a2b30)); for (int k = 1; k < 4; ++k) { g.drawVerticalLine ((int) (r.getX() + k * 50), r.getY(), r.getBottom()); g.drawHorizontalLine ((int) (r.getY() + k * 50), r.getX(), r.getRight()); }
+        const auto r = juce::Rectangle<float> (16.f, 112.f, 200.f, 200.f); plotBox (g, r); g.saveState(); juce::Path clip; clip.addRoundedRectangle (r, 3.f); g.reduceClipRegion (clip);
+        g.setColour (theme::gridLine); for (int k = 1; k < 4; ++k) { g.drawVerticalLine ((int) (r.getX() + k * 50), r.getY(), r.getBottom()); g.drawHorizontalLine ((int) (r.getY() + k * 50), r.getX(), r.getRight()); }
         g.setColour (theme::barLine); g.drawLine (r.getX(), r.getBottom(), r.getRight(), r.getY(), 1.f);
         const int type = fx.vi (InjSat::pType); const float drive = db2lin (fx.v (InjSat::pAmt) * 30.f) * .35f; juce::Path p;
         for (int k = 0; k <= 100; ++k) { const float x = -1.f + k * .02f, y = juce::jlimit (-1.f, 1.f, InjSat::shape (type, x * drive)); const float px = r.getCentreX() + x * r.getWidth() * .5f, py = r.getCentreY() - y * r.getHeight() * .5f; if (k == 0) p.startNewSubPath (px, py); else p.lineTo (px, py); }
         g.setColour (theme::accent); g.strokePath (p, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        g.restoreState(); g.setColour (juce::Colour (0xffa8a8ad)); g.setFont (uiFont (11.f)); g.drawText ("Salida", (int) r.getX() + 8, (int) r.getY() + 4, 60, 14, juce::Justification::left); g.drawText ("Entrada", (int) r.getRight() - 68, (int) r.getBottom() - 18, 60, 14, juce::Justification::right);
+        g.restoreState(); g.setColour (theme::textDim); g.setFont (uiFont (11.f)); g.drawText ("Salida", (int) r.getX() + 8, (int) r.getY() + 4, 60, 14, juce::Justification::left); g.drawText ("Entrada", (int) r.getRight() - 68, (int) r.getBottom() - 18, 60, 14, juce::Justification::right);
     }
 };
 inline std::unique_ptr<te::Plugin::EditorComponent> InjSat::createEditor() { return std::make_unique<SatEditor> (*this); }

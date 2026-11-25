@@ -14,7 +14,7 @@ namespace icons
         auto b = juce::Rectangle<float> (s, s).withCentre (r.getCentre());
         auto P = [&] (float x, float y) { return juce::Point<float> (b.getX() + x * s, b.getY() + y * s); };
         g.setColour (c);
-        const float lw = juce::jmax (1.6f, s * 0.11f);
+        const float lw = juce::jmax (1.5f, s * 0.095f);
         PathStrokeType st (lw, PathStrokeType::curved, PathStrokeType::rounded);
         Path p;
         const float lt = juce::jmax (1.25f, s * 0.075f); PathStrokeType st2 (lt, PathStrokeType::curved, PathStrokeType::rounded);
